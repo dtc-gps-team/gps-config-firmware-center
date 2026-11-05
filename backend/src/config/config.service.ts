@@ -18,6 +18,7 @@ import { validate } from 'class-validator';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from '../campaign/campaign-rollout-status';
 import { lockFieldsForUse } from '../config-definition/config-definition-lock';
+import { lockDeviceModelForUse } from '../device-model/device-model-lock';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { lockConfigForDelete } from './config-lock';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
@@ -196,6 +197,8 @@ export class ConfigService {
       // ล็อกนิยาม field ที่ Config ใช้ (FOR SHARE) ใน transaction เดียวกับการเขียน - กัน field ถูกลบ
       // จากคลังแทรกระหว่าง validate กับสร้าง (Parameter Library ลบได้ เฉพาะ field ที่ไม่มี Config ใช้)
       created = await this.prisma.$transaction(async (tx) => {
+        // ล็อกรุ่นอุปกรณ์ที่อ้างด้วยชื่อ (FOR SHARE) กันรุ่นถูกลบแทรก — Config อ้างรุ่นด้วย string ไม่มี FK
+        await lockDeviceModelForUse(tx, dto.deviceModel);
         await lockFieldsForUse(tx, Object.keys(dto.fields));
         return tx.config.create({
           data: {
@@ -700,6 +703,11 @@ export class ConfigService {
     let updated: Config;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
+        // ล็อกรุ่นอุปกรณ์ของค่าที่จะเป็นจริงหลังแก้ (FOR SHARE) เหตุผลเดียวกับ create()
+        await lockDeviceModelForUse(
+          tx,
+          dto.deviceModel ?? existing.deviceModel,
+        );
         // ล็อกนิยาม field ของค่าที่จะเป็นจริงหลังแก้ (FOR SHARE) เหตุผลเดียวกับ create()
         await lockFieldsForUse(
           tx,

@@ -62,8 +62,15 @@ export type UpdateDeviceModelInput = {
   notes?: string;
 };
 
-/** `PATCH /device-models/{id}` — Admin/SuperAdmin เท่านั้น · ไม่มี hard delete
- * ใช้ `status: discontinued` แทน */
+/** `DELETE /device-models/{id}` — Admin/SuperAdmin เท่านั้น · ลบจริงได้เฉพาะรุ่นที่ไม่มีอะไรอ้างอิง
+ * (อุปกรณ์/Config/Firmware/พารามิเตอร์) ไม่งั้น 409 พร้อมข้อความบอกจำนวนที่อ้างอยู่ — ใช้
+ * `status: discontinued` แทนเป็นปุ่มหลัก */
+export function deleteDeviceModel(token: string, id: string): Promise<void> {
+  return apiJson<void>(`/device-models/${id}`, { method: "DELETE", token });
+}
+
+/** `PATCH /device-models/{id}` — Admin/SuperAdmin เท่านั้น · "เลิกผลิต" = `status: discontinued`
+ * (ปุ่มหลัก) · ลบจริงใช้ `deleteDeviceModel` เฉพาะรุ่นที่ไม่มีอะไรอ้างอิง */
 export function updateDeviceModel(
   token: string,
   id: string,
