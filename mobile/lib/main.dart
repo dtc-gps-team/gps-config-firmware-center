@@ -34,6 +34,7 @@ class _GpsMobileAppState extends ConsumerState<GpsMobileApp> {
     // the auth flow, and guards on the feature flag internally.
     ref.read(pushMessageHandlerProvider).setup();
     // Offline sync: flush the local write queue on app resume / network back.
+    ref.read(realtimeControllerProvider);
     ref.read(syncTriggersProvider);
   }
 

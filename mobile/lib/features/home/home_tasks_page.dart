@@ -7,6 +7,7 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/router/app_shell.dart';
+import '../../core/realtime/live_refresh.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_empty_state.dart';
@@ -86,174 +87,182 @@ class _HomeTasksPageState extends ConsumerState<HomeTasksPage> {
     final sorted = _filter == _Filter.open
         ? TaskUrgencyStyle.sorted(filtered)
         : recentHomeTasks(filtered);
-    return AppV2Theme(
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: RefreshIndicator(
-          onRefresh: () => ref.refresh(taskListProvider.future),
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: AnnotatedRegion<SystemUiOverlayStyle>(
-                  value: SystemUiOverlayStyle.light,
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.vertical(
-                        bottom: Radius.circular(HomeTokens.heroRadius),
+    return LiveRefresh(
+      interval: const Duration(seconds: 15),
+      onRefresh: () async {
+        await ref.refresh(taskListProvider.future).then<void>((_) {});
+      },
+      child: AppV2Theme(
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: RefreshIndicator(
+            onRefresh: () => ref.refresh(taskListProvider.future),
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: AnnotatedRegion<SystemUiOverlayStyle>(
+                    value: SystemUiOverlayStyle.light,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.vertical(
+                          bottom: Radius.circular(HomeTokens.heroRadius),
+                        ),
                       ),
-                    ),
-                    child: SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 4, 18, 18),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            IconButton(
-                              tooltip: 'ย้อนกลับ',
-                              color: AppColors.onInk,
-                              onPressed: () => context.pop(),
-                              icon: const Icon(Icons.arrow_back),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Padding(
-                                padding: EdgeInsets.only(top: 10),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Semantics(
-                                      header: true,
-                                      child: Text(
-                                        'งานทั้งหมดของคุณ',
-                                        style: TextStyle(
-                                          fontSize: 19,
-                                          height: 1.3,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.onInk,
+                      child: SafeArea(
+                        bottom: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 18, 18),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              IconButton(
+                                tooltip: 'ย้อนกลับ',
+                                color: AppColors.onInk,
+                                onPressed: () => context.pop(),
+                                icon: const Icon(Icons.arrow_back),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Padding(
+                                  padding: EdgeInsets.only(top: 10),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Semantics(
+                                        header: true,
+                                        child: Text(
+                                          'งานทั้งหมดของคุณ',
+                                          style: TextStyle(
+                                            fontSize: 19,
+                                            height: 1.3,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.onInk,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'ค้นหางานและเลือกสถานะที่ต้องการ',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        height: 1.5,
-                                        color: AppColors.onInkMuted,
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'ค้นหางานและเลือกสถานะที่ต้องการ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          height: 1.5,
+                                          color: AppColors.onInkMuted,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              SliverPadding(
-                padding: HomeTokens.contentPadding,
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _FilterBar(
-                        selected: _filter,
-                        onSelected: (filter) =>
-                            setState(() => _filter = filter),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        key: const Key('home_tasks_search'),
-                        controller: _search,
-                        onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(
-                          labelText: 'ค้นหางาน',
-                          hintText: 'ชื่อ / เลขงาน / เลขเครื่อง',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _search.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'ล้างคำค้น',
-                                  icon: const Icon(Icons.close),
-                                  onPressed: () => setState(_search.clear),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      HomeStatusBanners(showSummary: false),
-                      Text(
-                        'พบ ${sorted.length} รายการ',
-                        key: const Key('home_all_count'),
-                        style: const TextStyle(
-                          fontSize: HomeTokens.metaSize,
-                          color: AppColors.mutedForeground,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              ...tasks.when<List<Widget>>(
-                skipLoadingOnRefresh: true,
-                loading: () => [
-                  const SliverToBoxAdapter(child: AppListSkeleton()),
-                ],
-                error: (error, _) => [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: HomeTokens.contentPadding,
-                      child: AppErrorView(
-                        message: error is ApiException
-                            ? error.message
-                            : 'โหลดงานไม่สำเร็จ',
-                        onRetry: () => ref.invalidate(taskListProvider),
-                        messageKey: const Key('my_tasks_error'),
-                        retryKey: const Key('my_tasks_retry'),
-                      ),
-                    ),
-                  ),
-                ],
-                data: (_) => sorted.isEmpty
-                    ? [
-                        const SliverToBoxAdapter(
-                          child: AppEmptyState(
-                            icon: Icons.search_off,
-                            message: 'ไม่มีรายการในตัวกรองนี้',
-                            messageKey: Key('home_all_empty'),
-                          ),
-                        ),
-                      ]
-                    : [
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                          sliver: SliverList.builder(
-                            itemCount: sorted.length,
-                            itemBuilder: (context, i) {
-                              final task = sorted[i];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: HomeTaskRow(
-                                  key: Key('home_all_${task.id}'),
-                                  task: task,
-                                  pendingSync: pending.contains(task.id),
-                                  showUrgency: _filter == _Filter.open,
-                                  onTap: () => context.push(
-                                    AppRoutes.taskDetail(task.id),
+                                    ],
                                   ),
                                 ),
-                              );
-                            },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: HomeTokens.contentPadding,
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _FilterBar(
+                          selected: _filter,
+                          onSelected: (filter) =>
+                              setState(() => _filter = filter),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          key: const Key('home_tasks_search'),
+                          controller: _search,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            labelText: 'ค้นหางาน',
+                            hintText: 'ชื่อ / เลขงาน / เลขเครื่อง',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _search.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'ล้างคำค้น',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => setState(_search.clear),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        HomeStatusBanners(showSummary: false),
+                        Text(
+                          'พบ ${sorted.length} รายการ',
+                          key: const Key('home_all_count'),
+                          style: const TextStyle(
+                            fontSize: HomeTokens.metaSize,
+                            color: AppColors.mutedForeground,
                           ),
                         ),
                       ],
-              ),
-            ],
+                    ),
+                  ),
+                ),
+                ...tasks.when<List<Widget>>(
+                  skipLoadingOnRefresh: true,
+                  skipError: true,
+                  loading: () => [
+                    const SliverToBoxAdapter(child: AppListSkeleton()),
+                  ],
+                  error: (error, _) => [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: HomeTokens.contentPadding,
+                        child: AppErrorView(
+                          message: error is ApiException
+                              ? error.message
+                              : 'โหลดงานไม่สำเร็จ',
+                          onRetry: () => ref.invalidate(taskListProvider),
+                          messageKey: const Key('my_tasks_error'),
+                          retryKey: const Key('my_tasks_retry'),
+                        ),
+                      ),
+                    ),
+                  ],
+                  data: (_) => sorted.isEmpty
+                      ? [
+                          const SliverToBoxAdapter(
+                            child: AppEmptyState(
+                              icon: Icons.search_off,
+                              message: 'ไม่มีรายการในตัวกรองนี้',
+                              messageKey: Key('home_all_empty'),
+                            ),
+                          ),
+                        ]
+                      : [
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+                            sliver: SliverList.builder(
+                              itemCount: sorted.length,
+                              itemBuilder: (context, i) {
+                                final task = sorted[i];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: HomeTaskRow(
+                                    key: Key('home_all_${task.id}'),
+                                    task: task,
+                                    pendingSync: pending.contains(task.id),
+                                    showUrgency: _filter == _Filter.open,
+                                    onTap: () => context.push(
+                                      AppRoutes.taskDetail(task.id),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

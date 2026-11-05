@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/notification/notification_repository.dart';
 import '../api/models.dart';
 import '../auth/auth_controller.dart';
+import '../realtime/live_refresh.dart';
 import '../theme/app_tokens.dart';
 import '../ui/app_v2_theme.dart';
 import 'app_router.dart';
@@ -49,7 +50,15 @@ class AppTabShell extends ConsumerWidget {
     final current = AppTab.values[shell.currentIndex];
     final selected = tabs.indexOf(current);
     return Scaffold(
-      body: shell,
+      body: LiveRefresh(
+        interval: const Duration(seconds: 15),
+        onRefresh: () async {
+          await ref
+              .refresh(unreadNotificationCountProvider.future)
+              .then<void>((_) {});
+        },
+        child: shell,
+      ),
       bottomNavigationBar: AppV2Theme(
         child: AppTabBar(
           tabs: tabs,

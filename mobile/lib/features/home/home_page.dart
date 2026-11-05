@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/router/app_shell.dart';
+import '../../core/realtime/live_refresh.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_empty_state.dart';
@@ -28,40 +29,48 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final staff = isFieldStaff(auth.role);
-    return AppV2Theme(
-      child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
-        child: Scaffold(
-          backgroundColor: AppColors.background,
-          body: RefreshIndicator(
-            onRefresh: () => staff
-                ? ref.refresh(taskListProvider.future)
-                : Future<void>.value(),
-            // เนื้อหาสูงเท่า viewport เสมอ จึงไม่เลื่อน แต่ยังส่ง overscroll ให้ดึงโหลดใหม่ได้
-            child: CustomScrollView(
-              key: const Key('home_fixed_viewport'),
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: ClampingScrollPhysics(),
-              ),
-              slivers: [
-                SliverFillRemaining(
-                  hasScrollBody: true,
-                  child: Column(
-                    children: [
-                      _HomeHero(auth: auth),
-                      if (staff)
-                        const Expanded(
-                          child: Padding(
-                            padding: HomeTokens.overviewPadding,
-                            child: _HomeOverview(),
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                    ],
-                  ),
+    return LiveRefresh(
+      interval: const Duration(seconds: 15),
+      onRefresh: () async {
+        if (staff) {
+          await ref.refresh(taskListProvider.future).then<void>((_) {});
+        }
+      },
+      child: AppV2Theme(
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle.light,
+          child: Scaffold(
+            backgroundColor: AppColors.background,
+            body: RefreshIndicator(
+              onRefresh: () => staff
+                  ? ref.refresh(taskListProvider.future)
+                  : Future<void>.value(),
+              // เนื้อหาสูงเท่า viewport เสมอ จึงไม่เลื่อน แต่ยังส่ง overscroll ให้ดึงโหลดใหม่ได้
+              child: CustomScrollView(
+                key: const Key('home_fixed_viewport'),
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: ClampingScrollPhysics(),
                 ),
-              ],
+                slivers: [
+                  SliverFillRemaining(
+                    hasScrollBody: true,
+                    child: Column(
+                      children: [
+                        _HomeHero(auth: auth),
+                        if (staff)
+                          const Expanded(
+                            child: Padding(
+                              padding: HomeTokens.overviewPadding,
+                              child: _HomeOverview(),
+                            ),
+                          )
+                        else
+                          const Spacer(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -431,6 +440,7 @@ class _HomeOverview extends ConsumerWidget {
 
     return tasks.when(
       skipLoadingOnRefresh: true,
+      skipError: true,
       loading: () => layout([
         const AppListSkeleton(
           key: Key('home_recent_loading'),

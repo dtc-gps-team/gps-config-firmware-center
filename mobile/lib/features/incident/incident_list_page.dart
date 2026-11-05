@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/realtime/live_refresh.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
@@ -36,80 +37,91 @@ class IncidentListPage extends ConsumerWidget {
     final incidentsAsync = ref.watch(incidentListProvider);
     final navigator = Navigator.of(context);
 
-    return AppV2Theme(
-      child: Scaffold(
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AppInkHeader(
-              title: 'Incidents',
-              subtitle: 'Field Report ของคุณ + Incident จากระบบ',
-              onBack: navigator.canPop() ? navigator.pop : null,
-              trailing: const AccountButton(),
-            ),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () => ref.refresh(incidentListProvider.future),
-                child: incidentsAsync.when(
-                  skipLoadingOnRefresh: true,
-                  data: (incidents) {
-                    if (incidents.isEmpty) {
-                      return const _IncidentsEmpty();
-                    }
-                    final fieldReports = incidents
-                        .where((incident) => incident.source == 'field-report')
-                        .toList(growable: false);
-                    final systemReports = incidents
-                        .where((incident) => incident.source != 'field-report')
-                        .toList(growable: false);
-                    // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
-                    return AppFadeIn(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                        children: [
-                          if (fieldReports.isNotEmpty) ...[
-                            const _IncidentGroupTitle('ที่คุณแจ้ง'),
-                            for (final incident in fieldReports) ...[
-                              _IncidentCard(
-                                key: Key(
-                                  'incident_card_${incidents.indexOf(incident)}',
+    return LiveRefresh(
+      interval: const Duration(seconds: 30),
+      onRefresh: () async {
+        await ref.refresh(incidentListProvider.future).then<void>((_) {});
+      },
+      child: AppV2Theme(
+        child: Scaffold(
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppInkHeader(
+                title: 'Incidents',
+                subtitle: 'Field Report ของคุณ + Incident จากระบบ',
+                onBack: navigator.canPop() ? navigator.pop : null,
+                trailing: const AccountButton(),
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () => ref.refresh(incidentListProvider.future),
+                  child: incidentsAsync.when(
+                    skipLoadingOnRefresh: true,
+                    skipError: true,
+                    data: (incidents) {
+                      if (incidents.isEmpty) {
+                        return const _IncidentsEmpty();
+                      }
+                      final fieldReports = incidents
+                          .where(
+                            (incident) => incident.source == 'field-report',
+                          )
+                          .toList(growable: false);
+                      final systemReports = incidents
+                          .where(
+                            (incident) => incident.source != 'field-report',
+                          )
+                          .toList(growable: false);
+                      // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
+                      return AppFadeIn(
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          children: [
+                            if (fieldReports.isNotEmpty) ...[
+                              const _IncidentGroupTitle('ที่คุณแจ้ง'),
+                              for (final incident in fieldReports) ...[
+                                _IncidentCard(
+                                  key: Key(
+                                    'incident_card_${incidents.indexOf(incident)}',
+                                  ),
+                                  incident: incident,
+                                  index: incidents.indexOf(incident),
                                 ),
-                                incident: incident,
-                                index: incidents.indexOf(incident),
-                              ),
-                              const SizedBox(height: 12),
+                                const SizedBox(height: 12),
+                              ],
+                            ],
+                            if (systemReports.isNotEmpty) ...[
+                              const _IncidentGroupTitle('จากระบบ'),
+                              for (final incident in systemReports) ...[
+                                _IncidentCard(
+                                  key: Key(
+                                    'incident_card_${incidents.indexOf(incident)}',
+                                  ),
+                                  incident: incident,
+                                  index: incidents.indexOf(incident),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
                             ],
                           ],
-                          if (systemReports.isNotEmpty) ...[
-                            const _IncidentGroupTitle('จากระบบ'),
-                            for (final incident in systemReports) ...[
-                              _IncidentCard(
-                                key: Key(
-                                  'incident_card_${incidents.indexOf(incident)}',
-                                ),
-                                incident: incident,
-                                index: incidents.indexOf(incident),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                  loading: () => const AppListSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => _IncidentsError(
-                    message: error is ApiException
-                        ? error.message
-                        : 'โหลดรายการ Incident ไม่สำเร็จ',
-                    onRetry: () => ref.invalidate(incidentListProvider),
+                        ),
+                      );
+                    },
+                    loading: () => const AppListSkeleton(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    ),
+                    error: (error, _) => _IncidentsError(
+                      message: error is ApiException
+                          ? error.message
+                          : 'โหลดรายการ Incident ไม่สำเร็จ',
+                      onRetry: () => ref.invalidate(incidentListProvider),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
