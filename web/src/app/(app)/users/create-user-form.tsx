@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/auth/auth-provider";
 import { canAccessUserManagement } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   createUser,
   rolesManageableBy,
@@ -158,22 +159,26 @@ export function CreateUserForm({
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
-              <div className="flex items-center gap-1.5">
-                <div className="min-w-0 flex-1">
-                  <SensitiveInput
-                    id="user-password"
-                    value={password}
-                    disabled={submitting}
-                    // กัน browser autofill รหัสผ่านของแอดมินเองลงฟอร์มสร้างผู้ใช้
-                    autoComplete="new-password"
-                    placeholder="อย่างน้อย 8 ตัวอักษร"
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
+              <div className="relative">
+                <SensitiveInput
+                  id="user-password"
+                  value={password}
+                  disabled={submitting}
+                  // กัน browser autofill รหัสผ่านของแอดมินเองลงฟอร์มสร้างผู้ใช้
+                  autoComplete="new-password"
+                  // เว้นที่ด้านขวาให้ไอคอนตา (ของ SensitiveInput) + ปุ่มคัดลอก
+                  className="pr-16"
+                  placeholder="อย่างน้อย 8 ตัวอักษร"
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                {/* วางซ้อนในช่อง ไม่กินที่ ช่องจึงกว้างเท่าช่องอื่นและไม่ขยับตอนพิมพ์ */}
                 <CopyButton
                   value={password}
                   label="คัดลอกรหัสผ่าน"
-                  className={password.trim() === "" ? "invisible" : undefined}
+                  className={cn(
+                    "absolute top-1/2 right-7 -translate-y-1/2",
+                    password.trim() === "" && "invisible",
+                  )}
                 />
               </div>
             </div>
