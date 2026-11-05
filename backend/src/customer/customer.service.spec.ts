@@ -20,10 +20,10 @@ describe('CustomerService', () => {
   });
 
   describe('findAll', () => {
-    it('คืนรายชื่อลูกค้าแบบย่อ (id + companyName) เรียงตามชื่อบริษัท', async () => {
+    it('คืนรายชื่อลูกค้าแบบย่อ (id + companyName + isActive) เรียงตามชื่อบริษัท', async () => {
       const rows = [
-        { id: 'cus-1', companyName: 'ABC Logistics' },
-        { id: 'cus-2', companyName: 'Northern Fleet' },
+        { id: 'cus-1', companyName: 'ABC Logistics', isActive: true },
+        { id: 'cus-2', companyName: 'Northern Fleet', isActive: true },
       ];
       customer.findMany.mockResolvedValue(rows);
 
@@ -31,9 +31,20 @@ describe('CustomerService', () => {
 
       expect(result).toEqual(rows);
       expect(customer.findMany).toHaveBeenCalledWith({
-        select: { id: true, companyName: true },
+        where: undefined,
+        select: { id: true, companyName: true, isActive: true },
         orderBy: { companyName: 'asc' },
       });
+    });
+
+    it('activeOnly -> กรองเฉพาะลูกค้าที่ใช้งานอยู่', async () => {
+      customer.findMany.mockResolvedValue([]);
+
+      await service.findAll({ activeOnly: true });
+
+      expect(customer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { isActive: true } }),
+      );
     });
 
     it('ไม่มีลูกค้าในระบบ -> คืน array ว่าง', async () => {

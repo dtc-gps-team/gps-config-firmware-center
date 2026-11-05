@@ -1460,5 +1460,39 @@ void _deviceStatusTests() {
         'skipped',
       ]);
     });
+
+    test(
+      'สถานะรอบที่แอปไม่รู้จัก (backend ใหม่กว่า) -> ข้ามรอบนั้น ไม่ทำให้ทั้งก้อนพัง',
+      () {
+        Map<String, dynamic> attempt(int no, String status) => {
+          'attemptNo': no,
+          'status': status,
+          'errorCode': null,
+          'detail': null,
+          'startedAt': '2026-11-05T10:00:00.000Z',
+          'finishedAt': null,
+        };
+        final p = ConfigApplyRequestProgress.fromJson({
+          ...base,
+          'retry': {
+            'attemptNo': 3,
+            'maxAttempts': 3,
+            'nextRetryAt': null,
+            'attempts': [
+              attempt(1, 'failed'),
+              attempt(2, 'cancelled_by_server'),
+              attempt(3, 'sent'),
+            ],
+          },
+        });
+        expect(p.retry!.attemptNo, 3);
+        expect(p.retry!.attempts.map((a) => a.attemptNo), [1, 3]);
+        expect(ConfigApplyAttemptStatus.tryFromWire('nope'), isNull);
+        expect(
+          ConfigApplyAttemptStatus.tryFromWire('sent'),
+          ConfigApplyAttemptStatus.sent,
+        );
+      },
+    );
   });
 }
