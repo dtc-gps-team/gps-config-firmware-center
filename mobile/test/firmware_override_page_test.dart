@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/ui/app_role_locked_view.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_override/firmware_override_page.dart';
 import 'package:mobile/features/firmware_override/firmware_override_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 
 final _device = Device(
   id: 'uuid-1',
@@ -41,14 +47,19 @@ const _unapprovedFw = Firmware(
 );
 
 class _FakeDeviceSearchRepository implements DeviceSearchRepository {
+  static int getCalls = 0;
   @override
   Future<List<Device>> listDevices() async => [_device];
 
   @override
-  Future<Device> getDevice(String deviceId) async => _device;
+  Future<Device> getDevice(String deviceId) async {
+    getCalls++;
+    return _device;
+  }
 }
 
 class _FakeDeviceStatusRepository implements DeviceStatusRepository {
+  static int calls = 0;
   _FakeDeviceStatusRepository({this.pending, this.error});
 
   final DeviceFirmwareOverride? pending;
@@ -56,6 +67,7 @@ class _FakeDeviceStatusRepository implements DeviceStatusRepository {
 
   @override
   Future<DeviceStatus> getDeviceStatus(String deviceId) async {
+    calls++;
     if (error != null) throw error!;
     return DeviceStatus(
       deviceId: deviceId,
@@ -64,6 +76,15 @@ class _FakeDeviceStatusRepository implements DeviceStatusRepository {
       pendingFirmwareOverride: pending,
     );
   }
+}
+
+class _FakeAuthController extends AuthController {
+  _FakeAuthController(this.initial);
+
+  final AuthState initial;
+
+  @override
+  AuthState build() => initial;
 }
 
 const _pendingOverride = DeviceFirmwareOverride(
@@ -82,11 +103,15 @@ class _FakeFirmwareOverrideRepository implements FirmwareOverrideRepository {
     this.firmware = const [_okFw, _otherModelFw, _unapprovedFw],
     this.listError,
     this.overrideError,
+    this.gate,
   });
 
   final List<Firmware> firmware;
   final Object? listError;
   final Object? overrideError;
+  final Completer<void>? gate;
+  int listCalls = 0;
+  int overrideCalls = 0;
 
   String? lastDeviceId;
   String? lastFirmwareId;
@@ -94,6 +119,7 @@ class _FakeFirmwareOverrideRepository implements FirmwareOverrideRepository {
 
   @override
   Future<List<Firmware>> listFirmware() async {
+    listCalls++;
     if (listError != null) throw listError!;
     return firmware;
   }
@@ -104,9 +130,11 @@ class _FakeFirmwareOverrideRepository implements FirmwareOverrideRepository {
     required String firmwareId,
     required String reason,
   }) async {
+    overrideCalls++;
     lastDeviceId = deviceId;
     lastFirmwareId = firmwareId;
     lastReason = reason;
+    await gate?.future;
     if (overrideError != null) throw overrideError!;
     return DeviceFirmwareOverride(
       id: 'fo-1',
@@ -125,8 +153,14 @@ Future<_FakeFirmwareOverrideRepository> _pump(
   WidgetTester tester, {
   _FakeFirmwareOverrideRepository? repo,
   _FakeDeviceStatusRepository? statusRepo,
+  UserRole? role = UserRole.st,
+  AuthStatus authStatus = AuthStatus.authenticated,
+  bool central = false,
+  bool settle = true,
 }) async {
   final fake = repo ?? _FakeFirmwareOverrideRepository();
+  _FakeDeviceSearchRepository.getCalls = 0;
+  _FakeDeviceStatusRepository.calls = 0;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -137,13 +171,18 @@ Future<_FakeFirmwareOverrideRepository> _pump(
         deviceStatusRepositoryProvider.overrideWithValue(
           statusRepo ?? _FakeDeviceStatusRepository(),
         ),
+        authControllerProvider.overrideWith(
+          () => _FakeAuthController(AuthState(status: authStatus, role: role)),
+        ),
+        centralApplyModeProvider.overrideWith((ref) async => central),
       ],
       child: const MaterialApp(
         home: FirmwareOverridePage(deviceId: 'DEV-0117'),
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await tester.pump();
+  if (settle) await tester.pumpAndSettle();
   return fake;
 }
 
@@ -164,6 +203,49 @@ Future<void> _submit(WidgetTester tester, {String reason = 'ลูกค้า�
 }
 
 void main() {
+  testWidgets('OT เปิดลิงก์ตรงแล้วล็อกโดยไม่เรียก API', (tester) async {
+    final repo = await _pump(tester, role: UserRole.ot);
+
+    expect(find.byType(AppRoleLockedView), findsOneWidget);
+    expect(repo.listCalls, 0);
+    expect(_FakeDeviceSearchRepository.getCalls, 0);
+    expect(_FakeDeviceStatusRepository.calls, 0);
+  });
+
+  testWidgets('role null ถูกล็อกโดยไม่เรียก API', (tester) async {
+    final repo = await _pump(tester, role: null);
+
+    expect(find.byType(AppRoleLockedView), findsOneWidget);
+    expect(repo.listCalls, 0);
+    expect(_FakeDeviceSearchRepository.getCalls, 0);
+    expect(_FakeDeviceStatusRepository.calls, 0);
+  });
+
+  testWidgets('ระหว่าง restore session แสดง skeleton และยังไม่เรียก API', (
+    tester,
+  ) async {
+    final repo = await _pump(
+      tester,
+      role: null,
+      authStatus: AuthStatus.unknown,
+      settle: false,
+    );
+
+    expect(find.byType(AppDetailSkeleton), findsOneWidget);
+    expect(repo.listCalls, 0);
+    expect(_FakeDeviceSearchRepository.getCalls, 0);
+    expect(_FakeDeviceStatusRepository.calls, 0);
+  });
+
+  testWidgets('central mode แจ้งข้อจำกัดและไม่โหลด API', (tester) async {
+    final repo = await _pump(tester, central: true);
+
+    expect(find.byKey(const Key('firmware_override_central_locked')), findsOne);
+    expect(repo.listCalls, 0);
+    expect(_FakeDeviceSearchRepository.getCalls, 0);
+    expect(_FakeDeviceStatusRepository.calls, 0);
+  });
+
   testWidgets(
     'แสดงเฉพาะ Firmware ที่ติดตั้งได้กับรุ่นนี้ (stored+approved+รองรับรุ่น)',
     (tester) async {
@@ -231,6 +313,13 @@ void main() {
       find.byKey(const Key('firmware_override_submitted')),
       findsOneWidget,
     );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('app_bottom_action_bar')),
+        matching: find.byKey(const Key('firmware_override_submitted')),
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('firmware_override_error')), findsNothing);
     // ส่งซ้ำไม่ได้
     final button = tester.widget<FilledButton>(
@@ -255,6 +344,13 @@ void main() {
     await _submit(tester);
 
     expect(find.byKey(const Key('firmware_override_error')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('app_bottom_action_bar')),
+        matching: find.byKey(const Key('firmware_override_error')),
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('รอ Operation อนุมัติอยู่แล้ว'), findsOneWidget);
     expect(
       find.byKey(const Key('firmware_override_conflict_hint')),
@@ -264,6 +360,32 @@ void main() {
       find.byKey(const Key('firmware_override_submitted')),
       findsNothing,
     ); // ยังส่งใหม่ได้
+  });
+
+  testWidgets('กดส่งซ้ำระหว่างคำขอค้างแล้วยิง repository เพียงครั้งเดียว', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final repo = await _pump(
+      tester,
+      repo: _FakeFirmwareOverrideRepository(gate: gate),
+    );
+    await _selectFirmware(tester, 'v2.1.0');
+    await tester.enterText(
+      find.byKey(const Key('firmware_override_reason_input')),
+      'ลูกค้าขอ',
+    );
+    final callback = tester
+        .widget<FilledButton>(find.byKey(const Key('firmware_override_submit')))
+        .onPressed!;
+
+    callback();
+    callback();
+    await tester.pump();
+    expect(repo.overrideCalls, 1);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(repo.overrideCalls, 1);
   });
 
   testWidgets('403/อื่นๆ -> แสดง error ไม่แสดง hint ของ 409', (tester) async {

@@ -4,18 +4,22 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
+import '../../core/router/app_shell.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
-import '../../core/ui/app_card.dart';
+import '../../core/ui/app_bottom_action_bar.dart';
 import '../../core/ui/app_field_label.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_role_locked_view.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../config_override/config_override_repository.dart';
 import '../config_override/config_value_parser.dart';
+import '../config_override/unsupported_firmware_notice.dart';
 import 'config_apply_request_repository.dart';
 import 'field_task_repository.dart';
 import 'task_repository.dart';
@@ -29,6 +33,9 @@ import 'task_repository.dart';
 ///   Config ผ่านการอนุมัติมาแล้ว) แล้วกดส่งเข้ากล่องให้เลย
 /// - **แก้** → กรอกเหตุผล "ขออนุมัติค่าที่แก้": Override ของ Config นี้ + คำขอผูกกัน
 ///   (docs/30) รอ Operation อนุมัติ แล้วช่างกดส่งที่หน้างาน
+///
+/// แก้ค่าได้เฉพาะ ST (`device-config-override:Override` — RBAC_Matrix) · OT เห็นทุกค่า
+/// แบบอ่านอย่างเดียวและส่ง Config ตามเดิมได้ · role อื่นเห็นหน้าไม่มีสิทธิ์ (R4-05)
 ///
 /// [taskId] `null` = เปิดจากหน้ากล่อง เริ่มงานให้ก่อน (ได้งานเดิมถ้ายังเปิดอยู่) ·
 /// สำเร็จแล้วปิดหน้านี้พร้อม id ของงาน (`pop(taskId)`) ให้หน้าที่เปิดไปต่อเอง
@@ -54,6 +61,8 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
 
   /// ค่าที่ช่างพิมพ์ในช่องพารามิเตอร์ (ชื่อ field -> ข้อความ)
   final Map<String, String> _edits = {};
+
+  /// error รายช่องจากการกดครั้งล่าสุด — พิมพ์ใหม่แล้วล้าง
   Map<String, String> _paramErrors = const {};
   String? _reasonError;
   bool _submitting = false;
@@ -82,8 +91,10 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     return taskId;
   }
 
-  /// ทำงานที่เรียก backend — error ของ backend แสดงเหนือปุ่ม
+  /// ทำงานที่เรียก backend — error ของ backend แสดงเหนือปุ่ม · ระหว่างนี้ปุ่ม
+  /// กดไม่ได้ (กันส่งซ้ำ)
   Future<void> _run(Future<void> Function() action) async {
+    if (_submitting) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -131,29 +142,19 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     _finish(taskId, message);
   });
 
-  /// แก้ค่า — ตรวจค่า + เหตุผลก่อน แล้วขออนุมัติผ่าน Override ของ Config นี้
+  /// แก้ค่า — ตรวจค่า + เหตุผลตอนกด (ปุ่มไม่เทาเมื่อค่าผิด ช่างจะเห็นเหตุผลใต้ช่อง ·
+  /// มติล็อก r4 ข้อยกเว้นภาพ 1272) แล้วขออนุมัติผ่าน Override ของ Config นี้
   Future<void> _submitEdits(
     ApplyOptionConfig config,
     Map<String, ConfigFieldDefinition> defByName,
   ) async {
-    final errors = <String, String>{};
-    final parsed = <String, dynamic>{};
-    for (final entry in _changedFields(config).entries) {
-      final dataType = defByName[entry.key]?.dataType ?? 'string';
-      final result = parseConfigValue(entry.value, dataType);
-      if (result.isOk) {
-        parsed[entry.key] = result.value;
-      } else {
-        errors[entry.key] = result.error!;
-      }
-    }
+    final (:parsed, :errors) = _checkEdits(config, defByName);
     final reason = _reasonController.text.trim();
     setState(() {
       _paramErrors = errors;
-      _reasonError = reason.isEmpty ? 'กรอกเหตุผลที่แก้ค่า' : null;
+      _reasonError = reason.isEmpty ? 'กรุณากรอกเหตุผลที่แก้ค่า' : null;
     });
     if (errors.isNotEmpty || reason.isEmpty) return;
-
     await _run(() async {
       final taskId = await _ensureTask();
       await ref
@@ -179,73 +180,134 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
         entry.key: entry.value,
   };
 
+  /// ตรวจค่าที่แก้ (ชนิด + ช่วง min/max ของคลัง Parameter — backend ตรวจซ้ำเสมอ) ·
+  /// คืนค่าที่ parse แล้ว และ error รายช่อง
+  ({Map<String, dynamic> parsed, Map<String, String> errors}) _checkEdits(
+    ApplyOptionConfig config,
+    Map<String, ConfigFieldDefinition> defByName,
+  ) {
+    final parsed = <String, dynamic>{};
+    final errors = <String, String>{};
+    for (final entry in _changedFields(config).entries) {
+      final def = defByName[entry.key];
+      final result = parseConfigValue(entry.value, def?.dataType ?? 'string');
+      final error =
+          result.error ??
+          configRangeError(
+            result.value,
+            def?.minValue,
+            def?.maxValue,
+            def?.unit,
+          );
+      if (error != null) {
+        errors[entry.key] = error;
+      } else {
+        parsed[entry.key] = result.value;
+      }
+    }
+    return (parsed: parsed, errors: errors);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final optionsAsync = ref.watch(deviceApplyOptionsProvider(widget.deviceId));
-    final config = optionsAsync.valueOrNull?.configs
+    final auth = ref.watch(authControllerProvider);
+    final role = auth.role;
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    // รอ restore ก่อน; role ว่างหลัง restore หรือ role อื่นให้ปิดกั้นและไม่โหลด API
+    final locked = !rolePending && (role == null || !isFieldStaff(role));
+    final optionsAsync = rolePending || locked
+        ? null
+        : ref.watch(deviceApplyOptionsProvider(widget.deviceId));
+    final options = optionsAsync?.valueOrNull;
+    final config = options?.configs
         .where((c) => c.id == widget.configId)
         .firstOrNull;
+    // นิยามพารามิเตอร์ (แก้ได้ไหม/ชื่อเรียกง่าย/ชนิด/ช่วง) — โหลดไม่ได้ = แก้ไม่ได้ทุกช่อง
+    final defByName = {
+      if (config != null)
+        for (final def
+            in ref.watch(configFieldDefinitionListProvider).valueOrNull ??
+                const <ConfigFieldDefinition>[])
+          def.fieldName: def,
+    };
+    // v3.76 — พารามิเตอร์ที่ firmware บนกล่องรองรับ (null = ไม่ทราบ ไม่ล็อก)
+    final boxSchema = config == null
+        ? null
+        : ref
+              .watch(currentConfigProvider(widget.deviceId))
+              .valueOrNull
+              ?.boxSchema;
     final navigator = Navigator.of(context);
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: config?.name ?? 'พารามิเตอร์ของ Config',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                description:
-                    'ไม่แก้ค่า = ส่งเข้ากล่องได้ทันที · แก้ค่า = ต้องรอ Operation '
-                    'อนุมัติก่อน แล้วกดส่งที่หน้างาน',
-                meta: [
-                  AppPageHeaderMeta(
-                    label: 'เลขเครื่อง',
-                    value: widget.deviceId,
-                  ),
-                  if (config != null && config.latestVersion > 0)
-                    AppPageHeaderMeta(
-                      label: 'เวอร์ชัน',
-                      value: '${config.latestVersion}',
-                    ),
-                ],
-              ),
-              Expanded(
-                child: optionsAsync.when(
-                  skipLoadingOnRefresh: true,
-                  loading: () => const AppDetailSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => ListView(
-                    children: [
-                      const SizedBox(height: 64),
-                      AppErrorView(
-                        message: error is ApiException
-                            ? error.message
-                            : 'โหลดพารามิเตอร์ไม่สำเร็จ',
-                        messageKey: const Key('apply_params_error'),
-                        retryKey: const Key('apply_params_retry'),
-                        onRetry: () => ref.invalidate(
-                          deviceApplyOptionsProvider(widget.deviceId),
-                        ),
+        backgroundColor: AppColors.background,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: config?.name ?? 'พารามิเตอร์ของ Config',
+              subtitle: locked
+                  ? null
+                  : config != null && config.latestVersion > 0
+                  ? '${widget.deviceId} · เวอร์ชัน ${config.latestVersion}'
+                  : widget.deviceId,
+              onBack: navigator.canPop() ? navigator.pop : null,
+            ),
+            Expanded(
+              child: rolePending
+                  ? const AppDetailSkeleton(
+                      padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    )
+                  : optionsAsync == null
+                  ? const AppRoleLockedView()
+                  : optionsAsync.when(
+                      skipLoadingOnRefresh: true,
+                      loading: () => const AppDetailSkeleton(
+                        padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
                       ),
-                    ],
-                  ),
-                  data: (options) => _buildForm(options, config),
-                ),
-              ),
-            ],
-          ),
+                      error: (error, _) => ListView(
+                        children: [
+                          const SizedBox(height: 64),
+                          AppErrorView(
+                            message: error is ApiException
+                                ? error.message
+                                : 'โหลดพารามิเตอร์ไม่สำเร็จ',
+                            messageKey: const Key('apply_params_error'),
+                            retryKey: const Key('apply_params_retry'),
+                            onRetry: () => ref.invalidate(
+                              deviceApplyOptionsProvider(widget.deviceId),
+                            ),
+                          ),
+                        ],
+                      ),
+                      data: (options) => _buildForm(
+                        options,
+                        config,
+                        defByName,
+                        canEdit: role == UserRole.st,
+                        boxSchema: boxSchema,
+                      ),
+                    ),
+            ),
+            if (options != null && config != null)
+              _actions(options, config, defByName),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildForm(DeviceApplyOptions options, ApplyOptionConfig? config) {
+  Widget _buildForm(
+    DeviceApplyOptions options,
+    ApplyOptionConfig? config,
+    Map<String, ConfigFieldDefinition> defByName, {
+    required bool canEdit,
+    required BoxSchema? boxSchema,
+  }) {
     if (config == null) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
         children: const [
           AppNotice(
             key: Key('apply_params_not_found'),
@@ -253,28 +315,32 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
             icon: Icons.info_outline,
             child: Text(
               'Config นี้ส่งเข้ากล่องนี้ไม่ได้ — ไม่อยู่ในรายการ Config ที่อนุมัติ'
-              'แล้วสำหรับรุ่นของกล่อง แจ้ง Operation',
+              'แล้วสำหรับรุ่นของกล่อง กลับไปเลือกใหม่ หรือแจ้ง Operation',
             ),
           ),
         ],
       );
     }
-    // นิยามพารามิเตอร์ (แก้ได้ไหม/ชื่อเรียกง่าย/ชนิด) — โหลดไม่ได้ = แก้ไม่ได้ทุกช่อง
-    final defByName = {
-      for (final def
-          in ref.watch(configFieldDefinitionListProvider).valueOrNull ??
-              const <ConfigFieldDefinition>[])
-        def.fieldName: def,
-    };
     final edited = _changedFields(config).isNotEmpty;
-    // คำขอของงานนี้เองที่ค้าง หน้างานไม่เปิดมาที่นี่อยู่แล้ว — ค้างอยู่ = ของงานอื่น
-    // หรือเปิดจากหน้ากล่อง (backend ตอบ 409 ถ้าขอซ้ำ)
-    final blocked = !options.deviceInstalled || options.openRequest != null;
-    final startedTaskId = _startedTaskId;
+    final unsupported =
+        boxSchema?.unsupportedIn(config.fields.keys) ?? const <String>[];
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
       children: [
+        Text(
+          canEdit
+              ? 'ไม่แก้ค่า = ส่งเข้ากล่องได้ทันที · แก้ค่า = ต้องรอ Operation '
+                    'อนุมัติก่อน แล้วกดส่งที่หน้างาน'
+              : 'ตรวจค่าแล้วส่งเข้ากล่องได้ทันที · การขอแก้ค่าเฉพาะเครื่องทำได้'
+                    'เฉพาะ ST',
+          style: const TextStyle(
+            fontSize: AppTypography.xs,
+            height: AppTypography.xsHeight,
+            color: AppColors.mutedForeground,
+          ),
+        ),
+        const SizedBox(height: 12),
         if (!options.deviceInstalled) ...[
           const AppNotice(
             key: Key('apply_params_not_installed'),
@@ -298,6 +364,13 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
           ),
           const SizedBox(height: 16),
         ],
+        if (boxSchema != null && unsupported.isNotEmpty) ...[
+          UnsupportedFirmwareNotice(
+            schema: boxSchema,
+            unsupportedKeys: unsupported,
+          ),
+          const SizedBox(height: 16),
+        ],
         if (config.fields.isEmpty)
           const AppNotice(
             key: Key('apply_params_empty'),
@@ -309,6 +382,8 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
             config: config,
             defByName: defByName,
             errors: _paramErrors,
+            canEdit: canEdit,
+            boxSchema: boxSchema,
             enabled: !_submitting,
             onChanged: (field, value) => setState(() {
               _edits[field] = value;
@@ -324,6 +399,8 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
             controller: _reasonController,
             enabled: !_submitting,
             maxLength: 500,
+            minLines: 3,
+            maxLines: 5,
             onChanged: (_) {
               if (_reasonError != null) setState(() => _reasonError = null);
             },
@@ -335,8 +412,24 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  /// แถบล่าง: error ของ backend อยู่เหนือปุ่ม เห็นทันทีที่กด
+  Widget _actions(
+    DeviceApplyOptions options,
+    ApplyOptionConfig config,
+    Map<String, ConfigFieldDefinition> defByName,
+  ) {
+    final edited = _changedFields(config).isNotEmpty;
+    // คำขอของงานนี้เองที่ค้าง หน้างานไม่เปิดมาที่นี่อยู่แล้ว — ค้างอยู่ = ของงานอื่น
+    // หรือเปิดจากหน้ากล่อง (backend ตอบ 409 ถ้าขอซ้ำ)
+    final blocked = !options.deviceInstalled || options.openRequest != null;
+    final startedTaskId = _startedTaskId;
+    return AppBottomActionBar(
+      children: [
         if (_error != null) ...[
-          const SizedBox(height: 8),
           AppNotice(
             tone: AppBadgeTone.danger,
             icon: Icons.error_outline,
@@ -353,71 +446,76 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
                 child: const Text('ไปที่งาน (งานเริ่มแล้ว)'),
               ),
             ),
+          const SizedBox(height: 8),
         ],
-        const SizedBox(height: 16),
-        FilledButton(
-          key: const Key('apply_submit_button'),
-          onPressed: blocked || _submitting
+        AppSubmitButton(
+          buttonKey: const Key('apply_submit_button'),
+          label: edited ? 'ขออนุมัติค่าที่แก้' : 'ส่งเข้ากล่อง',
+          submitting: _submitting,
+          onPressed: blocked
               ? null
               : edited
               ? () => _submitEdits(config, defByName)
               : _submitDirect,
-          child: _submitting
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      AppColors.primaryForeground,
-                    ),
-                  ),
-                )
-              : Text(edited ? 'ขออนุมัติค่าที่แก้' : 'ส่งเข้ากล่อง'),
         ),
       ],
     );
   }
 }
 
-/// พารามิเตอร์ทุกค่าของ Config — ค่าที่ช่างแก้ได้ (`stOverridable`) มีช่องกรอก
-/// ที่เหลือแสดงค่า + "(แก้ไขไม่ได้)" · ชื่อเรียกง่ายจาก `description` อยู่บนชื่อจริง
+/// พารามิเตอร์ทุกค่าของ Config — ค่าที่ช่างแก้ได้ (`stOverridable` และเป็น ST) มี
+/// ช่องกรอกเต็มความกว้าง ที่เหลือแสดงค่า + "(แก้ไขไม่ได้)" · ชื่อเรียกง่ายจาก
+/// `description` อยู่บนชื่อจริง (ภาพ r4 1259)
 class _ConfigParams extends StatelessWidget {
   const _ConfigParams({
     required this.config,
     required this.defByName,
     required this.errors,
+    required this.canEdit,
+    required this.boxSchema,
     required this.enabled,
     required this.onChanged,
   });
 
   final ApplyOptionConfig config;
+  final BoxSchema? boxSchema;
   final Map<String, ConfigFieldDefinition> defByName;
   final Map<String, String> errors;
+  final bool canEdit;
   final bool enabled;
   final void Function(String field, String value) onChanged;
 
   @override
   Widget build(BuildContext context) {
     final entries = config.fields.entries.toList(growable: false);
-    return AppCard(
+    return Container(
       key: const Key('apply_params'),
-      size: AppCardSize.small,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (i, entry) in entries.indexed) ...[
-            if (i > 0) const Divider(),
+          for (final entry in entries)
             _ParamRow(
               key: Key('apply_param_row_${entry.key}'),
               field: entry.key,
               value: entry.value,
               def: defByName[entry.key],
+              editable:
+                  canEdit &&
+                  (defByName[entry.key]?.stOverridable ?? false) &&
+                  (boxSchema?.supports(entry.key) ?? true),
+              unsupportedLabel: boxSchema?.supports(entry.key) ?? true
+                  ? null
+                  : boxSchema!.unsupportedLabel,
               error: errors[entry.key],
               enabled: enabled,
               onChanged: (v) => onChanged(entry.key, v),
             ),
-          ],
         ],
       ),
     );
@@ -430,14 +528,20 @@ class _ParamRow extends StatefulWidget {
     required this.field,
     required this.value,
     required this.def,
+    required this.editable,
+    this.unsupportedLabel,
     required this.error,
     required this.enabled,
     required this.onChanged,
   });
 
   final String field;
+
+  /// firmware บนกล่องไม่รองรับค่านี้ (v3.76) — บอกเหตุผลแทน "(แก้ไขไม่ได้)"
+  final String? unsupportedLabel;
   final dynamic value;
   final ConfigFieldDefinition? def;
+  final bool editable;
   final String? error;
   final bool enabled;
   final ValueChanged<String> onChanged;
@@ -460,27 +564,25 @@ class _ParamRowState extends State<_ParamRow> {
     widget.onChanged(value);
   }
 
+  static const _valueStyle = TextStyle(
+    fontSize: AppTypography.sm,
+    height: AppTypography.smHeight,
+    color: AppColors.foreground,
+  );
+
   /// ช่องแก้ค่าตามชนิด: boolean = สวิตช์เปิด/ปิด · มีค่าที่อนุญาต = เลือกจากรายการ ·
-  /// อื่นๆ = พิมพ์
+  /// อื่นๆ = พิมพ์ (error ของช่องขึ้นใต้ช่องทันทีที่พิมพ์)
   Widget _input(ConfigFieldDefinition? def) {
     final key = Key('apply_param_${widget.field}');
     if (def?.dataType == 'boolean') {
       final on = _choice == 'true';
       return Row(
         children: [
+          Expanded(child: Text(on ? 'เปิด' : 'ปิด', style: _valueStyle)),
           Switch(
             key: key,
             value: on,
             onChanged: widget.enabled ? (v) => _choose('$v') : null,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            on ? 'เปิด' : 'ปิด',
-            style: const TextStyle(
-              fontSize: AppTypography.sm,
-              height: AppTypography.smHeight,
-              color: AppColors.foreground,
-            ),
           ),
         ],
       );
@@ -492,7 +594,6 @@ class _ParamRowState extends State<_ParamRow> {
         initialValue: allowed.contains(_choice) ? _choice : null,
         isExpanded: true,
         decoration: const InputDecoration(
-          isDense: true,
           filled: true,
           fillColor: AppColors.card,
         ),
@@ -512,10 +613,12 @@ class _ParamRowState extends State<_ParamRow> {
       enabled: widget.enabled,
       obscureText: def?.sensitive != false,
       onChanged: widget.onChanged,
-      decoration: const InputDecoration(
-        isDense: true,
+      decoration: InputDecoration(
         filled: true,
         fillColor: AppColors.card,
+        // ข้อความ error แยกไว้ใต้ช่อง (มี key ให้เทสต์) — ตรงนี้แค่ทำขอบเป็นสีแดง
+        errorText: widget.error == null ? null : '',
+        errorStyle: const TextStyle(height: 0, fontSize: 0),
       ),
     );
   }
@@ -529,74 +632,71 @@ class _ParamRowState extends State<_ParamRow> {
   @override
   Widget build(BuildContext context) {
     final def = widget.def;
-    final editable = def?.stOverridable ?? false;
     final label = def?.description?.trim();
     const muted = TextStyle(
       fontSize: AppTypography.xs,
       height: AppTypography.xsHeight,
       color: AppColors.mutedForeground,
     );
-    final name = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (label != null && label.isNotEmpty)
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: AppTypography.sm,
-              height: AppTypography.smHeight,
-              fontWeight: FontWeight.w500,
-              color: AppColors.foreground,
+    final readOnlyValue = def?.sensitive != false
+        ? '••••'
+        : def?.dataType == 'boolean' && widget.value is bool
+        ? (widget.value as bool ? 'เปิด' : 'ปิด')
+        : configValueToInput(widget.value);
+    final error = widget.error;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (label != null && label.isNotEmpty)
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: AppTypography.sm,
+                height: AppTypography.smHeight,
+                fontWeight: FontWeight.w600,
+                color: AppColors.foreground,
+              ),
             ),
+          Text(
+            widget.field,
+            style: muted.copyWith(fontFamily: AppTypography.monoFamily),
           ),
-        Text(
-          widget.field,
-          style: muted.copyWith(fontFamily: AppTypography.monoFamily),
-        ),
-      ],
-    );
-    final Widget value = editable
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _input(def),
-              if (widget.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    widget.error!,
-                    key: Key('apply_param_error_${widget.field}'),
-                    style: muted.copyWith(color: AppColors.destructive),
+          const SizedBox(height: 8),
+          if (widget.editable) ...[
+            _input(def),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  error,
+                  key: Key('apply_param_error_${widget.field}'),
+                  style: muted.copyWith(
+                    color: AppColors.destructive,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-            ],
-          )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                def?.sensitive != false
-                    ? '••••'
-                    : def?.dataType == 'boolean' && widget.value is bool
-                    ? (widget.value as bool ? 'เปิด' : 'ปิด')
-                    : configValueToInput(widget.value),
-                style: muted.copyWith(
-                  fontFamily: AppTypography.monoFamily,
-                  color: AppColors.foreground,
-                ),
               ),
-              const SizedBox(height: 2),
-              const Text('(แก้ไขไม่ได้)', style: muted),
-            ],
-          );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(flex: 2, child: name),
-          const SizedBox(width: 8),
-          Expanded(flex: 3, child: value),
+          ] else
+            Wrap(
+              spacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  readOnlyValue,
+                  style: _valueStyle.copyWith(color: AppColors.mutedForeground),
+                ),
+                if (widget.unsupportedLabel case final label?)
+                  Text(
+                    label,
+                    key: Key('apply_param_unsupported_${widget.field}'),
+                    style: muted.copyWith(color: AppColors.destructive),
+                  )
+                else
+                  const Text('(แก้ไขไม่ได้)', style: muted),
+              ],
+            ),
         ],
       ),
     );

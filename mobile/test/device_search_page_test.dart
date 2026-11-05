@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:mobile/core/theme/app_tokens.dart';
+import 'package:mobile/core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -142,6 +145,67 @@ Future<void> _pumpRouted(
 }
 
 void main() {
+  setUpAll(() async {
+    final font = FontLoader(AppTypography.fontFamily)
+      ..addFont(rootBundle.load('assets/fonts/Anuphan[wght].ttf'));
+    await font.load();
+  });
+
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('r4 จอเล็กมีแถบระบบ คำกรองยาว ${scale}x ยังเลือกและล้างได้', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3;
+      tester.view.viewPadding = const FakeViewPadding(top: 72, bottom: 72);
+      tester.view.padding = const FakeViewPadding(top: 72, bottom: 72);
+      addTearDown(tester.view.reset);
+      const model = 'ESP32-DEVKIT-V1-รุ่นทดสอบสำหรับหน้างาน';
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            deviceSearchRepositoryProvider.overrideWithValue(
+              _FakeDeviceSearchRepository(
+                devices: [_device(deviceModel: model)],
+              ),
+            ),
+            starredDeviceStoreProvider.overrideWithValue(_MemoryStarStore()),
+            authControllerProvider.overrideWith(() => _LoggedIn('st.test')),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.v2(),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: child!,
+            ),
+            home: const Scaffold(
+              body: DeviceSearchPage(),
+              bottomNavigationBar: SizedBox(height: 100),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('ค้นหาอุปกรณ์'), findsOneWidget);
+      expect(find.byKey(const Key('app_ink_header')), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('device_filter_model')));
+      await tester.tap(find.byKey(const Key('device_filter_model')));
+      await tester.pumpAndSettle();
+      final option = find.byKey(const Key('device_filter_option_$model'));
+      await tester.ensureVisible(option);
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.byKey(const Key('device_filter_clear')));
+      await tester.tap(find.byKey(const Key('device_filter_clear')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   group('ติดดาวอุปกรณ์', () {
     final devices = [
       _device(deviceId: 'BOX-0001', simNumber: '0811111111'),

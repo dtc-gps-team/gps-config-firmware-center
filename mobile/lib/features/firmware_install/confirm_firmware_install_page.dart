@@ -8,16 +8,19 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_bottom_action_bar.dart';
+import '../../core/ui/app_card.dart';
 import '../../core/ui/app_field_label.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_role_locked_view.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
-import '../device_search/device_header_meta.dart';
 import '../device_search/device_search_repository.dart';
 import '../device_search/device_status_repository.dart';
 import '../firmware_override/firmware_override_repository.dart';
+import '../task/apply_mode_provider.dart';
 import 'confirm_firmware_install_repository.dart';
 
 String _formatDateTime(DateTime dt) {
@@ -122,65 +125,105 @@ class _ConfirmFirmwareInstallPageState
 
   @override
   Widget build(BuildContext context) {
-    final deviceAsync = ref.watch(deviceDetailProvider(widget.deviceId));
-    final firmwareAsync = ref.watch(firmwareListProvider);
+    final auth = ref.watch(authControllerProvider);
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    final canConfirm = auth.role == UserRole.st || auth.role == UserRole.ot;
+    final locked = !rolePending && !canConfirm;
+    final modeAsync = rolePending || locked
+        ? null
+        : ref.watch(centralApplyModeProvider);
+    final modePending = modeAsync?.isLoading ?? false;
+    final central = modeAsync?.valueOrNull ?? false;
+    final deviceAsync = rolePending || locked || modePending || central
+        ? null
+        : ref.watch(deviceDetailProvider(widget.deviceId));
+    final firmwareAsync = rolePending || locked || modePending || central
+        ? null
+        : ref.watch(firmwareListProvider);
     final navigator = Navigator.of(context);
+    final device = deviceAsync?.valueOrNull;
+    final firmware = firmwareAsync?.valueOrNull;
+    final showActions =
+        !rolePending &&
+        !locked &&
+        !modePending &&
+        !central &&
+        device != null &&
+        firmware != null;
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (rolePending || modePending)
+              const Expanded(child: AppDetailSkeleton(lines: 6))
+            else if (locked)
+              const Expanded(child: AppRoleLockedView())
+            else ...[
+              AppInkHeader(
                 title: 'ยืนยันติดตั้ง Firmware',
+                subtitle: widget.deviceId,
                 onBack: navigator.canPop() ? navigator.pop : null,
-                description:
-                    'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกว่ามีการ'
-                    'ยืนยัน (Audit Log) ไม่ได้ส่งอะไรไปที่อุปกรณ์',
-                meta: deviceHeaderMeta(deviceAsync.valueOrNull),
               ),
-              Expanded(
-                child: deviceAsync.when(
-                  loading: () => const AppDetailSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              if (central)
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: AppNotice(
+                      key: Key('firmware_confirm_central_locked'),
+                      tone: AppBadgeTone.warning,
+                      child: Text(
+                        'โหมดส่งผ่าน Server กลางไม่รองรับการยืนยันติดตั้งแบบเดิม '
+                        'ให้ทำรายการจากคำขอในหน้างาน',
+                      ),
+                    ),
                   ),
-                  error: (error, _) => AppErrorView(
-                    message: error is ApiException
-                        ? error.message
-                        : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
-                    messageKey: const Key('confirm_firmware_load_error'),
-                    retryKey: const Key('confirm_firmware_load_retry'),
-                    onRetry: () {
-                      ref.invalidate(deviceDetailProvider(widget.deviceId));
-                      ref.invalidate(firmwareListProvider);
-                    },
-                  ),
-                  data: (device) => firmwareAsync.when(
+                )
+              else
+                Expanded(
+                  child: deviceAsync!.when(
                     loading: () => const AppDetailSkeleton(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                     ),
                     error: (error, _) => AppErrorView(
                       message: error is ApiException
                           ? error.message
-                          : 'โหลดรายการ Firmware ไม่สำเร็จ',
+                          : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
                       messageKey: const Key('confirm_firmware_load_error'),
                       retryKey: const Key('confirm_firmware_load_retry'),
-                      onRetry: () => ref.invalidate(firmwareListProvider),
+                      onRetry: () {
+                        ref.invalidate(deviceDetailProvider(widget.deviceId));
+                        ref.invalidate(firmwareListProvider);
+                      },
                     ),
-                    data: (all) => _buildForm(device, all),
+                    data: (device) => firmwareAsync!.when(
+                      loading: () => const AppDetailSkeleton(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      ),
+                      error: (error, _) => AppErrorView(
+                        message: error is ApiException
+                            ? error.message
+                            : 'โหลดรายการ Firmware ไม่สำเร็จ',
+                        messageKey: const Key('confirm_firmware_load_error'),
+                        retryKey: const Key('confirm_firmware_load_retry'),
+                        onRetry: () => ref.invalidate(firmwareListProvider),
+                      ),
+                      data: (all) => _buildForm(device, all),
+                    ),
                   ),
                 ),
-              ),
             ],
-          ),
+          ],
         ),
+        bottomNavigationBar: showActions
+            ? _buildActionBar(device, firmware)
+            : null,
       ),
     );
   }
 
   Widget _buildForm(Device device, List<Firmware> all) {
-    final isSt = ref.watch(authControllerProvider).role == UserRole.st;
     final options = all
         .where((f) => f.isInstallableOn(device.deviceModel))
         .toList(growable: false);
@@ -189,6 +232,14 @@ class _ConfirmFirmwareInstallPageState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
+        const AppNotice(
+          key: Key('confirm_firmware_notice'),
+          tone: AppBadgeTone.neutral,
+          child: Text(
+            'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกการยืนยันลง Audit Log ไม่ได้ส่งอะไรไปที่อุปกรณ์',
+          ),
+        ),
+        const SizedBox(height: 16),
         const AppFieldLabel('Firmware ที่ติดตั้งแล้ว'),
         if (options.isEmpty)
           const AppNotice(
@@ -200,33 +251,72 @@ class _ConfirmFirmwareInstallPageState
             ),
           )
         else
-          DropdownButtonFormField<String>(
-            key: const Key('confirm_firmware_select'),
-            initialValue: _selectedFirmwareId,
-            isExpanded: true,
-            hint: const Text('เลือก Firmware'),
-            decoration: const InputDecoration(
-              filled: true,
-              fillColor: AppColors.card,
-            ),
-            items: [
-              for (final f in options)
-                DropdownMenuItem(
-                  value: f.id,
-                  child: Text(
-                    f.originalFilename.isEmpty
-                        ? 'v${f.version}'
-                        : 'v${f.version} · ${f.originalFilename}',
-                    overflow: TextOverflow.ellipsis,
+          RadioGroup<String>(
+            groupValue: _selectedFirmwareId,
+            onChanged: (value) => setState(() => _selectedFirmwareId = value),
+            child: Column(
+              children: [
+                for (final firmware in options)
+                  AppCard(
+                    key: Key('confirm_firmware_option_${firmware.id}'),
+                    highlighted: _selectedFirmwareId == firmware.id,
+                    onTap: done || _submitting
+                        ? null
+                        : () =>
+                              setState(() => _selectedFirmwareId = firmware.id),
+                    size: AppCardSize.small,
+                    child: Row(
+                      children: [
+                        Radio<String>(
+                          value: firmware.id,
+                          enabled: !done && !_submitting,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                firmware.originalFilename.isEmpty
+                                    ? 'Firmware v${firmware.version}'
+                                    : 'Firmware v${firmware.version} · '
+                                          '${firmware.originalFilename}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.foreground,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'รองรับรุ่นอุปกรณ์ · ผ่านการอนุมัติแล้ว',
+                                style: TextStyle(
+                                  fontSize: AppTypography.xs,
+                                  height: AppTypography.xsHeight,
+                                  color: AppColors.mutedForeground,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-            ],
-            onChanged: (done || _submitting)
-                ? null
-                : (v) => setState(() => _selectedFirmwareId = v),
+              ],
+            ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildActionBar(Device device, List<Firmware> all) {
+    final isSt = ref.watch(authControllerProvider).role == UserRole.st;
+    final options = all
+        .where((f) => f.isInstallableOn(device.deviceModel))
+        .toList(growable: false);
+    final done = _result != null;
+    return AppBottomActionBar(
+      children: [
         if (_error != null) ...[
-          const SizedBox(height: 12),
           AppNotice(
             key: const Key('confirm_firmware_error'),
             tone: AppBadgeTone.danger,
@@ -241,10 +331,6 @@ class _ConfirmFirmwareInstallPageState
                     'ของเครื่องนี้ (หรือ override เดิมถูกใช้ไปแล้ว) — ต้องขอ '
                     'Firmware Override และรอ Operation อนุมัติก่อน',
                     key: Key('confirm_firmware_gate_hint'),
-                    style: TextStyle(
-                      fontSize: AppTypography.xs,
-                      height: AppTypography.xsHeight,
-                    ),
                   ),
                   if (isSt) ...[
                     const SizedBox(height: 8),
@@ -261,9 +347,9 @@ class _ConfirmFirmwareInstallPageState
               ],
             ),
           ),
+          const SizedBox(height: 8),
         ],
         if (_result != null) ...[
-          const SizedBox(height: 12),
           AppNotice(
             key: const Key('confirm_firmware_success'),
             tone: AppBadgeTone.success,
@@ -278,23 +364,13 @@ class _ConfirmFirmwareInstallPageState
               ],
             ),
           ),
+          const SizedBox(height: 8),
         ],
-        const SizedBox(height: 16),
-        FilledButton(
-          key: const Key('confirm_firmware_submit'),
-          onPressed: (_submitting || done || options.isEmpty) ? null : _confirm,
-          child: _submitting
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      AppColors.primaryForeground,
-                    ),
-                  ),
-                )
-              : const Text('ยืนยันติดตั้ง Firmware'),
+        AppSubmitButton(
+          buttonKey: const Key('confirm_firmware_submit'),
+          label: 'ยืนยันการติดตั้ง',
+          submitting: _submitting,
+          onPressed: done || options.isEmpty ? null : _confirm,
         ),
       ],
     );

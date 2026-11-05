@@ -11,8 +11,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
-import 'package:mobile/core/ui/app_skeleton.dart';
-import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/home/home_tasks_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 // หน้า "งานของฉัน" (`/tasks`) ถูกรวมเข้าหน้าแรก (docs/22 §7.2, มติ B ข้อ 12) —
@@ -75,6 +74,9 @@ Future<void> _pump(
   Set<String> pendingIds = const {},
   bool authExpired = false,
 }) async {
+  tester.view.physicalSize = const Size(430 * 3, 1600 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -97,7 +99,7 @@ Future<void> _pump(
           InMemorySessionProfileStore(),
         ),
       ],
-      child: const MaterialApp(home: HomePage()),
+      child: const MaterialApp(home: HomeTasksPage()),
     ),
   );
   await tester.pump(); // resolve listTasks
@@ -110,7 +112,7 @@ Future<void> _pumpRouted(
   final router = GoRouter(
     initialLocation: AppRoutes.home,
     routes: [
-      GoRoute(path: AppRoutes.home, builder: (_, _) => const HomePage()),
+      GoRoute(path: AppRoutes.home, builder: (_, _) => const HomeTasksPage()),
       GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (_, state) => Scaffold(
@@ -119,6 +121,9 @@ Future<void> _pumpRouted(
       ),
     ],
   );
+  tester.view.physicalSize = const Size(430 * 3, 1600 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -147,152 +152,96 @@ Future<void> _pumpRouted(
 }
 
 void main() {
-  testWidgets(
-    'กำลังโหลดครั้งแรก -> โชว์ skeleton (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
-    'skeleton หายไปเหลือแต่การ์ดจริง',
-    (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
-            pendingTaskIdsProvider.overrideWith(
-              (ref) => Stream.value(const <String>{}),
-            ),
-            failedSyncActionsProvider.overrideWith(
-              (ref) => Stream.value(const <PendingActionRow>[]),
-            ),
-            authControllerProvider.overrideWith(
-              () => _FakeAuthController(UserRole.st),
-            ),
-            tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
-            sessionProfileStoreProvider.overrideWithValue(
-              InMemorySessionProfileStore(),
-            ),
-          ],
-          child: const MaterialApp(home: HomePage()),
-        ),
-      );
+  for (final role in [
+    UserRole.operation,
+    UserRole.admin,
+    UserRole.auditor,
+    null,
+  ]) {
+    testWidgets('รายการเต็มไม่เรียกข้อมูลเมื่อไม่ใช่ช่าง: $role', (
+      tester,
+    ) async {
+      final repo = _FakeTaskRepository();
+      await _pump(tester, repo: repo, role: role);
+      expect(repo.listCalls, 0);
+      expect(find.byKey(const Key('home_tasks_search')), findsNothing);
+    });
+  }
 
-      expect(find.byType(AppListSkeleton), findsWidgets);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-
-      await tester.pump(); // resolve listTasks
-      expect(find.byType(AppListSkeleton), findsNothing);
-    },
-  );
-
-  testWidgets('loading -> list งานจาก repository', (tester) async {
+  testWidgets('กรองครบทุกสถานะ และล้างกลับเป็นทั้งหมด', (tester) async {
     await _pump(
       tester,
       repo: _FakeTaskRepository(
         tasks: [
-          _task(id: 't1', title: 'ติดตั้งกล่อง GPS รถบรรทุก'),
-          _task(id: 't2', title: 'ตรวจเช็คสัญญาณ', deviceId: null),
+          _task(id: 'p', status: TaskStatus.pending),
+          _task(id: 'i', status: TaskStatus.inProgress),
+          _task(id: 'c', status: TaskStatus.completed),
+          _task(id: 'x', status: TaskStatus.cancelled),
         ],
       ),
     );
-
-    expect(find.text('ติดตั้งกล่อง GPS รถบรรทุก'), findsOneWidget);
-    expect(find.text('ตรวจเช็คสัญญาณ'), findsOneWidget);
-    expect(find.text('อุปกรณ์: DVC-1'), findsOneWidget);
-    expect(find.text('อุปกรณ์: -'), findsOneWidget);
-    expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
-    expect(find.byKey(const Key('my_task_card_1')), findsOneWidget);
+    for (final (filter, count) in [
+      ('open', 2),
+      ('completed', 1),
+      ('cancelled', 1),
+      ('all', 4),
+    ]) {
+      await tester.tap(find.byKey(Key('home_filter_$filter')));
+      await tester.pumpAndSettle();
+      expect(find.text('พบ $count รายการ'), findsOneWidget);
+    }
   });
 
-  testWidgets('การ์ดงานแสดง dueDate เมื่อมีค่า, "—" เมื่อไม่มี', (
+  testWidgets('ตัวกรอง 4 ตัวเรียงแถวเดียวบนจอ 360 ไม่ล้น', (tester) async {
+    await _pump(tester, repo: _FakeTaskRepository());
+    tester.view.physicalSize = const Size(360 * 3, 800 * 3);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('home_filter_row')), findsOneWidget);
+    final tops = {
+      for (final name in ['all', 'open', 'completed', 'cancelled'])
+        tester.getTopLeft(find.byKey(Key('home_filter_$name'))).dy,
+    };
+    expect(tops, hasLength(1));
+  });
+
+  testWidgets('งานยังไม่เสร็จเรียงความเร่งด่วนเดิมและป้ายถูกต้อง', (
     tester,
   ) async {
+    final now = DateTime.now();
     await _pump(
       tester,
       repo: _FakeTaskRepository(
         tasks: [
-          _task(id: 't1', dueDate: DateTime(2026, 9, 10)),
-          _task(id: 't2', dueDate: null),
+          _task(
+            id: 'normal',
+            title: 'งานปกติ',
+            dueDate: now.add(const Duration(days: 9)),
+          ),
+          _task(id: 'soon', title: 'ใกล้กำหนด', dueDate: now),
+          _task(
+            id: 'overdue',
+            title: 'เลยกำหนดแล้ว',
+            dueDate: now.subtract(const Duration(days: 2)),
+          ),
         ],
       ),
     );
-
-    expect(find.text('กำหนดส่ง: 10/09/2026'), findsOneWidget);
-    expect(find.text('กำหนดส่ง: -'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('home_filter_open')));
+    await tester.pumpAndSettle();
+    final card = find.byKey(const Key('home_all_overdue'));
+    await tester.ensureVisible(card);
+    expect(
+      find.descendant(of: card, matching: find.text('เลยกำหนด')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(card).dy,
+      lessThan(tester.getTopLeft(find.byKey(const Key('home_all_soon'))).dy),
+    );
+    expect(find.textContaining('กำหนดส่ง:'), findsNothing);
   });
-
-  testWidgets(
-    'เรียงงานเลยกำหนด/ใกล้ถึงกำหนดไว้บนสุด (Mobile UI Roadmap Phase 1)',
-    (tester) async {
-      final now = DateTime.now();
-      final normalTask = _task(id: 't1', title: 'งานปกติ ยังอีกนาน');
-      final overdueTask = _task(
-        id: 't2',
-        title: 'งานเลยกำหนดแล้ว',
-        dueDate: now.subtract(const Duration(days: 2)),
-      );
-      final dueSoonTask = _task(
-        id: 't3',
-        title: 'งานใกล้ถึงกำหนด',
-        status: TaskStatus.inProgress,
-        dueDate: now.add(const Duration(hours: 3)),
-      );
-
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          tasks: [normalTask, overdueTask, dueSoonTask],
-        ),
-      );
-
-      // ลำดับการ์ดต้องเป็น overdue -> dueSoon -> ปกติ ไม่ใช่ลำดับที่ backend ส่งมา
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('my_task_card_0')),
-          matching: find.text('งานเลยกำหนดแล้ว'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('my_task_card_1')),
-          matching: find.text('งานใกล้ถึงกำหนด'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('my_task_card_2')),
-          matching: find.text('งานปกติ ยังอีกนาน'),
-        ),
-        findsOneWidget,
-      );
-    },
-  );
-
-  testWidgets(
-    'งานเลยกำหนด/ใกล้ถึงกำหนด -> มี indicator ป้าย "เลยกำหนด"/"ใกล้ถึงกำหนด"',
-    (tester) async {
-      final now = DateTime.now();
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          tasks: [
-            _task(
-              id: 't1',
-              title: 'งานเลยกำหนด',
-              dueDate: now.subtract(const Duration(days: 1)),
-            ),
-            _task(
-              id: 't2',
-              title: 'งานปกติ',
-              dueDate: now.add(const Duration(days: 30)),
-            ),
-          ],
-        ),
-      );
-
-      expect(find.text('เลยกำหนด'), findsOneWidget);
-      // งานปกติไม่มีป้ายเร่งด่วนติดมาด้วย
-      expect(find.text('ใกล้ถึงกำหนด'), findsNothing);
-    },
-  );
 
   testWidgets('task ที่ค้างในคิว -> badge "รอซิงค์" เฉพาะใบนั้น', (
     tester,
@@ -311,7 +260,7 @@ void main() {
     expect(find.byKey(const Key('pending_sync_badge')), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byKey(const Key('my_task_card_1')),
+        of: find.byKey(const Key('home_all_t2')),
         matching: find.byKey(const Key('pending_sync_badge')),
       ),
       findsOneWidget,
@@ -351,8 +300,8 @@ void main() {
   testWidgets('ไม่มีงาน -> empty state', (tester) async {
     await _pump(tester, repo: _FakeTaskRepository(tasks: const []));
 
-    expect(find.byKey(const Key('my_tasks_empty')), findsOneWidget);
-    expect(find.text('ยังไม่มีงานที่ได้รับมอบหมาย'), findsOneWidget);
+    expect(find.byKey(const Key('home_all_empty')), findsOneWidget);
+    expect(find.text('ไม่มีรายการในตัวกรองนี้'), findsOneWidget);
   });
 
   testWidgets('error -> error card + ปุ่มลองอีกครั้ง (แล้วกดยิงซ้ำ)', (
@@ -379,7 +328,8 @@ void main() {
       repo: _FakeTaskRepository(tasks: [_task(id: 't9')]),
     );
 
-    await tester.tap(find.byKey(const Key('my_task_card_0')));
+    await tester.ensureVisible(find.byKey(const Key('home_all_t9')));
+    await tester.tap(find.byKey(const Key('home_all_t9')));
     await tester.pumpAndSettle();
 
     expect(find.text('TASK_DETAIL_STUB t9'), findsOneWidget);
@@ -391,7 +341,7 @@ void main() {
     expect(repo.listCalls, 1);
 
     await tester.fling(
-      find.byKey(const Key('my_task_card_0')),
+      find.byType(Scrollable).first,
       const Offset(0, 400),
       1000,
     );

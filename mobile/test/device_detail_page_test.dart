@@ -11,6 +11,8 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/ui/app_info_row.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/features/device_search/device_history_repository.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_central_repository.dart';
@@ -166,6 +168,8 @@ Future<void> _pump(
   FieldTaskRepository? fieldTaskRepo,
   bool centralMode = false,
   DeviceCentralRepository? centralRepo,
+  DeviceHistoryResult? history,
+  DeviceApplyOptions? applyOptions,
 }) async {
   // หน้านี้ยาวขึ้นหลังเพิ่ม section "ข้อมูลอุปกรณ์"/"ลูกค้า" — ใช้จอสูงพอให้
   // ListView สร้างทุก section (สถานะ Config/Firmware, ปุ่มด้านล่าง) ได้ในเทสต์
@@ -193,6 +197,19 @@ Future<void> _pump(
           centralRepo ??
               _FakeCentralRepository(const DeviceCentral(reachable: false)),
         ),
+        // R4-04 — การ์ดสถานะเครื่องใช้ summary ของประวัติ · คำขอค้างจาก apply-options
+        deviceHistoryProvider.overrideWith(
+          (ref, _) async => history ?? const DeviceHistoryResult(items: []),
+        ),
+        deviceApplyOptionsProvider.overrideWith(
+          (ref, id) async =>
+              applyOptions ??
+              DeviceApplyOptions(
+                deviceId: id,
+                deviceInstalled: true,
+                configs: const [],
+              ),
+        ),
       ],
       child: router == null
           ? MaterialApp(home: DeviceDetailPage(deviceId: deviceId))
@@ -214,6 +231,7 @@ Finder _rowValue(String label, String value) => find.descendant(
 void main() {
   _statusTests();
   _pendingConfigOverrideTests();
+  _r4Tests();
 
   // ผลตรวจ #304 — backend ส่ง imei/serialNumber/blackboxId/customer มาแล้ว และ
   // Web แสดงแล้ว แต่ Mobile ยังไม่แสดง
@@ -277,8 +295,8 @@ void main() {
     expect(find.text('0812345678'), findsOneWidget);
     expect(find.text('GT06N'), findsOneWidget);
     expect(find.text('TCP'), findsOneWidget);
-    // ป้ายสถานะเครื่องบนหัวหน้าจอ (docs/22 §6.1 — Installed ตาม Web)
-    expect(find.text('Installed'), findsOneWidget);
+    // R4-04 — สถานะเครื่องเป็นคำไทยในการ์ด "สถานะเครื่อง" (ภาพ r4)
+    expect(_rowValue('สถานะ', 'ติดตั้งแล้ว'), findsOneWidget);
     expect(find.text('01/06/2026 09:00'), findsOneWidget); // registeredAt
     expect(find.text('03/06/2026 14:30'), findsOneWidget); // installedAt
   });
@@ -301,7 +319,7 @@ void main() {
     );
 
     expect(find.text('DEV-0092'), findsOneWidget);
-    expect(find.text('Registered'), findsOneWidget);
+    expect(_rowValue('สถานะ', 'ลงทะเบียนแล้ว ยังไม่ติดตั้ง'), findsOneWidget);
     expect(_rowValue('ติดตั้งเมื่อ', '-'), findsOneWidget);
   });
 
@@ -707,12 +725,12 @@ void _statusTests() {
 
     group('การเชื่อมต่อ (ออนไลน์/ออฟไลน์)', () {
       testWidgets(
-        'ไม่เคยติดต่อ + Server กลางไม่รู้จัก -> "ยังไม่เคยติดต่อ" (ไม่บอกว่าออฟไลน์)',
+        'ไม่เคยติดต่อ + Server กลางไม่รู้จัก -> "ไม่ทราบ" (ไม่บอกว่าออฟไลน์)',
         (tester) async {
           await _pump(tester, repo: _FakeDeviceSearchRepository());
           await tester.pump();
 
-          expect(_rowValue('การเชื่อมต่อ', 'ยังไม่เคยติดต่อ'), findsOneWidget);
+          expect(_rowValue('การเชื่อมต่อ', 'ไม่ทราบ'), findsOneWidget);
           expect(_rowValue('ติดต่อล่าสุด', '-'), findsOneWidget);
           expect(find.text('Firmware ในกล่อง'), findsNothing);
           expect(onlineTone(tester), AppBadgeTone.neutral);
@@ -739,7 +757,12 @@ void _statusTests() {
         expect(onlineTone(tester), AppBadgeTone.success);
         // ป้ายอยู่บรรทัดเดียวกับชื่อแถว ชิดขวา เหมือนแถวสถานะ Config/Firmware
         final label = tester.getRect(find.text('การเชื่อมต่อ'));
-        final badge = tester.getRect(find.text('ออนไลน์'));
+        final badge = tester.getRect(
+          find.descendant(
+            of: find.byKey(const Key('device_online_row')),
+            matching: find.text('ออนไลน์'),
+          ),
+        );
         expect((badge.center.dy - label.center.dy).abs(), lessThan(8));
         expect(badge.left, greaterThan(label.right));
       });
@@ -1135,7 +1158,7 @@ void _pendingConfigOverrideTests() {
     );
 
     testWidgets(
-      'มีงานเปิดอยู่แล้ว -> ปุ่มเป็น "ไปที่งาน" แตะแล้วไปงานนั้นโดยไม่เรียก start',
+      'มีงานเปิดอยู่แล้ว -> ปุ่มเป็น "รายละเอียดงาน" แตะแล้วไปงานนั้นโดยไม่เรียก start',
       (tester) async {
         String? opened;
         final router = routerWith((path) => opened = path);
@@ -1159,7 +1182,7 @@ void _pendingConfigOverrideTests() {
         );
         await tester.pump();
 
-        expect(find.text('ไปที่งาน'), findsOneWidget);
+        expect(find.text('รายละเอียดงาน'), findsOneWidget);
         await tester.tap(find.byKey(const Key('device_detail_start_task')));
         await tester.pumpAndSettle();
 
@@ -1167,5 +1190,292 @@ void _pendingConfigOverrideTests() {
         expect(opened, '/tasks/t-open');
       },
     );
+  });
+}
+
+/// R4-04 (docs/29 · ภาพ r4 0175–0264) — การ์ดสถานะเครื่อง คำเตือน ปุ่มตามสิทธิ์ และทางลัด
+void _r4Tests() {
+  group('R4-04 หน้าอุปกรณ์ตามภาพ r4', () {
+    Finder card(String label, String value) => find.descendant(
+      of: find.byKey(const Key('device_detail_status_card')),
+      matching: _rowValue(label, value),
+    );
+
+    GoRouter routerWith(String pattern, void Function(GoRouterState) onOpen) {
+      final router = GoRouter(
+        initialLocation: AppRoutes.deviceDetail('DEV-0117'),
+        routes: [
+          GoRoute(
+            path: AppRoutes.deviceDetailPattern,
+            builder: (_, state) =>
+                DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+          ),
+          GoRoute(
+            path: pattern,
+            builder: (_, state) {
+              onOpen(state);
+              return const Text('NEXT_PAGE');
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      return router;
+    }
+
+    testWidgets('หัวพื้นเข้มบอกเลขเครื่อง รุ่น และซิม', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.st,
+      );
+      await tester.pump();
+      final header = find.byKey(const Key('app_ink_header'));
+      expect(
+        find.descendant(of: header, matching: find.text('DEV-0117')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.text('GT06N · ซิม 0812345678'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'Config ปัจจุบันจาก summary ของประวัติ · Firmware ใช้ค่าที่กล่องรายงานก่อน',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          history: const DeviceHistoryResult(
+            items: [],
+            currentConfigName: 'ส่งพิกัดทุก 15 วินาที',
+            currentFirmwareVersion: '1.1.0',
+          ),
+          centralRepo: _FakeCentralRepository(
+            const DeviceCentral(
+              reachable: true,
+              device: CentralDeviceInfo(
+                online: true,
+                reportedFirmwareVersion: '1.2.0',
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(
+          card('Config ปัจจุบัน', 'ส่งพิกัดทุก 15 วินาที'),
+          findsOneWidget,
+        );
+        expect(card('Firmware', '1.2.0'), findsOneWidget);
+        expect(card('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Server กลางไม่รู้จัก -> Firmware จาก summary · ไม่มี Config -> —',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          history: const DeviceHistoryResult(
+            items: [],
+            currentFirmwareVersion: '1.1.0',
+          ),
+        );
+        await tester.pump();
+        expect(card('Firmware', '1.1.0'), findsOneWidget);
+        expect(card('Config ปัจจุบัน', '—'), findsOneWidget);
+      },
+    );
+
+    testWidgets('เครื่องยังไม่ติดตั้ง -> เตือน และปุ่มส่งค่า/แก้ค่ากดไม่ได้', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(
+          device: _makeDevice(status: DeviceLifecycleStatus.registered),
+        ),
+        role: UserRole.st,
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const Key('device_detail_not_installed')),
+        findsOneWidget,
+      );
+      final upload = tester.widget<FilledButton>(
+        find.descendant(
+          of: find.byKey(const Key('device_detail_upload')),
+          matching: find.byType(FilledButton),
+        ),
+      );
+      final override = tester.widget<OutlinedButton>(
+        find.descendant(
+          of: find.byKey(const Key('device_detail_config_override')),
+          matching: find.byType(OutlinedButton),
+        ),
+      );
+      expect(upload.onPressed, isNull);
+      expect(override.onPressed, isNull);
+    });
+
+    testWidgets(
+      'คำขอค้างในงานของตัวเอง -> แถบเตือนพร้อมปุ่มเปิดคำขอไปหน้างาน',
+      (tester) async {
+        String? opened;
+        final router = routerWith(
+          AppRoutes.taskDetailPattern,
+          (state) => opened = state.pathParameters['id'],
+        );
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          router: router,
+          applyOptions: const DeviceApplyOptions(
+            deviceId: 'DEV-0117',
+            deviceInstalled: true,
+            configs: [],
+            openRequest: ApplyOptionOpenRequest(
+              kind: FieldApplyKind.config,
+              status: ConfigApplyRequestStatus.pending,
+              configName: 'ส่งพิกัดทุก 15 วินาที',
+              taskId: 't-mine',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('มีคำขอที่ยังไม่จบ'), findsOneWidget);
+        expect(find.textContaining('ในงานของคุณ'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const Key('device_detail_open_request_go')),
+        );
+        await tester.pumpAndSettle();
+        expect(opened, 't-mine');
+      },
+    );
+
+    testWidgets(
+      'central: คำขอแก้ค่าอยู่ในคำขอส่งเข้ากล่อง -> แถบเดียว พร้อมขอแก้/เหตุผล',
+      (tester) async {
+        final overrideRepo = _FakeConfigOverrideRepository()
+          ..pending = _pendingOverride();
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          overrideRepo: overrideRepo,
+          applyOptions: const DeviceApplyOptions(
+            deviceId: 'DEV-0117',
+            deviceInstalled: true,
+            configs: [],
+            openRequest: ApplyOptionOpenRequest(
+              kind: FieldApplyKind.config,
+              status: ConfigApplyRequestStatus.pending,
+              configName: 'ส่งพิกัดทุก 15 วินาที',
+              taskId: 't-mine',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(_pendingBanner), findsNothing);
+        final notice = find.byKey(const Key('device_detail_open_request'));
+        expect(notice, findsOneWidget);
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.textContaining('REPORT_INTERVAL_MOVING'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.textContaining('ลูกค้าขอปรับรอบส่งพิกัด'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('คำขอค้างของช่างคนอื่น -> บอกให้รอ ไม่มีปุ่มเปิดคำขอ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.ot,
+        applyOptions: const DeviceApplyOptions(
+          deviceId: 'DEV-0117',
+          deviceInstalled: true,
+          configs: [],
+          openRequest: ApplyOptionOpenRequest(
+            kind: FieldApplyKind.config,
+            status: ConfigApplyRequestStatus.approved,
+            configName: 'โหมดประหยัดแบตเตอรี่',
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.textContaining('รอผู้ถืองานกดส่ง'), findsOneWidget);
+      expect(find.textContaining('ในงานของช่างคนอื่น'), findsOneWidget);
+      expect(
+        find.byKey(const Key('device_detail_open_request_go')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'Operation -> ดูอย่างเดียว ไม่มีปุ่มส่งค่า มีทางลัด Incidents/ประวัติ',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.operation,
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const Key('device_detail_view_only')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('device_detail_upload')), findsNothing);
+        expect(
+          find.byKey(const Key('device_detail_open_request')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('device_detail_incidents')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('device_detail_history')), findsOneWidget);
+      },
+    );
+
+    testWidgets('ทางลัดประวัติเครื่อง -> หน้าประวัติของเครื่องนี้', (
+      tester,
+    ) async {
+      String? opened;
+      final router = routerWith(
+        AppRoutes.deviceHistoryPattern,
+        (state) => opened = state.pathParameters['deviceId'],
+      );
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.st,
+        router: router,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('device_detail_history')));
+      await tester.pumpAndSettle();
+      expect(opened, 'DEV-0117');
+    });
   });
 }

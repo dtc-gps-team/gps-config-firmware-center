@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
 import 'package:mobile/features/task/apply_config_params_page.dart';
@@ -15,13 +18,28 @@ import 'package:mobile/features/task/task_repository.dart';
 import 'support/fake_config_apply_request_repository.dart';
 import 'support/fake_field_task_repository.dart';
 
+class _FakeAuthController extends AuthController {
+  _FakeAuthController(this._role);
+
+  final UserRole? _role;
+
+  @override
+  AuthState build() => AuthState(status: AuthStatus.authenticated, role: _role);
+}
+
 /// บันทึกคำขอแก้ค่า (Override) จากหน้าเลือก — ใช้แค่ `overrideConfig`
 class _FakeOverrideRepository implements ConfigOverrideRepository {
   int calls = 0;
+
+  /// ค้างคำขอไว้จนกว่าเทสต์จะปล่อย (ตรวจกันกดซ้ำระหว่างส่ง)
+  Completer<void>? gate;
   String? lastDeviceId;
   Map<String, dynamic>? lastFields;
   String? lastReason;
   String? lastConfigId;
+
+  /// ค่าของ `GET /devices/{id}/config` (boxSchema v3.76) — null = โหลดไม่ได้
+  DeviceConfigDraft? currentConfig;
 
   @override
   Future<DeviceConfigOverride> overrideConfig({
@@ -31,6 +49,7 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
     String? configId,
   }) async {
     calls++;
+    await gate?.future;
     lastDeviceId = deviceId;
     lastFields = fields;
     lastReason = reason;
@@ -49,8 +68,8 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
   }
 
   @override
-  Future<DeviceConfigDraft> getCurrentConfig(String deviceId) =>
-      throw UnimplementedError();
+  Future<DeviceConfigDraft> getCurrentConfig(String deviceId) async =>
+      currentConfig ?? (throw UnimplementedError());
 
   @override
   Future<List<ConfigFieldDefinition>> listDefinitions() async => const [
@@ -88,6 +107,20 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
       description: 'เปิดตรวจสอบความเร็วเกิน',
     ),
     ConfigFieldDefinition(
+      id: 'def-speed-max',
+      fieldName: 'speed_limit.max_kmh',
+      dataType: 'integer',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      description: 'ความเร็วสูงสุด',
+      unit: 'km/h',
+      minValue: 20,
+      maxValue: 200,
+    ),
+    ConfigFieldDefinition(
       id: 'def-mode',
       fieldName: 'gps.mode',
       dataType: 'string',
@@ -117,7 +150,11 @@ void main() {
 
   /// เส้นทาง: หน้าแรก → หน้าเลือก (push) → หน้าพารามิเตอร์ → หน้างาน ·
   /// [startAt] = path ของหน้าเลือก
-  Future<GoRouter> pump(WidgetTester tester, {required String startAt}) async {
+  Future<GoRouter> pump(
+    WidgetTester tester, {
+    required String startAt,
+    UserRole? role = UserRole.st,
+  }) async {
     tester.view.physicalSize = const Size(1080, 4000);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
@@ -169,6 +206,7 @@ void main() {
           // ไม่ให้ไปโหลดรายการงานจริง (cache/DB) — หน้านี้แค่ invalidate
           taskListProvider.overrideWith((ref) async => const <Task>[]),
           openTaskForDeviceProvider.overrideWith((ref, _) async => null),
+          authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -368,7 +406,7 @@ void main() {
         await tester.tap(submit);
         await tester.pumpAndSettle();
         expect(overrides.calls, 0);
-        expect(find.text('กรอกเหตุผลที่แก้ค่า'), findsOneWidget);
+        expect(find.text('กรุณากรอกเหตุผลที่แก้ค่า'), findsOneWidget);
 
         await tester.enterText(
           find.byKey(const Key('apply_reason_field')),
@@ -583,9 +621,10 @@ void main() {
         );
         await openFirmwareTab(tester);
 
+        // เวอร์ชันที่รันอยู่อยู่ในรายการ -> บอกด้วยป้าย "ใช้อยู่" ไม่ต้องมีแถบซ้ำ
         expect(
-          find.text('กล่องรัน Firmware v1.2.0 อยู่ตอนนี้'),
-          findsOneWidget,
+          find.byKey(const Key('apply_firmware_current_version')),
+          findsNothing,
         );
         expect(firmware('fw-1.3.0'), findsOneWidget);
         expect(find.byKey(const Key('apply_firmware_current')), findsOneWidget);
@@ -654,6 +693,27 @@ void main() {
         expect(applyRepo.lastCreateFirmwareId, 'fw-1.0.0');
       },
     );
+
+    testWidgets('ระหว่างยืนยันถอยเวอร์ชัน -> ปุ่มถูกปิดจนกว่าจะยืนยัน', (
+      tester,
+    ) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
+      await openFirmwareTab(tester);
+      await tester.tap(firmware('fw-1.0.0'));
+      await tester.pump();
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('confirm_downgrade')), findsOneWidget);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+
+      expect(applyRepo.createCalls, 0);
+
+      await tester.tap(find.byKey(const Key('confirm_downgrade')));
+      await tester.pumpAndSettle();
+      expect(applyRepo.createCalls, 1);
+      expect(applyRepo.lastCreateFirmwareId, 'fw-1.0.0');
+    });
 
     testWidgets('เปิดด้วย ?kind=firmware -> อยู่แท็บ Firmware เลย', (
       tester,
@@ -784,6 +844,353 @@ void main() {
       expect(notice, findsNothing);
       await openParams(tester, 'cfg-1');
       expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+    });
+  });
+
+  /// R4-05 (docs/29 · ภาพ r4 0331–0422, 1259–1276) — หัวพื้นเข้ม ปุ่มหลักติดล่าง
+  /// ตรวจค่าทันทีที่พิมพ์ กันกดซ้ำ และสิทธิ์ตาม role
+  group('R4-05 หน้าเลือกและหน้าพารามิเตอร์ตามภาพ r4', () {
+    final header = find.byKey(const Key('app_ink_header'));
+    final bottomBar = find.byKey(const Key('app_bottom_action_bar'));
+    Finder inHeader(String text) =>
+        find.descendant(of: header, matching: find.text(text));
+
+    setUp(() {
+      applyRepo.options = fakeApplyOptions(
+        configs: const [
+          ApplyOptionConfig(
+            id: 'cfg-1',
+            name: 'BOX ส่งพิกัดทุก 10 วินาที',
+            latestVersion: 1,
+            suggested: true,
+            fields: {'gps.send_interval_sec': 10, 'led.enabled': true},
+          ),
+          ApplyOptionConfig(
+            id: 'cfg-2',
+            name: 'GT06N ลูกค้าพิเศษ',
+            latestVersion: 0,
+            suggested: false,
+          ),
+        ],
+      );
+    });
+
+    testWidgets('หน้าเลือก: แท็บ Config หัวบอก "เลือก Config" และเลขเครื่อง', (
+      tester,
+    ) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      expect(inHeader('เลือก Config'), findsOneWidget);
+      expect(inHeader('DVC-1'), findsOneWidget);
+      // แท็บ Config ไม่มีปุ่มหลัก — แตะการ์ดเพื่อไปต่อ
+      expect(bottomBar, findsNothing);
+    });
+
+    testWidgets(
+      'แท็บ Firmware: ชื่อ "Firmware x.y.z" · ป้ายใช้อยู่ · ขั้นต่อไปบอกอายุคำขอ · ปุ่มขออนุมัติติดล่าง',
+      (tester) async {
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await tester.tap(find.text('Firmware'));
+        await tester.pumpAndSettle();
+
+        expect(inHeader('เลือกสิ่งที่จะส่ง'), findsOneWidget);
+        expect(inHeader('DVC-1 · ส่งได้หนึ่งรายการต่อคำขอ'), findsOneWidget);
+        expect(find.text('Firmware 1.3.0'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('apply_firmware_current')),
+            matching: find.text('ใช้อยู่'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('หมดอายุใน 24 ชม.'), findsOneWidget);
+        expect(
+          find.descendant(of: bottomBar, matching: submit),
+          findsOneWidget,
+        );
+        expect(find.text('ขออนุมัติ'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'เวอร์ชันที่กล่องรันไม่อยู่ในรายการ -> ยังบอกเวอร์ชันที่รันอยู่',
+      (tester) async {
+        applyRepo.options = fakeApplyOptions(
+          currentFirmwareVersion: '0.9.0',
+          firmwares: const [
+            ApplyOptionFirmware(id: 'fw-1.3.0', version: '1.3.0'),
+          ],
+        );
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await tester.tap(find.text('Firmware'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('กล่องรัน Firmware v0.9.0 อยู่ตอนนี้'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'หน้าพารามิเตอร์: หัวบอกชื่อ Config + เลขเครื่อง · เวอร์ชัน · ปุ่มส่งติดล่าง',
+      (tester) async {
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await openParams(tester, 'cfg-2');
+
+        expect(inHeader('GT06N ลูกค้าพิเศษ'), findsOneWidget);
+        expect(
+          find.descendant(of: bottomBar, matching: submit),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      // มติล็อก r4: ข้อยกเว้นภาพ 1272 — ปุ่มไม่เทา บอกเหตุผลใต้ช่องหลังกด
+      'ค่าผิดชนิด -> ปุ่มยังกดได้ กดแล้วบอกที่ช่อง ไม่ส่ง · แก้แล้ว error หาย',
+      (tester) async {
+        applyRepo.options = fakeApplyOptions(
+          configs: const [
+            ApplyOptionConfig(
+              id: 'cfg-1',
+              name: 'BOX ส่งพิกัดทุก 10 วินาที',
+              latestVersion: 4,
+              suggested: true,
+              fields: {'gps.send_interval_sec': 10},
+            ),
+          ],
+        );
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await openParams(tester, 'cfg-1');
+        expect(inHeader('DVC-1 · เวอร์ชัน 4'), findsOneWidget);
+
+        final input = find.byKey(
+          const Key('apply_param_gps.send_interval_sec'),
+        );
+        await tester.enterText(input, 'สิบห้า');
+        await tester.pump();
+        expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+        await tester.tap(submit);
+        await tester.pump();
+        expect(find.text('ต้องเป็นจำนวนเต็ม'), findsOneWidget);
+        expect(overrides.calls, 0);
+
+        await tester.enterText(input, '15');
+        await tester.pump();
+        expect(find.text('ต้องเป็นจำนวนเต็ม'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'ค่าเกินช่วง min/max ของคลัง Parameter -> บอกช่วงที่ช่อง ไม่ส่ง',
+      (tester) async {
+        applyRepo.options = fakeApplyOptions(
+          configs: const [
+            ApplyOptionConfig(
+              id: 'cfg-1',
+              name: 'BOX จำกัดความเร็ว',
+              latestVersion: 1,
+              suggested: true,
+              fields: {'speed_limit.max_kmh': 80},
+            ),
+          ],
+        );
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await openParams(tester, 'cfg-1');
+
+        await tester.enterText(
+          find.byKey(const Key('apply_param_speed_limit.max_kmh')),
+          '500',
+        );
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('apply_reason_field')),
+          'ทดสอบ',
+        );
+        await tester.tap(submit);
+        await tester.pump();
+        expect(find.text('ต้องอยู่ระหว่าง 20–200 km/h'), findsOneWidget);
+        expect(overrides.calls, 0);
+      },
+    );
+
+    testWidgets('ระหว่างส่ง -> ปุ่มบอก "กำลังส่ง…" และกดซ้ำไม่ส่งซ้ำ', (
+      tester,
+    ) async {
+      overrides.gate = Completer<void>();
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
+      await openParams(tester, 'cfg-1');
+      await tester.enterText(
+        find.byKey(const Key('apply_param_gps.send_interval_sec')),
+        '30',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const Key('apply_reason_field')),
+        'ปรับรอบส่งตามการใช้งานรถ',
+      );
+      await tester.pump();
+
+      await tester.tap(submit);
+      await tester.pump();
+      expect(find.text('กำลังส่ง…'), findsOneWidget);
+      await tester.tap(submit, warnIfMissed: false);
+      await tester.pump();
+      expect(overrides.calls, 1);
+
+      overrides.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(overrides.calls, 1);
+    });
+
+    testWidgets(
+      'ส่งไม่ผ่าน (เน็ตหลุด) -> บอกข้อผิดพลาดเหนือปุ่ม และกดใหม่ได้',
+      (tester) async {
+        applyRepo.createError = ApiException(
+          'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบอินเทอร์เน็ต',
+        );
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'),
+        );
+        await openParams(tester, 'cfg-1');
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: bottomBar,
+            matching: find.byKey(const Key('apply_submit_error')),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'OT (ไม่มีสิทธิ์ขอแก้ค่า) -> เห็นทุกค่าแต่แก้ไม่ได้ ส่ง Config ตามเดิมได้',
+      (tester) async {
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1'),
+          role: UserRole.ot,
+        );
+        await openParams(tester, 'cfg-1');
+
+        expect(
+          find.byKey(const Key('apply_param_gps.send_interval_sec')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('apply_param_row_gps.send_interval_sec')),
+            matching: find.text('(แก้ไขไม่ได้)'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
+        expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'Operation เปิดหน้าเลือก -> บอกว่าไม่มีสิทธิ์ ไม่โหลดตัวเลือก',
+      (tester) async {
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1'),
+          role: UserRole.operation,
+        );
+
+        expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+        expect(find.text('บทบาทนี้ไม่มีสิทธิ์ใช้หน้านี้'), findsOneWidget);
+        expect(option('cfg-1'), findsNothing);
+        expect(applyRepo.optionsCalls, 0);
+      },
+    );
+
+    testWidgets(
+      'firmware บนกล่องไม่รองรับค่าใน Config -> เตือนส่งไม่สำเร็จ และล็อกช่องนั้น',
+      (tester) async {
+        overrides.currentConfig = const DeviceConfigDraft(
+          id: 'cfg-1',
+          boxSchema: BoxSchema(
+            firmwareVersion: '1.0.0',
+            schemaVersion: 1,
+            keys: {'led.enabled'},
+          ),
+        );
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
+        );
+        await tester.pumpAndSettle();
+
+        final notice = find.byKey(const Key('unsupported_firmware_notice'));
+        expect(notice, findsOneWidget);
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.textContaining('gps.send_interval_sec'),
+          ),
+          findsOneWidget,
+        );
+        final row = find.byKey(
+          const Key('apply_param_row_gps.send_interval_sec'),
+        );
+        expect(
+          find.byKey(
+            const Key('apply_param_unsupported_gps.send_interval_sec'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: row, matching: find.byType(TextField)),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('Operation เปิดหน้าพารามิเตอร์ตรง -> บอกว่าไม่มีสิทธิ์', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
+        role: UserRole.operation,
+      );
+
+      expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+      expect(submit, findsNothing);
+      expect(applyRepo.optionsCalls, 0);
+    });
+
+    testWidgets(
+      'role null หลัง restore -> หน้าเลือกล็อก ไม่โหลด apply-options',
+      (tester) async {
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'), role: null);
+
+        expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+        expect(option('cfg-1'), findsNothing);
+        expect(applyRepo.optionsCalls, 0);
+        expect(submit, findsNothing);
+      },
+    );
+
+    testWidgets('role null -> หน้าพารามิเตอร์ไม่โหลด API และไม่มีปุ่มส่ง', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
+        role: null,
+      );
+
+      expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+      expect(submit, findsNothing);
+      expect(applyRepo.optionsCalls, 0);
     });
   });
 }
