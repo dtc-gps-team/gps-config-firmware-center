@@ -3641,7 +3641,7 @@ paths:
       summary: แก้ไขรุ่นอุปกรณ์ (Admin/SuperAdmin เท่านั้น — v3.28, issue #209)
       description: >-
         resource `device-model` action `Update` — Admin/SuperAdmin เท่านั้น
-        · ไม่มี hard delete ใช้ `status: discontinued` แทน · ไม่มี `name` ให้
+        · "เลิกผลิต" = `status: discontinued` (ปุ่มหลัก) ลบจริงใช้ `DELETE` (v3.88) เฉพาะรุ่นที่ไม่มีอะไรอ้างอิง · ไม่มี `name` ให้
         แก้ (ต้องตรงกับ string เดิมที่กระจายอยู่ทั่วระบบเป๊ะ — เปลี่ยนชื่อ
         รุ่นทีหลังเสี่ยงทำให้ Device/Config ที่อ้างชื่อเดิมหาไม่เจอ)
       parameters:
@@ -3672,6 +3672,36 @@ paths:
           description: ไม่มีสิทธิ์แก้รุ่นอุปกรณ์นี้ — เฉพาะ Role Admin (และ SuperAdmin) เท่านั้น
         "404":
           description: ไม่พบรุ่นอุปกรณ์ id นี้
+    delete:
+      tags: [device-model]
+      operationId: deleteDeviceModel
+      summary: ลบรุ่นอุปกรณ์ (เฉพาะรุ่นที่ไม่มีอะไรอ้างอิง) - v3.88
+      description: >-
+        **Admin / SuperAdmin** (resource `device-model` action `Update` — ระบบไม่มี ActionType.Delete) · ลบจริง
+        กู้ไม่ได้ · มติ A 2026-11-05: **"เลิกผลิต" (`PATCH` `status: discontinued`) เป็นปุ่มหลัก** ลบจริงเฉพาะรุ่นที่
+        ไม่มีอะไรอ้างอิงเลย (เช่นสร้างรุ่นผิดชื่อ) · **ลบไม่ได้ (409) ถ้ายังมี:** อุปกรณ์ (นับทุกสถานะ รวมที่ปลดระวางแล้ว),
+        Config (อ้างด้วยชื่อรุ่น รวมที่ลบแบบ soft delete แล้ว), Firmware (`deviceModelCompatibility` รวมที่ลบแล้ว),
+        พารามิเตอร์ (`supportedModels`) — ข้อความบอกจำนวนแต่ละชนิดและชี้ไป "ปรับเป็นเลิกผลิต" แทน · ล็อกแถว
+        FOR UPDATE แล้วตรวจซ้ำ คู่กับล็อก FOR SHARE ตอนสร้าง/แก้ Config กัน race (Config อ้างรุ่นด้วย string ไม่มี FK;
+        Device อ้างด้วย `modelId` FK ฐานข้อมูลกันเอง) · AuditLog `delete` เก็บ `deviceModelId` + `modelName`
+      parameters:
+        - in: path
+          name: deviceModelId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ลบรุ่นอุปกรณ์ — เฉพาะ Role Admin (และ SuperAdmin)
+        "404":
+          description: ไม่พบรุ่นอุปกรณ์ id นี้
+        "409":
+          description: ยังมีอุปกรณ์/Config/Firmware/พารามิเตอร์อ้างอิงรุ่นนี้อยู่ ลบไม่ได้ (ใช้ "เลิกผลิต" แทน)
 
   /customers:
     get:

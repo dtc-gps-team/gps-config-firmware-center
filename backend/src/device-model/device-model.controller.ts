@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -70,5 +71,18 @@ export class DeviceModelController {
     @Req() req: AuthenticatedRequest,
   ): Promise<DeviceModel> {
     return this.deviceModelService.update(id, dto, toActor(req));
+  }
+
+  // ลบจริงเฉพาะรุ่นที่ไม่มีอะไรอ้างอิง (มติ A 2026-11-05) — resource `device-model` action `Update`
+  // (ระบบไม่มี ActionType.Delete ตามแพทเทิร์นของ config/firmware/campaign/customer)
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequirePermission('device-model', ActionType.Update)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.deviceModelService.remove(id, toActor(req));
   }
 }

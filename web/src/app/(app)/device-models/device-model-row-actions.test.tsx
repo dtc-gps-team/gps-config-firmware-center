@@ -10,6 +10,7 @@ vi.mock("@/components/auth/auth-provider", () => ({
 }));
 
 const updateDeviceModel = vi.fn();
+const deleteDeviceModel = vi.fn();
 vi.mock("@/lib/device-model-api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/device-model-api")>(
     "@/lib/device-model-api",
@@ -17,8 +18,10 @@ vi.mock("@/lib/device-model-api", async () => {
   return {
     ...actual,
     updateDeviceModel: (...args: unknown[]) => updateDeviceModel(...args),
+    deleteDeviceModel: (...args: unknown[]) => deleteDeviceModel(...args),
   };
 });
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const activeModel: DeviceModel = {
   id: "dm-1",
@@ -77,5 +80,61 @@ describe("DeviceModelRowActions — toggle active", () => {
     expect(updateDeviceModel).toHaveBeenCalledWith("tok", "dm-1", {
       status: "active",
     });
+  });
+});
+
+/**
+ * มติ A 2026-11-05: "เลิกผลิต" เป็นปุ่มหลัก · ลบจริงเฉพาะรุ่นที่ไม่มีอะไรอ้างอิง — ฝั่งเว็บไม่เดา
+ * ล่วงหน้า ให้ backend ตัดสิน (409 + จำนวนที่อ้างอยู่) แล้วแสดงข้อความในกล่องยืนยัน
+ */
+describe("DeviceModelRowActions — ลบรุ่น", () => {
+  it("ยืนยันลบ -> เรียก deleteDeviceModel(token, id) แล้วแจ้ง onDeleted", async () => {
+    deleteDeviceModel.mockReset();
+    deleteDeviceModel.mockResolvedValue(undefined);
+    const onDeleted = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DeviceModelRowActions
+        model={activeModel}
+        onUpdated={vi.fn()}
+        onDeleted={onDeleted}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /ลบ/ }));
+    expect(screen.getByText("ลบรุ่น GT06N?")).toBeInTheDocument();
+    expect(deleteDeviceModel).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "ยืนยันลบ" }));
+
+    await waitFor(() => expect(deleteDeviceModel).toHaveBeenCalledTimes(1));
+    expect(deleteDeviceModel).toHaveBeenCalledWith("tok", "dm-1");
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+  });
+
+  it("มีของอ้างอิง (409) -> แสดงข้อความจาก backend ในกล่อง ไม่ปิดกล่อง ไม่เรียก onDeleted", async () => {
+    deleteDeviceModel.mockReset();
+    const { ApiError } = await import("@/lib/api");
+    deleteDeviceModel.mockRejectedValue(
+      new ApiError(
+        'ลบรุ่น "GT06N" ไม่ได้ เพราะยังมีข้อมูลอ้างอิงอยู่: อุปกรณ์ 2 เครื่อง (รวมที่ปลดระวางแล้ว)',
+        409,
+      ),
+    );
+    const onDeleted = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DeviceModelRowActions
+        model={activeModel}
+        onUpdated={vi.fn()}
+        onDeleted={onDeleted}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /ลบ/ }));
+    await user.click(screen.getByRole("button", { name: "ยืนยันลบ" }));
+
+    expect(await screen.findByText(/อุปกรณ์ 2 เครื่อง/)).toBeInTheDocument();
+    expect(screen.getByText("ลบรุ่น GT06N?")).toBeInTheDocument();
+    expect(onDeleted).not.toHaveBeenCalled();
   });
 });
