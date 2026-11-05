@@ -402,6 +402,11 @@ export class CentralDeviceService {
     }
   }
 
+  /** Read full command detail for progress views; caller handles unavailable errors. */
+  async getCommand(commandId: string) {
+    return this.client.getCommand(commandId);
+  }
+
   /**
    * fallback หา Firmware เดิมตอน Rollback ไม่มีบันทึกในระบบเราเลย (#362
    * ส่วนขยาย, พี่เลี้ยงแนะนำ) — ไล่ประวัติคำสั่งจาก Server กลางเอง (ground

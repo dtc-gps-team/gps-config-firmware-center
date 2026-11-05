@@ -195,6 +195,9 @@ void main() {
         ],
       ),
     );
+    // เริ่มที่แท็บ "ต้องติดตาม" (เฉพาะ open/investigating) ดูครบต้องกด "ทั้งหมด"
+    await tester.tap(find.byKey(const Key('incidents_tab_all')));
+    await tester.pump();
 
     expect(find.text('Open'), findsOneWidget);
     expect(find.text('Investigating'), findsOneWidget);
@@ -208,7 +211,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('ไม่ต้องดำเนินการ'),
       200,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('incidents_list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(find.text('ไม่ต้องดำเนินการ'), findsOneWidget);
   });
@@ -263,7 +271,126 @@ void main() {
     });
   });
 
-  testWidgets('แบ่ง Incident ที่ช่างแจ้งกับรายการที่ระบบตรวจพบ', (
+  group('รายการยาว: ค้นหา / แท็บสถานะ / ตัวกรองแหล่งที่มา (B 04/11/2026)', () {
+    final mixed = [
+      _incident(
+        id: 'a',
+        title: 'GPS ไม่ส่งพิกัด',
+        status: IncidentStatus.open,
+        source: 'field-report',
+        deviceId: 'BOX-0001',
+      ),
+      _incident(
+        id: 'b',
+        title: 'เขียน Config ไม่สำเร็จ',
+        status: IncidentStatus.investigating,
+        deviceId: 'BOX-0002',
+      ),
+      _incident(id: 'c', title: 'ปิดไปแล้ว', status: IncidentStatus.resolved),
+    ];
+
+    testWidgets('เริ่มที่ "ต้องติดตาม" ซ่อนที่ปิดแล้ว + จำนวนบนแท็บถูก', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeIncidentRepository(incidents: mixed));
+
+      expect(find.text('ต้องติดตาม 2'), findsOneWidget);
+      expect(find.text('ปิดแล้ว 1'), findsOneWidget);
+      expect(find.text('ทั้งหมด 3'), findsOneWidget);
+      expect(find.text('GPS ไม่ส่งพิกัด'), findsOneWidget);
+      expect(find.text('ปิดไปแล้ว'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('incidents_tab_closed')));
+      await tester.pump();
+      expect(find.text('ปิดไปแล้ว'), findsOneWidget);
+      expect(find.text('GPS ไม่ส่งพิกัด'), findsNothing);
+    });
+
+    testWidgets('ค้นด้วย device_id -> เหลือรายการเดียว + จำนวนแท็บตาม', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeIncidentRepository(incidents: mixed));
+
+      await tester.enterText(
+        find.byKey(const Key('incidents_search')),
+        'box-0002',
+      );
+      await tester.pump();
+
+      expect(find.text('เขียน Config ไม่สำเร็จ'), findsOneWidget);
+      expect(find.text('GPS ไม่ส่งพิกัด'), findsNothing);
+      expect(find.text('ต้องติดตาม 1'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('incidents_search_clear')));
+      await tester.pump();
+      expect(find.text('ต้องติดตาม 2'), findsOneWidget);
+    });
+
+    testWidgets('เมนูแหล่งที่มา: ที่คุณแจ้ง / จากระบบ / ทุกแหล่ง', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeIncidentRepository(incidents: mixed));
+
+      Future<void> pick(String key) async {
+        await tester.tap(find.byKey(const Key('incidents_source_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key(key)));
+        await tester.pumpAndSettle();
+      }
+
+      await pick('incidents_source_mine');
+      expect(find.text('GPS ไม่ส่งพิกัด'), findsOneWidget);
+      expect(find.text('เขียน Config ไม่สำเร็จ'), findsNothing);
+      // ปุ่มบอกว่ากรองอะไรอยู่
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('incidents_source_menu')),
+          matching: find.text('ที่คุณแจ้ง'),
+        ),
+        findsOneWidget,
+      );
+
+      await pick('incidents_source_system');
+      expect(find.text('GPS ไม่ส่งพิกัด'), findsNothing);
+      expect(find.text('เขียน Config ไม่สำเร็จ'), findsOneWidget);
+
+      await pick('incidents_source_all');
+      expect(find.text('GPS ไม่ส่งพิกัด'), findsOneWidget);
+      expect(find.text('เขียน Config ไม่สำเร็จ'), findsOneWidget);
+    });
+
+    testWidgets('ไม่มีที่ต้องติดตาม -> บอกว่าไม่พบ + ปุ่มไปดูที่ปิดแล้ว', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(
+          incidents: [
+            _incident(
+              id: 'c',
+              title: 'ปิดไปแล้ว',
+              status: IncidentStatus.resolved,
+            ),
+          ],
+        ),
+      );
+
+      expect(find.byKey(const Key('incidents_no_match')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('incidents_show_closed')));
+      await tester.pump();
+      expect(find.text('ปิดไปแล้ว'), findsOneWidget);
+    });
+
+    testWidgets('มีหัวข้อช่วงวันที่ + แถบสีตามความรุนแรง', (tester) async {
+      await _pump(tester, repo: _FakeIncidentRepository(incidents: mixed));
+
+      // fixture สร้าง 09/09/2026 เก่ากว่าวันนี้เกิน 30 วัน
+      expect(find.text('เก่ากว่านั้น'), findsOneWidget);
+      expect(find.byKey(const Key('incident_card_strip_0')), findsOneWidget);
+    });
+  });
+
+  testWidgets('มีตัวกรอง Incident ที่ช่างแจ้งกับรายการที่ระบบตรวจพบ', (
     tester,
   ) async {
     await _pump(
@@ -276,6 +403,8 @@ void main() {
       ),
     );
 
+    await tester.tap(find.byKey(const Key('incidents_source_menu')));
+    await tester.pumpAndSettle();
     expect(find.text('ที่คุณแจ้ง'), findsOneWidget);
     expect(find.text('จากระบบ'), findsOneWidget);
   });

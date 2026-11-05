@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import {
   Select,
   SelectContent,
@@ -493,6 +494,12 @@ export function ParameterCreateForm({
                 }}
                 label="ใช้ได้กับทุกโมเดล"
               />
+              {appliesToAllModels && required && (
+                <Notice tone="warning">
+                  ตั้งเป็นบังคับกรอกและใช้ได้ทุกโมเดล Config ทุกรุ่นต้องมีค่านี้ทันที
+                  Config เดิมที่ยังไม่มีจะบันทึกการแก้ไขไม่ผ่านจนกว่าจะใส่ค่านี้
+                </Notice>
+              )}
               {!appliesToAllModels && (
                 <ModelPicker
                   models={sortedModels}

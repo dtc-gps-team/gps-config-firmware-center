@@ -47,6 +47,8 @@ ConfigApplyRequest fakeApplyRequest({
 class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   FakeConfigApplyRequestRepository({
     List<ConfigApplyRequest>? requests,
+    this.progressOverride,
+    this.progressError,
     this.listError,
     this.createError,
     this.cancelError,
@@ -66,6 +68,33 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   bool? lastCreateDirect;
 
   final List<ConfigApplyRequest> requests;
+  final ConfigApplyRequestProgress Function(ConfigApplyRequest request)?
+  progressOverride;
+  Object? progressError;
+  int progressCalls = 0;
+
+  @override
+  Future<ConfigApplyRequestProgress> progress(
+    String taskId,
+    String requestId,
+  ) async {
+    progressCalls++;
+    if (progressError != null) throw progressError!;
+    final request = requests.firstWhere((r) => r.id == requestId);
+    final override = progressOverride;
+    if (override != null) return override(request);
+    return ConfigApplyRequestProgress(
+      requestId: request.id,
+      kind: request.kind,
+      status: request.status,
+      fromVersion: request.fromFirmwareVersion,
+      toVersion: request.firmwareVersion,
+      isDowngrade: request.isDowngrade,
+      releasedAt: request.releasedAt,
+      completedAt: request.completedAt,
+    );
+  }
+
   Object? listError;
   Object? createError;
   Object? cancelError;

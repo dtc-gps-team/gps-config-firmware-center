@@ -21,6 +21,7 @@ import {
   ConfigApplyRequestService,
   type ApplyOptions,
   type ConfigApplyRequestView,
+  type ConfigApplyRequestProgress,
 } from './config-apply-request.service';
 import { CreateConfigApplyRequestDto } from './dto/create-config-apply-request.dto';
 import { QueryConfigApplyRequestDto } from './dto/query-config-apply-request.dto';
@@ -60,6 +61,15 @@ export class TaskConfigApplyRequestController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfigApplyRequest[]> {
     return this.service.listForTask(taskId, toActor(req));
+  }
+
+  @Get(':id/progress')
+  progress(
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ConfigApplyRequestProgress> {
+    return this.service.progressForTask(taskId, id, toActor(req));
   }
 }
 

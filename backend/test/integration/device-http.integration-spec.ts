@@ -3561,6 +3561,51 @@ describe('DeviceController test-connection (integration — real postgres + guar
         expect(audit).not.toBeNull();
       });
 
+      it('GET /tasks/:taskId/config-apply-requests/:id/progress — ผู้ถือ Task ดูได้ · คนอื่นและคำขอนอก Task = 404 · ไม่เปิดเผย nonce', async () => {
+        const { configId, stTok, stId } =
+          await setupCentralDevice('DCO-C-PROG');
+        const actor = { id: stId, role: 'ST' };
+        const { task } = await app
+          .get(TaskService)
+          .start({ deviceId: 'DCO-C-PROG' }, actor);
+        const created = await app
+          .get(ConfigApplyRequestService)
+          .create(task.id, { configId, direct: true }, actor);
+        const url = `/api/v1/tasks/${task.id}/config-apply-requests/${created.id}/progress`;
+
+        const res = await request(app.getHttpServer())
+          .get(url)
+          .set('Authorization', `Bearer ${stTok}`)
+          .expect(200);
+        expect(res.body).toMatchObject({
+          requestId: created.id,
+          kind: 'config',
+          status: 'approved',
+          isDowngrade: false,
+          releasedAt: null,
+          // ยังไม่กดส่ง = ยังไม่มีคำสั่งที่ Server กลาง
+          central: null,
+        });
+        expect(JSON.stringify(res.body)).not.toContain('nonce');
+
+        // ST อีกคน (ไม่ได้ถือ Task) = 404 ไม่บอกว่ามีคำขอนี้
+        const other = await makeUser(prisma, { role: 'ST' });
+        await request(app.getHttpServer())
+          .get(url)
+          .set('Authorization', `Bearer ${tokenFor(other.id, 'ST')}`)
+          .expect(404);
+
+        // คำขอจริงแต่ไม่อยู่ใน Task ที่ระบุ = 404
+        await request(app.getHttpServer())
+          .get(
+            `/api/v1/tasks/${randomUUID()}/config-apply-requests/${created.id}/progress`,
+          )
+          .set('Authorization', `Bearer ${stTok}`)
+          .expect(404);
+
+        await request(app.getHttpServer()).get(url).expect(401);
+      });
+
       it('เลือก Config อื่นแล้วแก้ค่า (configId) -> Override + คำขอ pending ผูกกับ Config ที่เลือก', async () => {
         const { stTok } = await setupCentralDevice('DCO-C-PICK');
         const otherConfig = await makeConfig('approved');

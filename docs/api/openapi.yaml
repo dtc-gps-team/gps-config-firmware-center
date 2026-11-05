@@ -1446,6 +1446,73 @@ paths:
         "404":
           description: ไม่พบงาน หรือผู้เรียกไม่มีสิทธิ์เห็นงานนี้
 
+  /tasks/{taskId}/config-apply-requests/{id}/progress:
+    get:
+      tags: [config-apply-request]
+      operationId: getConfigApplyRequestProgress
+      summary: อ่านความคืบหน้าการส่งคำขอเข้ากล่อง (v3.84)
+      description: >-
+        ใช้สิทธิ์และ scope เดียวกับ `GET /tasks/{taskId}/config-apply-requests`.
+        คำขอที่ไม่อยู่ในงานหรือผู้ใช้มองไม่เห็นงานตอบ 404. อ่านสถานะสดจาก Server กลาง
+        เมื่อมีคำสั่ง; การติดต่อ Server กลางล้มเหลวคืน `central.available: false`.
+        ไม่เขียนฐานข้อมูลและไม่ส่ง field ภายในของคำสั่ง (เช่น `nonce`) กลับมา.
+        `errorMessage` / `waitingReason` เป็นข้อความไทยที่ gateway สร้างจากรหัส
+        (ไม่มี IP, path หรือ key) ตัดไว้ไม่เกิน 200 ตัวอักษร.
+        `fromVersion` มีเฉพาะ Firmware (เวอร์ชันก่อนส่ง) · Config เป็น `null`
+        เพราะไม่รู้ว่ากล่องใช้ Config ใดอยู่จริง.
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: ความคืบหน้าคำขอ
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, kind, status, fromVersion, toVersion, isDowngrade, releasedAt, completedAt, central]
+                properties:
+                  requestId: { type: string, format: uuid }
+                  kind: { type: string, enum: [config, firmware] }
+                  status: { $ref: "#/components/schemas/ConfigApplyRequestStatus" }
+                  fromVersion: { type: string, nullable: true }
+                  toVersion: { type: string, nullable: true }
+                  isDowngrade: { type: boolean }
+                  releasedAt: { type: string, format: date-time, nullable: true }
+                  completedAt: { type: string, format: date-time, nullable: true }
+                  central:
+                    nullable: true
+                    type: object
+                    required: [available, commandId, status, progressPercent, deviceOnline, waitingReason, errorCode, errorMessage, steps]
+                    properties:
+                      available: { type: boolean }
+                      commandId: { type: string }
+                      status: { type: string, nullable: true }
+                      progressPercent: { type: integer, minimum: 0, maximum: 100, nullable: true }
+                      deviceOnline: { type: boolean, nullable: true }
+                      waitingReason: { type: string, nullable: true }
+                      errorCode: { type: string, nullable: true }
+                      errorMessage: { type: string, nullable: true }
+                      steps:
+                        type: array
+                        items:
+                          type: object
+                          required: [key, at, progress]
+                          properties:
+                            key:
+                              type: string
+                              enum: [delivered, downloading, validating, installing, rebooting, succeeded, rolled_back, failed, expired]
+                            at: { type: string, format: date-time, nullable: true }
+                            progress: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        "401": { description: Token ไม่ถูกต้องหรือหมดอายุ }
+        "404": { description: ไม่พบงาน/คำขอ หรือผู้ใช้ไม่มีสิทธิ์เห็นงานนี้ }
+
   /config-apply-requests:
     get:
       tags: [config-apply-request]

@@ -65,7 +65,7 @@ export function UserRowActions({
       toast.success(
         updated.isActive
           ? `เปิดใช้งาน "${user.username}" แล้ว`
-          : `ปิดใช้งาน "${user.username}" แล้ว`,
+          : `ปิดใช้งาน "${user.username}" แล้ว (ดูบัญชีที่ปิดได้ที่ตัวกรองสถานะ)`,
       );
       onUpdated(updated);
     } catch (err) {
