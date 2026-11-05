@@ -86,7 +86,12 @@ export function UserManagementView() {
         meta: { filterVariant: "multi-select", label: "Role" },
       },
       {
-        accessorKey: "isActive",
+        // accessorFn คืน label ไทยตรงๆ (ไม่ใช่ boolean ดิบ) ให้ dropdown filter
+        // ที่ดึงตัวเลือกจาก getFacetedUniqueValues() แสดง "ใช้งานอยู่" /
+        // "ปิดใช้งาน" แทน "true"/"false" — mirror คอลัมน์ "การเชื่อมต่อ" ที่
+        // device-search-view.tsx (accessorFn คืน label, cell render badge แยก)
+        id: "isActive",
+        accessorFn: (row) => (row.isActive ? "ใช้งานอยู่" : "ปิดใช้งาน"),
         header: "สถานะ",
         filterFn: multiSelectFilterFn,
         meta: { filterVariant: "multi-select", label: "สถานะ" },
@@ -155,6 +160,10 @@ export function UserManagementView() {
                 urlSync
                 columns={columns}
                 data={userList}
+                // ค่าเริ่มต้นแสดงเฉพาะบัญชีที่ใช้งานอยู่ — บัญชีที่ปิดใช้งาน
+                // ต้องเปลี่ยนตัวกรอง "สถานะ" เองถึงจะเห็น (ฟีดแบ็กผู้ใช้
+                // 2026-11-04: ไม่อยากให้บัญชีปิดใช้งานปนอยู่หน้าหลัก)
+                initialColumnFilters={[{ id: "isActive", value: ["ใช้งานอยู่"] }]}
                 searchPlaceholder="ค้นหา username / ชื่อเต็ม…"
                 emptyMessage="ไม่พบผู้ใช้ที่ตรงกับเงื่อนไข"
               />

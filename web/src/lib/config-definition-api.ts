@@ -45,9 +45,29 @@ export type ConfigFieldDefinition = {
   minValue: number | null;
   maxValue: number | null;
   supportedModels: ConfigFieldModelSupport[];
+  /** `true` = field นี้ใช้ได้กับทุกรุ่นอุปกรณ์ — ไม่ต้องมี supportedModels เลย
+   * ก็ได้ (ฟีดแบ็ก 2026-11-04) ดู `fieldSupportsModel()` ด้านล่าง */
+  appliesToAllModels: boolean;
   createdAt: string;
   updatedAt: string;
 };
+
+/** field นี้ใช้ได้กับ `deviceModel`/`protocol` ที่ระบุไหม — จุดตรวจรวมจุดเดียว
+ * mirror `fieldSupportsModel()` ฝั่ง backend (config-definition.service.ts)
+ * ใช้แทนการ inline `supportedModels.some(...)` ทุกจุดที่ config-wizard.tsx
+ * เคยทำ กันพลาดจุดใดจุดหนึ่งตอน appliesToAllModels เป็น true */
+export function fieldSupportsModel(
+  def: Pick<ConfigFieldDefinition, "appliesToAllModels" | "supportedModels">,
+  deviceModel: string,
+  protocol: string,
+): boolean {
+  return (
+    def.appliesToAllModels ||
+    def.supportedModels.some(
+      (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+    )
+  );
+}
 
 export function listConfigDefinitions(
   token: string,
@@ -56,7 +76,8 @@ export function listConfigDefinitions(
 }
 
 /** request body — `CreateConfigDefinitionInput` ใน openapi.yaml
- * (`createConfigDefinition`) · ConfigEngineer เท่านั้น · `supportedModels` ต้องมี ≥ 1 คู่ */
+ * (`createConfigDefinition`) · ConfigEngineer เท่านั้น · `supportedModels` ต้องมี ≥ 1 คู่
+ * เว้นแต่ `appliesToAllModels: true` (v3.83, ฟีดแบ็ก 2026-11-04) */
 export type CreateConfigDefinitionInput = {
   fieldName: string;
   dataType: string;
@@ -65,7 +86,8 @@ export type CreateConfigDefinitionInput = {
   required: boolean;
   /** `true` = รู้แค่ชื่อ + dataType ยังไม่รู้กฎครบ — default `false` */
   unknownSpec?: boolean;
-  description?: string;
+  /** คำอธิบายความหมายของ field นี้ — บังคับกรอกตั้งแต่ v3.83 */
+  description: string;
   /** หน่วยของค่า (เช่น "วินาที", "%") — ไม่บังคับ, maxLength 20 */
   unit?: string;
   /** ST override ค่า field นี้บนอุปกรณ์ได้ไหม (issue #185) — ไม่บังคับ
@@ -83,7 +105,11 @@ export type CreateConfigDefinitionInput = {
    * integer/decimal เท่านั้น */
   minValue?: number;
   maxValue?: number;
-  supportedModels: ConfigFieldModelSupport[];
+  /** ต้องมี ≥ 1 คู่ เว้นแต่ appliesToAllModels: true */
+  supportedModels?: ConfigFieldModelSupport[];
+  /** `true` = field นี้ใช้ได้กับทุกรุ่นอุปกรณ์ ไม่ต้องส่ง supportedModels เลย
+   * ก็ได้ (v3.83, ฟีดแบ็ก 2026-11-04) — ไม่บังคับ, default false */
+  appliesToAllModels?: boolean;
 };
 
 export function createConfigDefinition(
@@ -113,7 +139,11 @@ export type UpdateConfigDefinitionInput = {
   defaultValue?: string | null;
   minValue?: number | null;
   maxValue?: number | null;
+  /** ส่งมา = แทนที่ทั้งชุด ต้องมี ≥ 1 คู่ เว้นแต่ค่าหลังแก้ของ
+   * appliesToAllModels เป็น true */
   supportedModels?: ConfigFieldModelSupport[];
+  /** (v3.83) `true` = field นี้ใช้ได้กับทุกรุ่นอุปกรณ์ */
+  appliesToAllModels?: boolean;
 };
 
 /** `PATCH /config-definitions/{id}` - ConfigEngineer (และ SuperAdmin) · กฎ validate ที่เปลี่ยนมีผลกับ
@@ -156,11 +186,14 @@ export function getConfigDefinitionUsage(
   });
 }
 
-/** "GT06N/TCP, GT06L/TCP" — ใช้โชว์ในตารางและเป็นค่าให้ filter ข้อความ */
+/** "GT06N/TCP, GT06L/TCP" หรือ "ทุกโมเดล" — ใช้โชว์ในตารางและเป็นค่าให้ filter
+ * ข้อความ · รับ def ทั้งก้อนแทนแค่ `supportedModels` เพราะต้องรู้
+ * `appliesToAllModels` ด้วย (v3.83) */
 export function formatModelSupport(
-  models: ConfigFieldModelSupport[],
+  def: Pick<ConfigFieldDefinition, "supportedModels" | "appliesToAllModels">,
 ): string {
-  return models
+  if (def.appliesToAllModels) return "ทุกโมเดล";
+  return def.supportedModels
     .map((m) => `${m.deviceModel}/${m.protocol}`)
     .join(", ");
 }
