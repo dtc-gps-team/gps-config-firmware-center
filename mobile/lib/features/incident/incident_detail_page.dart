@@ -11,7 +11,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_info_row.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -42,55 +42,38 @@ class IncidentDetailPage extends ConsumerWidget {
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'รายละเอียด Incident',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                status: incident == null
-                    ? null
-                    : Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          AppBadge(
-                            label: incidentSeverityLabel(incident.severity),
-                            tone: incidentSeverityTone(incident.severity),
-                            dot: true,
-                          ),
-                          AppBadge(
-                            label: incidentStatusLabel(incident.status),
-                            tone: incidentStatusTone(incident.status),
-                            dot: true,
-                          ),
-                        ],
-                      ),
-              ),
-              Expanded(
-                child: incidentAsync.when(
-                  skipLoadingOnRefresh: true,
-                  data: (incident) => _IncidentDetailView(incident: incident),
-                  loading: () => const AppDetailSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => ListView(
-                    children: [
-                      const SizedBox(height: 64),
-                      AppErrorView(
-                        message: _errorMessage(error),
-                        onRetry: () =>
-                            ref.invalidate(incidentDetailProvider(incidentId)),
-                        messageKey: const Key('incident_detail_error'),
-                        retryKey: const Key('incident_detail_retry'),
-                      ),
-                    ],
-                  ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: incident?.title ?? 'รายละเอียด Incident',
+              titleKey: const Key('incident_detail_title'),
+              // ไม่แสดง id ภายในของ Incident (uuid) — บอกแค่อุปกรณ์
+              subtitle: incident?.deviceId,
+              onBack: navigator.canPop() ? navigator.pop : null,
+            ),
+            Expanded(
+              child: incidentAsync.when(
+                skipLoadingOnRefresh: true,
+                data: (incident) => _IncidentDetailView(incident: incident),
+                loading: () => const AppDetailSkeleton(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                ),
+                error: (error, _) => ListView(
+                  children: [
+                    const SizedBox(height: 64),
+                    AppErrorView(
+                      message: _errorMessage(error),
+                      onRetry: () =>
+                          ref.invalidate(incidentDetailProvider(incidentId)),
+                      messageKey: const Key('incident_detail_error'),
+                      retryKey: const Key('incident_detail_retry'),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -126,15 +109,21 @@ class _IncidentDetailView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                incident.title,
-                key: const Key('incident_detail_title'),
-                style: const TextStyle(
-                  fontSize: AppTypography.base,
-                  height: AppTypography.baseHeight,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.foreground,
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  AppBadge(
+                    label: incidentSeverityLabel(incident.severity),
+                    tone: incidentSeverityTone(incident.severity),
+                    dot: true,
+                  ),
+                  AppBadge(
+                    label: incidentStatusLabel(incident.status),
+                    tone: incidentStatusTone(incident.status),
+                    dot: true,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               const _SectionLabel('รายละเอียด'),

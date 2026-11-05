@@ -162,6 +162,42 @@ void main() {
       },
     );
 
+    test(
+      'boxSchema (v3.76): key ที่ firmware บนกล่องรองรับ · ไม่มี/null -> null',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'boxSchema': {
+            'firmwareVersion': '1.0.0',
+            'schemaVersion': 1,
+            'keys': ['gps.send_interval_sec', 'data_server.path'],
+          },
+        });
+        final schema = draft.boxSchema!;
+        expect(schema.supports('data_server.path'), isTrue);
+        expect(
+          schema.unsupportedIn([
+            'gps.send_interval_sec',
+            'speed_limit.max_kmh',
+            'geofence.enabled',
+          ]),
+          ['speed_limit.max_kmh', 'geofence.enabled'],
+        );
+        expect(
+          schema.unsupportedLabel,
+          'Firmware ที่กล่องใช้อยู่ (1.0.0) ไม่รองรับ',
+        );
+        expect(DeviceConfigDraft.fromJson({'id': 'cfg-1'}).boxSchema, isNull);
+        expect(
+          DeviceConfigDraft.fromJson({
+            'id': 'cfg-1',
+            'boxSchema': null,
+          }).boxSchema,
+          isNull,
+        );
+      },
+    );
+
     test('delivery (v3.71): ค่าที่ส่งเข้ากล่องล่าสุด + field ที่รอส่ง', () {
       final draft = DeviceConfigDraft.fromJson({
         'id': 'cfg-1',

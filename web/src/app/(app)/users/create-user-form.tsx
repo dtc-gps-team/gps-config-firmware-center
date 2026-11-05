@@ -13,8 +13,10 @@ import {
 } from "@/lib/users-api";
 import { FormBody, FormFooter, FormSection } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/copy-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SensitiveInput } from "@/components/sensitive-value";
 import {
   Select,
   SelectContent,
@@ -155,14 +157,20 @@ export function CreateUserForm({
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
-              <Input
-                id="user-password"
-                type="text"
-                value={password}
-                disabled={submitting}
-                placeholder="อย่างน้อย 8 ตัวอักษร"
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="flex items-center gap-1.5">
+                <SensitiveInput
+                  id="user-password"
+                  value={password}
+                  disabled={submitting}
+                  placeholder="อย่างน้อย 8 ตัวอักษร"
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <CopyButton
+                  value={password}
+                  label="คัดลอกรหัสผ่าน"
+                  className={password.trim() === "" ? "invisible" : undefined}
+                />
+              </div>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">

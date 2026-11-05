@@ -121,6 +121,14 @@ class _AccountSheet extends ConsumerWidget {
               icon: const Icon(Icons.logout),
               label: const Text('ออกจากระบบ'),
             ),
+            TextButton(
+              key: const Key('account_close'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.destructive,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('ปิด'),
+            ),
           ],
         ),
       ),
