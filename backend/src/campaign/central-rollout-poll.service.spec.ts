@@ -3,6 +3,8 @@ import { CentralDeviceService } from '../central-device/central-device.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CentralRolloutPollService } from './central-rollout-poll.service';
+import { FieldApplyRetryService } from './field-apply-retry.service';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 
 const target = (id: string, deviceId: string, commandId: string) => ({
   id,
@@ -33,11 +35,21 @@ const firmwareTarget = (id: string, deviceId: string, commandId: string) => ({
 });
 
 describe('CentralRolloutPollService', () => {
+  beforeEach(() => {
+    retry = null;
+  });
+
   let findMany: jest.Mock;
   let recordTargetResult: jest.Mock;
   let markTargetSkippedOffline: jest.Mock;
   let confirmCentralFirmwareSuccess: jest.Mock;
   let getCommandOutcome: jest.Mock;
+  let startFieldApplyRollout: jest.Mock;
+  let retry: {
+    decideAfterFailure: jest.Mock;
+    markLatestAttemptSucceeded: jest.Mock;
+    claimDueRetries: jest.Mock;
+  } | null;
 
   async function build(withCentral = true): Promise<CentralRolloutPollService> {
     findMany = jest.fn().mockResolvedValue([]);
@@ -45,6 +57,7 @@ describe('CentralRolloutPollService', () => {
     markTargetSkippedOffline = jest.fn().mockResolvedValue(true);
     confirmCentralFirmwareSuccess = jest.fn().mockResolvedValue(true);
     getCommandOutcome = jest.fn();
+    startFieldApplyRollout = jest.fn().mockResolvedValue({});
     const module = await Test.createTestingModule({
       providers: [
         CentralRolloutPollService,
@@ -58,8 +71,12 @@ describe('CentralRolloutPollService', () => {
             recordTargetResult,
             markTargetSkippedOffline,
             confirmCentralFirmwareSuccess,
+            startFieldApplyRollout,
           },
         },
+        ...(retry
+          ? [{ provide: FieldApplyRetryService, useValue: retry }]
+          : []),
         ...(withCentral
           ? [{ provide: CentralDeviceService, useValue: { getCommandOutcome } }]
           : []),
@@ -150,6 +167,8 @@ describe('CentralRolloutPollService', () => {
       failed: 1,
       skipped: 1,
       unavailable: 1,
+      retrying: 0,
+      retried: 0,
     });
     expect(recordTargetResult).toHaveBeenCalledTimes(2);
     expect(recordTargetResult).toHaveBeenNthCalledWith(
@@ -184,6 +203,8 @@ describe('CentralRolloutPollService', () => {
       failed: 0,
       skipped: 0,
       unavailable: 0,
+      retrying: 0,
+      retried: 0,
     });
   });
 
@@ -201,7 +222,203 @@ describe('CentralRolloutPollService', () => {
       failed: 0,
       skipped: 0,
       unavailable: 0,
+      retrying: 0,
+      retried: 0,
     });
     expect(findMany).not.toHaveBeenCalled();
+  });
+
+  // docs/31 — ลองส่งเข้ากล่องใหม่อัตโนมัติ (Rollout ส่งจากหน้างานเท่านั้น)
+  describe('ลองส่งใหม่ (docs/31)', () => {
+    const fieldTarget = (id: string, deviceId: string, commandId: string) => {
+      const t = target(id, deviceId, commandId);
+      return {
+        ...t,
+        attemptCount: 1,
+        rollout: {
+          ...t.rollout,
+          campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+        },
+      };
+    };
+
+    beforeEach(() => {
+      retry = {
+        decideAfterFailure: jest.fn(),
+        markLatestAttemptSucceeded: jest.fn().mockResolvedValue(undefined),
+        claimDueRetries: jest.fn().mockResolvedValue([]),
+      };
+    });
+
+    it('query ดึงชื่อ Campaign มาด้วย (เช็ค Campaign ระบบ)', async () => {
+      const service = await build();
+      await service.poll();
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            rollout: {
+              select: expect.objectContaining({
+                campaign: { select: { name: true } },
+              }) as unknown,
+            },
+          },
+        }),
+      );
+    });
+
+    it('Campaign ปกติล้ม -> recordTargetResult() ทันทีเหมือนเดิม ไม่ผ่านตัวลองใหม่', async () => {
+      const service = await build();
+      findMany.mockResolvedValue([
+        {
+          ...target('t1', 'D1', 'C1'),
+          rollout: {
+            ...target('t1', 'D1', 'C1').rollout,
+            campaign: { name: 'กลุ่มจริง' },
+          },
+        },
+      ]);
+      getCommandOutcome.mockResolvedValue({
+        kind: 'failed',
+        detail: 'ล้ม',
+        errorCode: 'DEVICE_DISCONNECTED',
+      });
+
+      await service.poll();
+
+      expect(retry!.decideAfterFailure).not.toHaveBeenCalled();
+      expect(recordTargetResult).toHaveBeenCalledWith(
+        'D1',
+        { configId: 'cfg-1' },
+        false,
+        'ล้ม',
+        'r-1',
+      );
+    });
+
+    it('ส่งจากหน้างานล้มแล้วตั้งรอบใหม่ -> ไม่บันทึกผล นับ retrying', async () => {
+      const service = await build();
+      findMany.mockResolvedValue([fieldTarget('t1', 'D1', 'C1')]);
+      const outcome = {
+        kind: 'failed',
+        detail: 'ล้ม',
+        errorCode: 'DEVICE_DISCONNECTED',
+      };
+      getCommandOutcome.mockResolvedValue(outcome);
+      retry!.decideAfterFailure.mockResolvedValue({
+        kind: 'scheduled',
+        nextRetryAt: new Date(),
+      });
+
+      const result = await service.poll();
+
+      expect(retry!.decideAfterFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 't1',
+          rolloutId: 'r-1',
+          attemptCount: 1,
+        }),
+        outcome,
+      );
+      expect(result.retrying).toBe(1);
+      expect(recordTargetResult).not.toHaveBeenCalled();
+      expect(markTargetSkippedOffline).not.toHaveBeenCalled();
+    });
+
+    it('ส่งจากหน้างานจบ -> บันทึกผลด้วยเส้นทางเดิมพร้อมสรุปทุกรอบ (failed / skipped)', async () => {
+      const service = await build();
+      findMany.mockResolvedValue([
+        fieldTarget('t1', 'D1', 'C1'),
+        fieldTarget('t2', 'D2', 'C2'),
+      ]);
+      getCommandOutcome
+        .mockResolvedValueOnce({ kind: 'failed', detail: 'a' })
+        .mockResolvedValueOnce({ kind: 'skipped', detail: 'b' });
+      retry!.decideAfterFailure
+        .mockResolvedValueOnce({
+          kind: 'finish',
+          outcome: 'failed',
+          detail: 'ส่ง 3 ครั้งไม่สำเร็จ',
+        })
+        .mockResolvedValueOnce({
+          kind: 'finish',
+          outcome: 'skipped',
+          detail: 'ส่ง 3 ครั้ง ข้าม',
+        });
+
+      await service.poll();
+
+      expect(recordTargetResult).toHaveBeenCalledWith(
+        'D1',
+        { configId: 'cfg-1' },
+        false,
+        'ส่ง 3 ครั้งไม่สำเร็จ',
+        'r-1',
+      );
+      expect(markTargetSkippedOffline).toHaveBeenCalledWith(
+        't2',
+        'ส่ง 3 ครั้ง ข้าม',
+      );
+    });
+
+    it('สำเร็จ -> ปิดรอบล่าสุดเป็น succeeded ก่อนบันทึกผล', async () => {
+      const service = await build();
+      findMany.mockResolvedValue([fieldTarget('t1', 'D1', 'C1')]);
+      getCommandOutcome.mockResolvedValue({ kind: 'success' });
+
+      await service.poll();
+
+      expect(retry!.markLatestAttemptSucceeded).toHaveBeenCalledWith('t1');
+      expect(recordTargetResult).toHaveBeenCalledTimes(1);
+    });
+
+    it('รอบใหม่ที่ถึงเวลา: push -> startFieldApplyRollout() · finish -> บันทึกผลตามชนิด', async () => {
+      const service = await build();
+      retry!.claimDueRetries.mockResolvedValue([
+        { kind: 'push', rolloutId: 'r-9', actorId: 'op-1' },
+        {
+          kind: 'finish',
+          targetId: 't-8',
+          rolloutId: 'r-8',
+          deviceId: 'D8',
+          payload: { configId: 'cfg-8' },
+          outcome: 'failed',
+          detail: 'จบ',
+        },
+        {
+          kind: 'finish',
+          targetId: 't-7',
+          rolloutId: 'r-7',
+          deviceId: 'D7',
+          payload: { firmwareId: 'fw-7' },
+          outcome: 'skipped',
+          detail: 'ข้าม',
+        },
+      ]);
+
+      const result = await service.poll();
+
+      expect(startFieldApplyRollout).toHaveBeenCalledWith('r-9', 'op-1');
+      expect(result.retried).toBe(1);
+      expect(recordTargetResult).toHaveBeenCalledWith(
+        'D8',
+        { configId: 'cfg-8' },
+        false,
+        'จบ',
+        'r-8',
+      );
+      expect(markTargetSkippedOffline).toHaveBeenCalledWith('t-7', 'ข้าม');
+    });
+
+    it('ส่งรอบใหม่ throw -> ไม่ทำให้ poll ล้ม (lease หมดแล้วหยิบใหม่เอง)', async () => {
+      const service = await build();
+      retry!.claimDueRetries.mockResolvedValue([
+        { kind: 'push', rolloutId: 'r-9', actorId: 'op-1' },
+      ]);
+      startFieldApplyRollout.mockRejectedValue(new Error('boom'));
+
+      const result = await service.poll();
+
+      expect(result.retried).toBe(0);
+    });
   });
 });

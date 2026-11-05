@@ -21,6 +21,8 @@ export interface AuditLogMetadata {
   fieldNames?: string[];
   /** รหัสคำสั่งที่ Server กลางออกให้ตอนสั่งส่ง Config (Rollout โหมด central) */
   centralCommandId?: string;
+  /** ครั้งที่ส่งของ Rollout ส่งจากหน้างาน (docs/31 — ลองใหม่อัตโนมัติ, 1 = ครั้งแรก) */
+  attemptNo?: number;
   /** `Firmware.id` ที่ช่างยืนยันว่าติดตั้งเข้าอุปกรณ์เสร็จแล้ว (issue #181) */
   firmwareId?: string;
   /** `Firmware.version` ณ ตอนยืนยัน — ไม่มีข้อมูลอ่อนไหว ใส่ไว้เพื่อดูง่ายบน

@@ -270,6 +270,8 @@ enum NotificationType {
   config_apply_succeeded
   config_apply_failed
   config_apply_expired
+  // docs/31 (ลองส่งเข้ากล่องใหม่อัตโนมัติ) — แจ้งช่างทุกรอบที่ส่งไม่สำเร็จและระบบจะลองใหม่
+  config_apply_retrying
 }
 
 model Notification {
@@ -843,6 +845,8 @@ model DeviceConfigOverride {
   // คำขอส่งเข้ากล่องที่พา Override นี้เข้ากล่องจริงในโหมด central (docs/30) —
   // null = Override แบบเดิม (อนุมัติแล้วกด apply-config เอง)
   applyRequest ConfigApplyRequest?
+  // target ของ Rollout ส่งจากหน้างานที่ merge Override นี้ไปในรอบแรก (docs/31 §3.4)
+  retryTargets CampaignRolloutTarget[]
 
   @@unique([deviceId, versionNumber])
   @@index([deviceId])
@@ -1467,16 +1471,49 @@ model CampaignRolloutTarget {
   // ผลคำสั่งเป็นระยะจนจบ · null = ยังไม่เคยสั่ง (หรือไม่ใช่โหมด central) · เป็นคอลัมน์
   // ของโปรเจกต์เอง ไม่มีใน Data Dictionary
   centralCommandId String?
+  // ลองส่งใหม่อัตโนมัติของ Rollout ส่งจากหน้างาน (docs/31 §3.3) — คอลัมน์ของโปรเจกต์เอง
+  // ไม่มีใน Data Dictionary · ครั้งที่ส่งไปแล้ว (target เดิมถือว่า 1 ครั้ง)
+  attemptCount     Int       @default(1)
+  // เวลาที่จะส่งรอบใหม่ หรือเวลาหมด lease ระหว่างกำลังส่ง (§3.4) · null = ไม่ได้รอรอบใหม่
+  nextRetryAt      DateTime?
+  // Override ที่ merge ไปในรอบแรก รอบลองใหม่ merge จากแถวนี้เท่านั้น (รอบแรก mark
+  // consumedAt ตอนส่งถึง Server กลางแล้ว หาแบบเดิมจะไม่เจอ) · null = ไม่มี Override / Firmware
+  appliedConfigOverrideId String?
   createdAt    DateTime                    @default(now())
   updatedAt    DateTime                    @updatedAt
 
   rollout CampaignRollout @relation(fields: [rolloutId], references: [id], onDelete: Cascade)
+  appliedConfigOverride DeviceConfigOverride? @relation(fields: [appliedConfigOverrideId], references: [id], onDelete: Restrict)
+  attempts CampaignRolloutTargetAttempt[]
 
   @@unique([rolloutId, deviceId])
   @@index([rolloutId])
+  // query หารอบลองใหม่ที่ถึงเวลาทุกรอบ poll (รีวิว A #436)
+  @@index([nextRetryAt])
   // ค้นตามรหัสเครื่อง: ประวัติของอุปกรณ์ (`GET /devices/{deviceId}/history`) และสถานะ
   // ของเครื่อง · เดิมมี index แค่ตาม rolloutId
   @@index([deviceId])
+}
+
+/// ประวัติการส่งแต่ละครั้งของ target ใน Rollout ส่งจากหน้างาน (docs/31 §3.3) — แถวแรก
+/// สร้างตอนส่งครั้งแรก · ตารางของโปรเจกต์เอง ไม่มีใน Data Dictionary
+model CampaignRolloutTargetAttempt {
+  id               String    @id @default(uuid())
+  targetId         String
+  attemptNo        Int
+  // null = ส่งไม่ถึง Server กลาง
+  centralCommandId String?
+  // sending | sent | succeeded | failed | skipped
+  status           String
+  // DEVICE_DISCONNECTED, ROLLED_BACK, ... (null = ไม่มีรหัส เช่นติดต่อ Server กลางไม่ได้)
+  errorCode        String?
+  detail           String?
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+
+  target CampaignRolloutTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([targetId, attemptNo])
 }
 
 // ---------------------------------------------------------------------------

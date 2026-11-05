@@ -33,6 +33,24 @@ export interface FieldApplyResultEvent {
   detail: string;
 }
 
+/**
+ * `field-apply-retry` (docs/31 §3.4) — รอบหนึ่งของ Rollout ส่งจากหน้างานไม่สำเร็จ และระบบตั้ง
+ * รอบใหม่แล้ว (ยังไม่จบ ผลจบยังมาทาง `field-apply-result` เหมือนเดิม) · โมดูล
+ * `config-apply-request` ของ B ฟังเพื่อแจ้ง `config_apply_retrying` (R2)
+ */
+export const FIELD_APPLY_RETRY_EVENT = 'field-apply-retry';
+export interface FieldApplyRetryEvent {
+  rolloutId: string;
+  /** รอบที่เพิ่งไม่สำเร็จ (1 = ครั้งแรก) */
+  attemptNo: number;
+  maxAttempts: number;
+  /** `error_code` จาก Server กลาง · null = ไม่มีรหัส (เช่นติดต่อ Server กลางไม่ได้) */
+  errorCode: string | null;
+  detail: string;
+  /** ISO 8601 — เวลาที่จะส่งรอบถัดไป */
+  nextRetryAt: string;
+}
+
 export type RolloutFailureKind =
   'auto-pause' | 'completed-with-failures' | 'completed-with-skipped';
 
@@ -109,6 +127,10 @@ export class RolloutEvents extends EventEmitter {
   safeEmit(
     event: typeof FIELD_APPLY_RESULT_EVENT,
     payload: FieldApplyResultEvent,
+  ): void;
+  safeEmit(
+    event: typeof FIELD_APPLY_RETRY_EVENT,
+    payload: FieldApplyRetryEvent,
   ): void;
   safeEmit(event: string, payload: unknown): void {
     try {
