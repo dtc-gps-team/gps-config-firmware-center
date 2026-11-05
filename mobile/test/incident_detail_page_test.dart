@@ -291,11 +291,13 @@ void main() {
       );
     });
 
-    testWidgets('การ์ดโชว์ description ย่อ 2 บรรทัด', (tester) async {
+    testWidgets('การ์ดโชว์ description ย่อ 1 บรรทัด (การ์ดกระชับ B 04/11)', (
+      tester,
+    ) async {
       await pumpApp(tester);
 
       final text = tester.widget<Text>(find.text('รายละเอียดของ B'));
-      expect(text.maxLines, 2);
+      expect(text.maxLines, 1);
       expect(text.overflow, TextOverflow.ellipsis);
     });
   });

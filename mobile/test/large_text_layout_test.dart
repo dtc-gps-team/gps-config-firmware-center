@@ -489,9 +489,16 @@ void main() {
       await _pumpPage(tester, const DeviceDetailPage(deviceId: 'DEV-0117'));
 
       expect(tester.takeException(), isNull);
-      for (final label in ['สถานะ Firmware', 'สถานะ Config', 'Serial Number']) {
+      for (final label in ['Firmware', 'Config ปัจจุบัน']) {
         expect(midWordBreaks(tester, find.text(label)), isEmpty, reason: label);
       }
+      await tester.tap(find.byKey(const Key('device_detail_info_expand')));
+      await tester.pump();
+      expect(
+        midWordBreaks(tester, find.text('Serial Number')),
+        isEmpty,
+        reason: 'Serial Number',
+      );
       // ค่าได้ความกว้างเต็มแถว (อยู่ใต้ label) — เลข IMEI 15 หลักต่อกันไม่มีจุด
       // ตัดบรรทัด ฟอนต์ทดสอบ (1em) ที่ 2 เท่ากว้างเกินจอเองอยู่แล้ว จึงเช็ค
       // ตำแหน่งแทน ฟอนต์ Android จริงอยู่บรรทัดเดียว

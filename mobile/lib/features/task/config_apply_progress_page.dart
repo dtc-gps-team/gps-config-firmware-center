@@ -1,0 +1,1047 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/api/models.dart';
+import '../../core/router/app_router.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_card.dart';
+import '../../core/ui/app_ink_header.dart';
+import '../../core/ui/app_v2_theme.dart';
+import 'config_apply_request_repository.dart';
+import 'task_repository.dart';
+
+/// ช่วงเวลาที่ถามความคืบหน้าซ้ำ (เฉพาะตอนเปิดหน้านี้และคำขอยังไม่จบ)
+const progressPollInterval = Duration(seconds: 2);
+
+/// หน้า "ส่งเข้ากล่อง" (mockup ที่ B เลือก 4 พ.ย. 2569) — เปิดเองหลังกดส่ง และ
+/// เปิดซ้ำได้จากแถบในหน้างาน · ถาม `GET /tasks/{taskId}/config-apply-requests/
+/// {id}/progress` ทุก [progressPollInterval] · ภาพกลางจอเปลี่ยนตามขั้นที่กล่อง
+/// รายงานจริงผ่าน Server กลาง ไม่มีข้อมูลขั้นตอน (ไม่ใช่โหมด central หรือ
+/// Server กลางล่ม) = เหลือ 3 ขั้นตามสถานะคำขอของเรา
+class ConfigApplyProgressPage extends ConsumerStatefulWidget {
+  const ConfigApplyProgressPage({
+    super.key,
+    required this.taskId,
+    required this.requestId,
+  });
+
+  final String taskId;
+  final String requestId;
+
+  @override
+  ConsumerState<ConfigApplyProgressPage> createState() =>
+      _ConfigApplyProgressPageState();
+}
+
+/// ผลรวมของคำขอที่หน้านี้ใช้วาด
+enum _Outcome { running, succeeded, rolledBack, failed }
+
+class _ConfigApplyProgressPageState
+    extends ConsumerState<ConfigApplyProgressPage>
+    with TickerProviderStateMixin {
+  late final AnimationController _loop;
+  late final AnimationController _finish;
+  Timer? _tick;
+  Timer? _poll;
+  ConfigApplyRequestProgress? _progress;
+  Object? _error;
+  bool _loading = false;
+  bool _invalidated = false;
+  bool _reducedMotion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loop = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+    _finish = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    unawaited(_load());
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && !_done) setState(() {});
+    });
+    _poll = Timer.periodic(progressPollInterval, (_) {
+      if (!_done) unawaited(_load());
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reducedMotion = MediaQuery.disableAnimationsOf(context);
+    _syncMotion();
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    _poll?.cancel();
+    _loop.dispose();
+    _finish.dispose();
+    super.dispose();
+  }
+
+  bool get _done => _outcome(_progress) != _Outcome.running;
+
+  void _syncMotion() {
+    if (_reducedMotion) {
+      _loop.stop();
+      _finish.value = _done ? 1 : 0;
+      return;
+    }
+    if (_done) {
+      _loop.stop();
+      if (_finish.status == AnimationStatus.dismissed) _finish.forward();
+    } else if (!_loop.isAnimating) {
+      _loop.repeat();
+    }
+  }
+
+  Future<void> _load() async {
+    if (_loading || !mounted) return;
+    _loading = true;
+    try {
+      final progress = await ref
+          .read(configApplyRequestRepositoryProvider)
+          .progress(widget.taskId, widget.requestId);
+      if (!mounted) return;
+      setState(() {
+        _progress = progress;
+        _error = null;
+      });
+      if (_done) {
+        _poll?.cancel();
+        _tick?.cancel();
+        // จบแล้วให้หน้างานและรายการคำขอโหลดใหม่ทันที ไม่ต้องรอรอบ refresh
+        if (!_invalidated) {
+          _invalidated = true;
+          ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+          ref.invalidate(taskDetailProvider(widget.taskId));
+        }
+      }
+      _syncMotion();
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    } finally {
+      _loading = false;
+    }
+  }
+
+  void _close() {
+    final router = GoRouter.maybeOf(context);
+    if (router == null) return;
+    if (router.canPop()) {
+      router.pop();
+    } else {
+      router.go(AppRoutes.taskDetail(widget.taskId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _progress;
+    final task = ref.watch(taskDetailProvider(widget.taskId)).valueOrNull;
+    final outcome = _outcome(progress);
+    final steps = _stepsFor(progress, outcome);
+    final current = steps.where((s) => s.state == _StepState.now).firstOrNull;
+    final isFirmware = progress?.kind == FieldApplyKind.firmware;
+    final elapsed = _elapsedSeconds(progress, outcome);
+    final retry = outcome == _Outcome.rolledBack || outcome == _Outcome.failed;
+    final deviceId = task?.deviceId;
+
+    return AppV2Theme(
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: isFirmware
+                  ? 'ส่ง Firmware เข้ากล่อง'
+                  : 'ส่ง Config เข้ากล่อง',
+              subtitle: deviceId,
+              onBack: _close,
+            ),
+            Expanded(
+              child: ListView(
+                key: const Key('apply_progress_list'),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                children: [
+                  SizedBox(
+                    height: 220,
+                    child: Center(
+                      child: _ProgressScene(
+                        loop: _loop,
+                        finish: _finish,
+                        value: _percent(steps, outcome),
+                        outcome: outcome,
+                        stage: current?.key,
+                        reducedMotion: _reducedMotion,
+                      ),
+                    ),
+                  ),
+                  Semantics(
+                    liveRegion: true,
+                    child: Column(
+                      children: [
+                        Text(
+                          _headline(progress, current, outcome),
+                          key: const Key('apply_progress_headline'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: AppTypography.lg,
+                            height: AppTypography.lgHeight,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.foreground,
+                          ),
+                        ),
+                        Text(
+                          '${outcome == _Outcome.running ? 'ผ่านไป' : 'ใช้เวลา'} '
+                          '${_mmss(elapsed)}',
+                          key: const Key('apply_progress_elapsed'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: AppTypography.sm,
+                            height: AppTypography.smHeight,
+                            color: AppColors.mutedForeground,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_error != null && progress == null) ...[
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton.icon(
+                        key: const Key('apply_progress_retry_load'),
+                        onPressed: _load,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('โหลดความคืบหน้าอีกครั้ง'),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (progress != null) ...[
+                    _VersionCard(progress: progress),
+                    const SizedBox(height: 10),
+                  ],
+                  AppCard(
+                    key: const Key('apply_progress_steps'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final (i, step) in steps.indexed)
+                          _StepRow(
+                            step: step,
+                            last: i == steps.length - 1,
+                            reducedMotion: _reducedMotion,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (outcome != _Outcome.running && progress != null) ...[
+                    const SizedBox(height: 10),
+                    _ResultCard(
+                      progress: progress,
+                      outcome: outcome,
+                      elapsed: elapsed,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: FilledButton(
+            key: const Key('apply_progress_bottom'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+            ),
+            onPressed: retry && deviceId != null
+                ? () => GoRouter.maybeOf(context)?.go(
+                    AppRoutes.deviceApply(
+                      deviceId,
+                      taskId: widget.taskId,
+                      firmware: isFirmware,
+                    ),
+                  )
+                : _close,
+            child: Text(
+              retry && deviceId != null
+                  ? 'ส่งใหม่อีกครั้ง'
+                  : outcome == _Outcome.running
+                  ? 'ส่งต่อเบื้องหลัง กลับไปหน้างาน'
+                  : 'กลับไปหน้างาน',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ข้อมูล -> ขั้นตอน
+
+enum _StepState { done, now, todo, fail }
+
+class _Step {
+  const _Step(this.key, this.label, this.state, {this.at, this.progress});
+  final ConfigApplyProgressStepKey key;
+  final String label;
+  final _StepState state;
+  final DateTime? at;
+  final int? progress;
+}
+
+const _firmwareFlow = [
+  ConfigApplyProgressStepKey.delivered,
+  ConfigApplyProgressStepKey.downloading,
+  ConfigApplyProgressStepKey.validating,
+  ConfigApplyProgressStepKey.installing,
+  ConfigApplyProgressStepKey.rebooting,
+];
+
+const _configFlow = [
+  ConfigApplyProgressStepKey.delivered,
+  ConfigApplyProgressStepKey.installing,
+];
+
+const _terminalKeys = {
+  ConfigApplyProgressStepKey.succeeded,
+  ConfigApplyProgressStepKey.rolledBack,
+  ConfigApplyProgressStepKey.failed,
+  ConfigApplyProgressStepKey.expired,
+};
+
+String _stepLabel(ConfigApplyProgressStepKey key, {required bool firmware}) =>
+    switch (key) {
+      ConfigApplyProgressStepKey.delivered => 'ส่งถึงกล่อง',
+      ConfigApplyProgressStepKey.downloading => 'ดาวน์โหลด',
+      ConfigApplyProgressStepKey.validating => 'ตรวจลายเซ็น',
+      ConfigApplyProgressStepKey.installing =>
+        firmware ? 'ติดตั้ง' : 'กล่องรับค่าใหม่',
+      ConfigApplyProgressStepKey.rebooting => 'รีบูตและยืนยันตัวเอง',
+      ConfigApplyProgressStepKey.succeeded => 'ยืนยันผล',
+      ConfigApplyProgressStepKey.rolledBack => 'กล่องย้อนกลับ',
+      ConfigApplyProgressStepKey.failed => 'ส่งไม่สำเร็จ',
+      ConfigApplyProgressStepKey.expired => 'หมดเวลา',
+    };
+
+bool _hasCentralSteps(ConfigApplyRequestProgress? p) =>
+    p?.central?.available == true && p!.central!.steps.isNotEmpty;
+
+_Outcome _outcome(ConfigApplyRequestProgress? p) {
+  if (p == null) return _Outcome.running;
+  final last = _hasCentralSteps(p) ? p.central!.steps.last.key : null;
+  if (last == ConfigApplyProgressStepKey.rolledBack) return _Outcome.rolledBack;
+  if (p.status == ConfigApplyRequestStatus.succeeded ||
+      last == ConfigApplyProgressStepKey.succeeded) {
+    return _Outcome.succeeded;
+  }
+  if (last == ConfigApplyProgressStepKey.failed ||
+      last == ConfigApplyProgressStepKey.expired ||
+      !p.status.isInFlight) {
+    return _Outcome.failed;
+  }
+  return _Outcome.running;
+}
+
+ConfigApplyProgressStepKey _finalKey(_Outcome outcome) => switch (outcome) {
+  _Outcome.rolledBack => ConfigApplyProgressStepKey.rolledBack,
+  _Outcome.failed => ConfigApplyProgressStepKey.failed,
+  _ => ConfigApplyProgressStepKey.succeeded,
+};
+
+List<_Step> _stepsFor(ConfigApplyRequestProgress? p, _Outcome outcome) {
+  final firmware = p?.kind == FieldApplyKind.firmware;
+  final running = outcome == _Outcome.running;
+  final finalKey = _finalKey(outcome);
+  final finalState = switch (outcome) {
+    _Outcome.succeeded => _StepState.done,
+    _Outcome.running => _StepState.todo,
+    _ => _StepState.fail,
+  };
+
+  if (!_hasCentralSteps(p)) {
+    // ไม่มีขั้นตอนจริงจากกล่อง — 3 ขั้นตามสถานะคำขอของเรา
+    return [
+      _Step(
+        ConfigApplyProgressStepKey.delivered,
+        'ส่งถึงกล่อง',
+        _StepState.done,
+        at: p?.releasedAt,
+      ),
+      _Step(
+        ConfigApplyProgressStepKey.installing,
+        firmware ? 'กล่องกำลังติดตั้ง' : 'กล่องกำลังรับค่าใหม่',
+        running ? _StepState.now : _StepState.done,
+      ),
+      _Step(
+        finalKey,
+        _stepLabel(finalKey, firmware: firmware),
+        finalState,
+        at: running ? null : p?.completedAt,
+      ),
+    ];
+  }
+
+  final reported = {for (final s in p!.central!.steps) s.key: s};
+  final last = p.central!.steps.last.key;
+  final flow = firmware ? _firmwareFlow : _configFlow;
+  // ขั้นล่าสุดที่กล่องรายงาน — ขั้นก่อนหน้าทั้งหมดถือว่าผ่านแล้ว
+  final reached = _terminalKeys.contains(last)
+      ? flow.length
+      : math.max(0, flow.indexOf(last));
+  return [
+    for (final (i, key) in flow.indexed)
+      _Step(
+        key,
+        _stepLabel(key, firmware: firmware),
+        i < reached || (!running && reported.containsKey(key))
+            ? _StepState.done
+            : i == reached && running
+            ? _StepState.now
+            : _StepState.todo,
+        at: reported[key]?.at,
+        progress: reported[key]?.progress,
+      ),
+    _Step(
+      finalKey,
+      _stepLabel(finalKey, firmware: firmware),
+      finalState,
+      at: reported[finalKey]?.at ?? (running ? null : p.completedAt),
+    ),
+  ];
+}
+
+int _elapsedSeconds(ConfigApplyRequestProgress? p, _Outcome outcome) {
+  final start = p?.releasedAt;
+  if (start == null) return 0;
+  final end = outcome == _Outcome.running
+      ? DateTime.now()
+      : (p!.completedAt ?? DateTime.now());
+  return math.max(0, end.difference(start).inSeconds);
+}
+
+/// ความยาววงแหวน 0..1 — จบแล้วเต็มวง · กำลังทำ = ขั้นที่ผ่าน + ครึ่งขั้นปัจจุบัน
+/// (ดาวน์โหลดใช้ % จริง)
+double _percent(List<_Step> steps, _Outcome outcome) {
+  if (outcome != _Outcome.running) return 1;
+  final now = steps.indexWhere((s) => s.state == _StepState.now);
+  if (now < 0) return .05;
+  final within = steps[now].key == ConfigApplyProgressStepKey.downloading
+      ? (steps[now].progress ?? 0) / 100
+      : .5;
+  return ((now + within) / steps.length).clamp(.05, .97);
+}
+
+String _headline(
+  ConfigApplyRequestProgress? p,
+  _Step? current,
+  _Outcome outcome,
+) {
+  if (p == null) return 'กำลังโหลดความคืบหน้า';
+  final firmware = p.kind == FieldApplyKind.firmware;
+  switch (outcome) {
+    case _Outcome.succeeded:
+      return firmware ? 'ติดตั้งสำเร็จ' : 'กล่องรับค่าใหม่แล้ว';
+    case _Outcome.rolledBack:
+      return 'กล่องย้อนกลับเวอร์ชันเดิม';
+    case _Outcome.failed:
+      return 'ส่งไม่สำเร็จ';
+    case _Outcome.running:
+      break;
+  }
+  if (p.central?.deviceOnline == false) return 'รอกล่องออนไลน์';
+  return switch (current?.key) {
+    ConfigApplyProgressStepKey.downloading =>
+      'กำลังดาวน์โหลด ${current?.progress ?? 0}%',
+    ConfigApplyProgressStepKey.validating => 'กำลังตรวจลายเซ็น',
+    ConfigApplyProgressStepKey.installing =>
+      firmware ? 'กล่องกำลังติดตั้ง' : 'กล่องกำลังรับค่าใหม่',
+    ConfigApplyProgressStepKey.rebooting => 'กล่องกำลังรีบูต',
+    _ => 'กำลังส่งเข้ากล่อง',
+  };
+}
+
+String _mmss(int seconds) =>
+    '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+
+String _clock(DateTime at) {
+  final t = at.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+}
+
+// ---------------------------------------------------------------------------
+// ส่วนประกอบหน้าจอ
+
+class _VersionCard extends StatelessWidget {
+  const _VersionCard({required this.progress});
+  final ConfigApplyRequestProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final firmware = progress.kind == FieldApplyKind.firmware;
+    final from = progress.fromVersion;
+    final to = progress.toVersion ?? '—';
+    return AppCard(
+      key: const Key('apply_progress_version'),
+      child: Row(
+        children: [
+          Text(
+            firmware ? 'Firmware' : 'Config',
+            style: const TextStyle(
+              fontSize: AppTypography.sm,
+              color: AppColors.mutedForeground,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              from == null || from.isEmpty ? to : '$from → $to',
+              key: const Key('apply_progress_version_text'),
+              style: const TextStyle(
+                fontSize: AppTypography.lg,
+                height: AppTypography.lgHeight,
+                fontWeight: FontWeight.w700,
+                color: AppColors.foreground,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          if (progress.isDowngrade)
+            const AppBadge(label: 'ลดเวอร์ชัน', tone: AppBadgeTone.warning),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepRow extends StatelessWidget {
+  const _StepRow({
+    required this.step,
+    required this.last,
+    required this.reducedMotion,
+  });
+  final _Step step;
+  final bool last;
+  final bool reducedMotion;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent =
+        step.key == ConfigApplyProgressStepKey.downloading &&
+            step.state == _StepState.now &&
+            step.progress != null
+        ? ' ${step.progress}%'
+        : '';
+    final emphasis =
+        step.state == _StepState.now || step.state == _StepState.fail;
+    return IntrinsicHeight(
+      child: Row(
+        key: Key('apply_progress_step_${step.key.wireName}'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 24,
+            child: Column(
+              children: [
+                const SizedBox(height: 7),
+                _StepDot(state: step.state, reducedMotion: reducedMotion),
+                if (!last)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: step.state == _StepState.done
+                          ? AppColors.primary
+                          : AppColors.border,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                '${step.label}$percent',
+                style: TextStyle(
+                  fontSize: AppTypography.sm,
+                  height: AppTypography.smHeight,
+                  fontWeight: emphasis ? FontWeight.w600 : FontWeight.w400,
+                  color: switch (step.state) {
+                    _StepState.todo => AppColors.mutedForeground,
+                    _StepState.fail => AppColors.warning,
+                    _ => AppColors.foreground,
+                  },
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              step.at == null || step.state == _StepState.todo
+                  ? ''
+                  : _clock(step.at!),
+              style: const TextStyle(
+                fontSize: AppTypography.xs,
+                color: AppColors.mutedForeground,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepDot extends StatefulWidget {
+  const _StepDot({required this.state, required this.reducedMotion});
+  final _StepState state;
+  final bool reducedMotion;
+
+  @override
+  State<_StepDot> createState() => _StepDotState();
+}
+
+class _StepDotState extends State<_StepDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _breath = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StepDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    if (widget.state == _StepState.now && !widget.reducedMotion) {
+      if (!_breath.isAnimating) _breath.repeat(reverse: true);
+    } else {
+      _breath.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _breath.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fail = widget.state == _StepState.fail;
+    final filled = widget.state == _StepState.done || fail;
+    final color = fail ? AppColors.warning : AppColors.primary;
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: filled ? color : AppColors.card,
+        border: Border.all(
+          color: widget.state == _StepState.todo ? AppColors.border : color,
+          width: 2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: switch (widget.state) {
+        _StepState.done => const Icon(
+          Icons.check,
+          size: 14,
+          color: AppColors.primaryForeground,
+        ),
+        _StepState.fail => const Icon(
+          Icons.priority_high,
+          size: 14,
+          color: AppColors.primaryForeground,
+        ),
+        _StepState.now => ScaleTransition(
+          key: const Key('apply_progress_now_dot'),
+          scale: Tween(begin: 1.0, end: .5).animate(_breath),
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        _StepState.todo => const SizedBox.shrink(),
+      },
+    );
+  }
+}
+
+class _ResultCard extends StatelessWidget {
+  const _ResultCard({
+    required this.progress,
+    required this.outcome,
+    required this.elapsed,
+  });
+  final ConfigApplyRequestProgress progress;
+  final _Outcome outcome;
+  final int elapsed;
+
+  @override
+  Widget build(BuildContext context) {
+    final firmware = progress.kind == FieldApplyKind.firmware;
+    final ok = outcome == _Outcome.succeeded;
+    final message = progress.central?.errorMessage;
+    final (title, body) = switch (outcome) {
+      _Outcome.succeeded => (
+        firmware ? 'ติดตั้งสำเร็จ' : 'กล่องรับค่าใหม่แล้ว',
+        firmware
+            ? 'กล่องรายงาน Firmware ${progress.toVersion ?? ''} แล้ว '
+                  'ใช้เวลา ${_mmss(elapsed)}'
+            : 'ใช้เวลา ${_mmss(elapsed)}',
+      ),
+      _Outcome.rolledBack => (
+        'กล่องย้อนกลับเป็น ${progress.fromVersion ?? 'เวอร์ชันเดิม'}',
+        '${message ?? 'Firmware ใหม่ใช้งานไม่ได้หลังรีบูต'} · ส่งใหม่ได้',
+      ),
+      _ => (
+        'ส่งไม่สำเร็จ',
+        message ?? 'กล่องไม่ได้รับคำสั่งนี้ ลองส่งใหม่อีกครั้ง',
+      ),
+    };
+    final color = ok ? AppColors.success : AppColors.warning;
+    return Container(
+      key: Key(ok ? 'apply_progress_result_ok' : 'apply_progress_result_bad'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ok ? AppColors.successSubtle : AppColors.warningSubtle,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(fontWeight: FontWeight.w700, color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            body,
+            style: TextStyle(fontSize: AppTypography.sm, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ภาพกลางจอ
+
+class _ProgressScene extends StatelessWidget {
+  const _ProgressScene({
+    required this.loop,
+    required this.finish,
+    required this.value,
+    required this.outcome,
+    required this.stage,
+    required this.reducedMotion,
+  });
+  final AnimationController loop;
+  final AnimationController finish;
+  final double value;
+  final _Outcome outcome;
+  final ConfigApplyProgressStepKey? stage;
+  final bool reducedMotion;
+
+  @override
+  Widget build(BuildContext context) {
+    final running = outcome == _Outcome.running;
+    final busy =
+        stage == ConfigApplyProgressStepKey.validating ||
+        stage == ConfigApplyProgressStepKey.installing;
+    final rebooting = stage == ConfigApplyProgressStepKey.rebooting;
+    final bad = outcome == _Outcome.rolledBack || outcome == _Outcome.failed;
+    return SizedBox(
+      key: const Key('apply_progress_scene'),
+      width: 184,
+      height: 184,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: value),
+        duration: reducedMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+        builder: (context, ring, _) => AnimatedBuilder(
+          animation: Listenable.merge([loop, finish]),
+          builder: (context, _) => CustomPaint(
+            painter: _ScenePainter(
+              ring: ring,
+              phase: reducedMotion ? 0 : loop.value,
+              finish: finish.value,
+              outcome: outcome,
+              packets:
+                  running &&
+                  !reducedMotion &&
+                  (stage == null ||
+                      stage == ConfigApplyProgressStepKey.delivered ||
+                      stage == ConfigApplyProgressStepKey.downloading),
+              pulses: running && !reducedMotion,
+            ),
+            child: Center(
+              child: Container(
+                width: 124,
+                height: 124,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: outcome == _Outcome.succeeded
+                      ? AppColors.successSubtle
+                      : bad
+                      ? AppColors.warningSubtle
+                      : AppColors.card,
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1F22261F),
+                      blurRadius: 22,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: outcome == _Outcome.succeeded
+                    // ติ๊กถูกวาดใน _ScenePainter
+                    ? const SizedBox(
+                        key: Key('apply_progress_icon_ok'),
+                        width: 64,
+                        height: 64,
+                      )
+                    : bad
+                    ? const Icon(
+                        Icons.history_rounded,
+                        key: Key('apply_progress_icon_bad'),
+                        size: 58,
+                        color: AppColors.warning,
+                      )
+                    : Opacity(
+                        // กล่องกระพริบตอนรีบูต
+                        opacity: rebooting && !reducedMotion
+                            ? .3 +
+                                  .7 *
+                                      (.5 +
+                                          .5 *
+                                              math.cos(
+                                                loop.value * math.pi * 6,
+                                              ))
+                            : 1,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            const Icon(
+                              Icons.inventory_2_outlined,
+                              key: Key('apply_progress_icon_box'),
+                              size: 60,
+                              color: AppColors.primary,
+                            ),
+                            if (busy)
+                              Positioned(
+                                right: 18,
+                                bottom: 20,
+                                child: Transform.rotate(
+                                  key: const Key('apply_progress_gear'),
+                                  angle: reducedMotion
+                                      ? 0
+                                      : loop.value * math.pi * 2,
+                                  child: const DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.card,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.settings,
+                                      size: 26,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScenePainter extends CustomPainter {
+  const _ScenePainter({
+    required this.ring,
+    required this.phase,
+    required this.finish,
+    required this.outcome,
+    required this.packets,
+    required this.pulses,
+  });
+  final double ring;
+  final double phase;
+  final double finish;
+  final _Outcome outcome;
+  final bool packets;
+  final bool pulses;
+
+  static const _burstColors = [
+    AppColors.primary,
+    AppColors.primarySubtle,
+    AppColors.success,
+    AppColors.notificationBadge,
+    AppColors.info,
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    const radius = 84.0;
+
+    // วงกระเพื่อม 2 วงสลับจังหวะ
+    if (pulses) {
+      for (final offset in const [0.0, .5]) {
+        final t = (phase + offset) % 1;
+        canvas.drawCircle(
+          c,
+          52 + t * 32,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = AppColors.primarySubtle.withValues(alpha: (1 - t) * .9),
+        );
+      }
+    }
+
+    canvas.drawCircle(
+      c,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8
+        ..color = AppColors.border,
+    );
+    canvas.drawArc(
+      Rect.fromCircle(center: c, radius: radius),
+      -math.pi / 2,
+      math.pi * 2 * ring.clamp(0, 1),
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8
+        ..strokeCap = StrokeCap.round
+        ..color = switch (outcome) {
+          _Outcome.succeeded => AppColors.success,
+          _Outcome.running => AppColors.primary,
+          _ => AppColors.warning,
+        },
+    );
+
+    // ข้อมูลไหลลงกล่องตอนส่ง/ดาวน์โหลด
+    if (packets) {
+      for (final offset in const [0.0, .33, .66]) {
+        final t = (phase * 2.2 + offset) % 1;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: Offset(c.dx, c.dy - radius + 6 + t * 30),
+              width: 4,
+              height: 8,
+            ),
+            const Radius.circular(2),
+          ),
+          Paint()
+            ..color = AppColors.primary.withValues(
+              alpha: math.sin(t * math.pi).clamp(0, 1).toDouble(),
+            ),
+        );
+      }
+    }
+
+    if (outcome != _Outcome.succeeded) return;
+
+    // ติ๊กถูกวาดเส้นตาม finish
+    final path = Path()
+      ..moveTo(c.dx - 22, c.dy + 1)
+      ..lineTo(c.dx - 6, c.dy + 17)
+      ..lineTo(c.dx + 25, c.dy - 16);
+    final drawn = Path();
+    final checkT = Curves.easeOut.transform(((finish - .1) / .7).clamp(0, 1));
+    for (final metric in path.computeMetrics()) {
+      drawn.addPath(metric.extractPath(0, metric.length * checkT), Offset.zero);
+    }
+    canvas.drawPath(
+      drawn,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 7
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = AppColors.success,
+    );
+
+    // พลุเล็กๆ ครั้งเดียวตอนสำเร็จ
+    if (finish <= 0 || finish >= 1) return;
+    final t = Curves.easeOut.transform(finish);
+    for (var i = 0; i < 14; i++) {
+      final angle = i / 14 * math.pi * 2;
+      final dist = (70 + (i % 3) * 14.0) * t;
+      canvas.save();
+      canvas.translate(
+        c.dx + math.cos(angle) * dist,
+        c.dy + math.sin(angle) * dist,
+      );
+      canvas.rotate(t * 2.8);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: 7, height: 7),
+          const Radius.circular(2),
+        ),
+        Paint()
+          ..color = _burstColors[i % _burstColors.length].withValues(
+            alpha: 1 - t,
+          ),
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScenePainter old) =>
+      old.ring != ring ||
+      old.phase != phase ||
+      old.finish != finish ||
+      old.outcome != outcome ||
+      old.packets != packets ||
+      old.pulses != pulses;
+}

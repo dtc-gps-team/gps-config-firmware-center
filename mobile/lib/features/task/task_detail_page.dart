@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,6 +37,18 @@ String _formatDate(DateTime dt) {
   final d = dt.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
+String _formatCompactDate(DateTime dt) {
+  final local = dt.toLocal();
+  final now = DateTime.now();
+  final sameDay =
+      local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day;
+  String two(int n) => n.toString().padLeft(2, '0');
+  final time = '${two(local.hour)}:${two(local.minute)}';
+  return sameDay ? time : '${two(local.day)}/${two(local.month)} $time';
 }
 
 /// Incident description for a failed simulator check. Prefix `[Simulator
@@ -442,11 +457,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       _refreshApplyRequests();
       if (!mounted) return;
       setState(() => _releasing = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน')),
-        );
+      // ไปหน้าความคืบหน้าทันที · ไม่มี router (เช่นฝังในหน้าอื่น) = อยู่หน้าเดิม
+      // แถบ "กำลังส่งเข้ากล่อง" ด้านบนเปิดหน้านั้นซ้ำได้
+      GoRouter.maybeOf(
+        context,
+      )?.push(AppRoutes.taskApplyProgress(widget.taskId, requestId));
     } on ApiException catch (e) {
       _refreshApplyRequests();
       if (!mounted) return;
@@ -562,6 +577,10 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     final showRequestButton =
         canConfirmInstall &&
         (latestRequest == null || latestRequest.status.allowsNewRequest);
+    final requestSending =
+        latestRequest?.status == ConfigApplyRequestStatus.sending &&
+        latestRequest?.releasedAt != null &&
+        latestRequest?.completedAt == null;
     // docs/28 §5.4 — ปิดงานระหว่างกำลังส่งเข้ากล่องไม่ได้ (backend ตอบ 409)
     final completeBlocked =
         _selected == TaskStatus.completed &&
@@ -599,6 +618,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           children: [
             if (offline != null) ...[
               OfflineCacheBanner(cachedAt: offline.cachedAt),
+              const SizedBox(height: 12),
+            ],
+            if (requestSending) ...[
+              _SendingRequestBanner(
+                request: latestRequest!,
+                onTap: () => context.push(
+                  AppRoutes.taskApplyProgress(task.id, latestRequest.id),
+                ),
+              ),
               const SizedBox(height: 12),
             ],
             AppCard(
@@ -653,33 +681,46 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                     )
                   else
                     const AppInfoRow(label: 'อุปกรณ์', value: null),
-                  // ชื่อมากับ GET /tasks/{id} (v3.67) · ไม่มี (cache ในเครื่อง /
-                  // backend เก่า) = user id ดิบแบบเดิม
-                  AppInfoRow(
-                    key: const Key('task_detail_assignee'),
-                    label: 'ผู้รับผิดชอบ',
-                    value: task.assignee?.label ?? task.assignedTo,
-                    selectable: true,
+                  // ข้อมูลงานย่อเป็นบรรทัดเล็ก · ผู้รับผิดชอบ/ที่มาอยู่ครบ ไม่ตัดทิ้ง
+                  // (ชื่อมากับ GET /tasks/{id} v3.67 · ไม่มี = user id ดิบแบบเดิม)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: DefaultTextStyle.merge(
+                      style: const TextStyle(
+                        fontSize: AppTypography.xs,
+                        height: AppTypography.xsHeight,
+                        color: AppColors.mutedForeground,
+                      ),
+                      child: Wrap(
+                        key: const Key('task_detail_compact_meta'),
+                        spacing: 6,
+                        runSpacing: 2,
+                        children: [
+                          SelectableText(
+                            task.assignee?.label ?? task.assignedTo,
+                            key: const Key('task_detail_assignee'),
+                          ),
+                          const Text('·'),
+                          Text(
+                            taskSourceLabel(task.source),
+                            key: const Key('task_detail_source'),
+                          ),
+                          const Text('·'),
+                          Text('สร้าง ${_formatCompactDate(task.createdAt)}'),
+                          const Text('·'),
+                          Text(
+                            'แก้ล่าสุด ${_formatCompactDate(task.updatedAt)}',
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  AppInfoRow(
-                    key: const Key('task_detail_source'),
-                    label: 'ที่มา',
-                    value: taskSourceLabel(task.source),
-                  ),
-                  AppInfoRow(
-                    label: 'กำหนดส่ง',
-                    value: task.dueDate == null
-                        ? null
-                        : _formatDate(task.dueDate!),
-                  ),
-                  AppInfoRow(
-                    label: 'สร้างเมื่อ',
-                    value: _formatDate(task.createdAt),
-                  ),
-                  AppInfoRow(
-                    label: 'แก้ไขล่าสุด',
-                    value: _formatDate(task.updatedAt),
-                  ),
+                  // แสดงเฉพาะเมื่อมีค่า (ส่วนใหญ่ไม่มี จึงไม่ทำให้หน้ายาว)
+                  if (task.dueDate != null)
+                    AppInfoRow(
+                      label: 'กำหนดส่ง',
+                      value: _formatDate(task.dueDate!),
+                    ),
                   if (task.completedAt != null)
                     AppInfoRow(
                       label: 'ปิดงานเมื่อ',
@@ -807,18 +848,19 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                         ),
                       ],
                     ],
-                    _ApplyRequestSection(
-                      request: applyRequest!,
-                      cancelling: _cancelling,
-                      cancelError: _cancelError,
-                      onCancel: _confirmCancelRequest,
-                      releasing: _releasing,
-                      releaseError: _releaseError,
-                      onRelease: _confirmReleaseRequest,
-                      onRetry: () => ref.invalidate(
-                        taskConfigApplyRequestsProvider(task.id),
+                    if (!requestSending)
+                      _ApplyRequestSection(
+                        request: applyRequest!,
+                        cancelling: _cancelling,
+                        cancelError: _cancelError,
+                        onCancel: _confirmCancelRequest,
+                        releasing: _releasing,
+                        releaseError: _releaseError,
+                        onRelease: _confirmReleaseRequest,
+                        onRetry: () => ref.invalidate(
+                          taskConfigApplyRequestsProvider(task.id),
+                        ),
                       ),
-                    ),
                     if (earlierRequests.isNotEmpty)
                       _RequestHistoryLink(
                         earlierCount: earlierRequests.length,
@@ -855,7 +897,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
         // "ขอส่ง Config เข้าเครื่อง" เป็นปุ่มหลัก เพราะเป็นงานเฉพาะของใบงานติดตั้ง
         // ส่วน "บันทึกสถานะ" ลดเป็น outline · สองปุ่มวางเคียงกัน (ปุ่มหลักขวา) สูง 48
         // ดู `_BottomActionBar` · มีปุ่มเดียวเมื่อไหร่ ปุ่มนั้นเป็นปุ่มหลักเต็มความกว้าง
-        bottomNavigationBar: (canEditStatus || showRequestButton)
+        bottomNavigationBar: ((canEditStatus && _dirty) || showRequestButton)
             ? DecoratedBox(
                 decoration: const BoxDecoration(
                   color: AppColors.background,
@@ -865,7 +907,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                     child: _BottomActionBar(
-                      save: canEditStatus
+                      save: canEditStatus && _dirty
                           ? _StatusSaveBar(
                               error: _saveError,
                               saving: _saving,
@@ -1141,6 +1183,145 @@ class _ConfirmInstallBar {
 /// ไม่มีคำขอ = ไม่แสดงอะไร (ปุ่มขอส่งอยู่แถบล่าง) · `pending` มีปุ่มยกเลิก ·
 /// `approved` (docs/27) มีปุ่มหลัก "ส่งเข้ากล่อง" + ยกเลิก · จบแบบไม่สำเร็จบอก
 /// เหตุผล แล้วขอส่งอีกครั้งจากแถบล่าง
+class _SendingRequestBanner extends StatefulWidget {
+  const _SendingRequestBanner({required this.request, required this.onTap});
+  final ConfigApplyRequest request;
+  final VoidCallback onTap;
+
+  @override
+  State<_SendingRequestBanner> createState() => _SendingRequestBannerState();
+}
+
+class _SendingRequestBannerState extends State<_SendingRequestBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Timer? _timer;
+  var _elapsed = 0;
+  var _reduced = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _elapsed = math.max(
+      0,
+      DateTime.now().difference(widget.request.releasedAt!).inSeconds,
+    );
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsed++);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.disableAnimationsOf(context);
+    if (_reduced == disabled) return;
+    _reduced = disabled;
+    if (disabled) {
+      _controller.stop();
+    } else {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final from = widget.request.fromFirmwareVersion;
+    final to = widget.request.firmwareVersion;
+    return Material(
+      key: const Key('task_apply_sending_banner'),
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _controller,
+                        builder: (context, _) => CircularProgressIndicator(
+                          // ลดอนิเมชั่น = วงนิ่ง (null จะเป็นวงหมุนไม่รู้จบ)
+                          value: _reduced ? .65 : .3 + _controller.value * .65,
+                          strokeWidth: 4,
+                          color: AppColors.primarySubtle,
+                          backgroundColor: AppColors.primaryForeground
+                              .withValues(alpha: .24),
+                        ),
+                      ),
+                      Text(
+                        '${_elapsed ~/ 60}:${(_elapsed % 60).toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          color: AppColors.primaryForeground,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'กำลังส่งเข้ากล่อง',
+                        style: TextStyle(
+                          color: AppColors.primaryForeground,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        widget.request.kind == FieldApplyKind.firmware
+                            ? 'Firmware ${from ?? '—'} → ${to ?? '—'}'
+                            : 'Config กำลังส่ง',
+                        style: TextStyle(
+                          color: AppColors.primaryForeground.withValues(
+                            alpha: .72,
+                          ),
+                          fontSize: AppTypography.sm,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primarySubtle,
+                foregroundColor: AppColors.primary,
+              ),
+              onPressed: widget.onTap,
+              child: const Text('ดูความคืบหน้า'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ApplyRequestSection extends StatelessWidget {
   const _ApplyRequestSection({
     required this.request,
@@ -1331,9 +1512,11 @@ class _ApplyRequestSection extends StatelessWidget {
   }
 
   static String _firmwareLine(ConfigApplyRequest r) {
-    final target = 'Firmware v${r.firmwareVersion ?? '-'}';
+    final target = 'Firmware ${r.firmwareVersion ?? '-'}';
     final from = r.fromFirmwareVersion;
-    return from == null ? target : '$target (กล่องรัน v$from ตอนขอ)';
+    return from == null
+        ? target
+        : 'Firmware $from → ${r.firmwareVersion ?? '-'}';
   }
 
   static List<String> _statusLines(
@@ -1446,56 +1629,65 @@ class _ApplyRequestTimeline extends StatelessWidget {
     return AppCard(
       key: const Key('apply_request_timeline'),
       size: AppCardSize.small,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'ลำดับเหตุการณ์',
-            style: TextStyle(fontWeight: FontWeight.w600),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: const Key('apply_request_timeline_expansion'),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: Text(
+            'ลำดับเหตุการณ์ · ${_timelineSummary(events)}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 8),
-          for (final (index, event) in events.indexed) ...[
-            if (index > 0)
+          children: [
+            for (final event in events)
               Padding(
-                padding: const EdgeInsets.only(left: 10),
-                child: Container(width: 2, height: 12, color: AppColors.border),
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  key: event.$4,
+                  children: [
+                    Icon(
+                      event.$3
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: event.$3
+                          ? AppColors.primary
+                          : AppColors.mutedForeground,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(event.$1, style: _timelineMutedStyle)),
+                    Text(
+                      event.$2 == null ? '—' : _formatCompactDate(event.$2!),
+                      style: _timelineMutedStyle,
+                    ),
+                  ],
+                ),
               ),
-            Row(
-              key: event.$4,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  event.$3 ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 20,
-                  color: event.$3
-                      ? AppColors.primary
-                      : AppColors.mutedForeground,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(event.$1),
-                      Text(
-                        event.$2 == null
-                            ? 'ยังไม่เกิด'
-                            : _formatDate(event.$2!),
-                        style: _timelineMutedStyle,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ],
-        ],
+        ),
       ),
     );
   }
+
+  static String _timelineSummary(List<(String, DateTime?, bool, Key?)> events) {
+    final items = <String>[];
+    for (final event in events) {
+      final at = event.$2;
+      if (at == null) continue;
+      final name = event.$1.contains('ขอ')
+          ? 'ขอ'
+          : event.$1.contains('Operation') || event.$1.contains('อนุมัติ')
+          ? 'อนุมัติ'
+          : event.$1.contains('ถือ')
+          ? 'ส่ง'
+          : 'ยืนยัน';
+      items.add('$name ${_formatCompactDate(at)}');
+    }
+    return items.isEmpty ? 'ยังไม่มีเหตุการณ์' : items.join(' · ');
+  }
 }
 
-/// แผ่นยืนยันชิดขอบล่างตามภาพ r4 · ปุ่มยืนยันอยู่ก่อนปุ่มกลับเพื่อกดง่าย
 class _RequestConfirmSheet extends StatelessWidget {
   const _RequestConfirmSheet({
     required this.title,
