@@ -73,6 +73,7 @@ describe('CampaignRolloutController', () => {
     create: jest.Mock;
     findOne: jest.Mock;
     findTargets: jest.Mock;
+    findTargetAttempts: jest.Mock;
     approve: jest.Mock;
     release: jest.Mock;
     reject: jest.Mock;
@@ -86,6 +87,7 @@ describe('CampaignRolloutController', () => {
       create: jest.fn(),
       findOne: jest.fn(),
       findTargets: jest.fn(),
+      findTargetAttempts: jest.fn(),
       approve: jest.fn(),
       release: jest.fn(),
       reject: jest.fn(),
@@ -143,6 +145,23 @@ describe('CampaignRolloutController', () => {
 
     expect(result).toEqual(sampleRollout);
     expect(service.findOne).toHaveBeenCalledWith(sampleRollout.id);
+  });
+
+  it('GET /campaigns/:campaignId/rollouts/:id/targets/:targetId/attempts -> service.findTargetAttempts', async () => {
+    service.findTargetAttempts.mockResolvedValue([{ attemptNo: 1 }]);
+
+    const result = await controller.findTargetAttempts(
+      'camp-1',
+      sampleRollout.id,
+      'rt-1',
+    );
+
+    expect(service.findTargetAttempts).toHaveBeenCalledWith(
+      'camp-1',
+      sampleRollout.id,
+      'rt-1',
+    );
+    expect(result).toEqual([{ attemptNo: 1 }]);
   });
 
   it('GET /campaigns/:campaignId/rollouts/:id/targets -> service.findTargets', async () => {
