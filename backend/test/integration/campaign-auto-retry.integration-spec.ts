@@ -333,7 +333,7 @@ describe('Campaign auto-retry (integration — real postgres, fake central)', ()
     });
   });
 
-  it('ปิดสวิตช์ระหว่างที่เครื่องรอรอบใหม่ -> ถึงเวลาแล้วไม่ส่ง จบด้วยผลรอบล่าสุดพร้อมบอกว่าปิดการลองใหม่ · เครื่องอื่นของ Rollout ไม่ถูกแตะ', async () => {
+  it('ปิดสวิตช์ระหว่างที่เครื่องรอรอบใหม่ -> จบทันทีที่ poll ถัดไป (ยังไม่ถึงเวลาก็จบ) ไม่ส่ง จบด้วยผลรอบล่าสุดพร้อมบอกว่าปิดการลองใหม่ · เครื่องอื่นของ Rollout ไม่ถูกแตะ', async () => {
     const { rollout, campaign, devices } = await seedReleased(2);
     const [a, b] = devices.map((d) => d.deviceId);
     await setOutcome(rollout.id, a, failed('DEVICE_DISCONNECTED'));
@@ -342,7 +342,10 @@ describe('Campaign auto-retry (integration — real postgres, fake central)', ()
       where: { id: campaign.id },
       data: { autoRetry: false },
     });
-    await makeDue(rollout.id);
+    // ไม่เรียก makeDue: nextRetryAt ยังอยู่ในอนาคต (รีวิว B บน #457)
+    expect(
+      (await targetOf(rollout.id, a)).nextRetryAt!.getTime(),
+    ).toBeGreaterThan(Date.now());
     const pushesBefore = central.pushConfig.mock.calls.length;
 
     await poll.poll();
@@ -353,6 +356,31 @@ describe('Campaign auto-retry (integration — real postgres, fake central)', ()
     expect(ta.resultDetail).toContain('ปิดการลองส่งใหม่');
     expect(central.pushConfig.mock.calls.length).toBe(pushesBefore);
     expect((await targetOf(rollout.id, b)).status).toBe('pending'); // ยังรอผลรอบแรกอยู่
+  });
+
+  it('ปิดสวิตช์ตอน Rollout paused: เครื่องที่รอไม่ถูกจบ ปล่อยรอจน Resume · Resume แล้วจบด้วยผลรอบล่าสุด', async () => {
+    const { rollout, campaign, devices } = await seedReleased(1);
+    const a = devices[0].deviceId;
+    await setOutcome(rollout.id, a, failed('DEVICE_DISCONNECTED'));
+    await poll.poll();
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { autoRetry: false },
+    });
+    await prisma.campaignRollout.update({
+      where: { id: rollout.id },
+      data: { status: 'paused' },
+    });
+
+    await poll.poll();
+    expect((await targetOf(rollout.id, a)).status).toBe('pending');
+
+    await prisma.campaignRollout.update({
+      where: { id: rollout.id },
+      data: { status: 'active' },
+    });
+    await poll.poll();
+    expect((await targetOf(rollout.id, a)).status).toBe('failed');
   });
 
   it('claim ทีละตัวตอนจะส่ง + จำกัดต่อรอบ: ตัวที่เหลือไม่ถูก claim ก่อนถึงตา · เกินเพดานไม่ถูกแตะ', async () => {

@@ -243,27 +243,47 @@ export class FieldApplyRetryService {
    * - Campaign ระบบ (หน้างาน): Rollout `active` หรือ `paused` (ไม่ active แล้ว `claimOne` จบ target ด้วยผลรอบล่าสุด)
    * - Campaign ปกติ: **เฉพาะ Rollout `active`** — `paused` ปล่อยรอ (`pending`, `nextRetryAt` ผ่านเวลาแล้ว) พอ
    *   `resume()` แล้วรอบ poll ถัดไปหยิบเอง ไม่จบเป็น failed ทิ้ง (Auto Pause ไม่ทำให้ทุกเครื่องที่รออยู่ล้มพร้อมกัน) ·
-   *   รวม Campaign ที่ปิดสวิตช์ระหว่างทางด้วย (`claimOne` จบด้วยผลรอบล่าสุด)
+   * - Campaign ปกติที่ **ปิดสวิตช์** (`autoRetry = false`) และ Rollout `active`: หยิบเครื่องที่รอรอบใหม่ **ไม่ต้องรอถึง
+   *   `nextRetryAt`** เพื่อให้จบด้วยผลรอบล่าสุดในรอบ poll ถัดไป (รีวิว B บน #457 — Operation ปิดเพื่อหยุด หน้าจอไม่ควร
+   *   นับถอยหลังต่อ) · เฉพาะเครื่องที่ **ไม่มีรอบค้างส่ง** (`attempts` ที่ `finishedAt` ว่าง = กำลังส่งอยู่ ให้ผู้ส่งจบเอง
+   *   ไม่ใช่ถูกจบซ้อน) · `paused` ยังปล่อยรอจน Resume เหมือนเดิม
    */
   private findDueCandidates(now: Date, limit: number) {
     return this.prisma.campaignRolloutTarget.findMany({
       where: {
         status: 'pending',
         centralCommandId: null,
-        nextRetryAt: { not: null, lte: now },
-        rollout: {
-          applyMode: 'central',
-          OR: [
-            {
-              status: { in: ['active', 'paused'] },
-              campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+        OR: [
+          {
+            nextRetryAt: { not: null, lte: now },
+            rollout: {
+              applyMode: 'central',
+              OR: [
+                {
+                  status: { in: ['active', 'paused'] },
+                  campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+                },
+                {
+                  status: 'active',
+                  campaign: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+                },
+              ],
             },
-            {
+          },
+          {
+            // ปิดสวิตช์แล้ว: จบเลยไม่ต้องรอถึงเวลา (ดู doc ด้านบน)
+            nextRetryAt: { not: null },
+            attempts: { none: { finishedAt: null } },
+            rollout: {
+              applyMode: 'central',
               status: 'active',
-              campaign: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+              campaign: {
+                name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+                autoRetry: false,
+              },
             },
-          ],
-        },
+          },
+        ],
       },
       include: {
         rollout: {
