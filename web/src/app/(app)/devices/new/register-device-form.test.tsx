@@ -55,14 +55,15 @@ const central = vi.hoisted(() => ({
 vi.mock("@/hooks/use-central-devices", () => ({
   useCentralDevices: () => ({ data: central.value }),
 }));
-vi.mock("@/hooks/use-devices", () => ({
-  useDevices: () => ({ data: [{ deviceId: "DEV-TAKEN" }] }),
-}));
+const useDevices = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/use-devices", () => ({ useDevices }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคับกรอก", () => {
   beforeEach(() => {
     registerDevice.mockReset();
+    useDevices.mockReset();
+    useDevices.mockReturnValue({ data: [{ deviceId: "DEV-TAKEN" }] });
     customers.refetch.mockReset();
     customers.value = [{ id: "c1", companyName: "Acme", isActive: true }];
     central.value = { mode: "real", reachable: true, devices: [] };
@@ -299,6 +300,11 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
       };
       render(<RegisterDeviceForm />);
       expect(screen.queryByText("ข้อมูลตัวอย่าง")).not.toBeInTheDocument();
+    });
+
+    it("โหลดรายการเครื่องแบบรวมที่ปลดระวางแล้ว (Device ID ห้ามซ้ำตลอดกาล จะไม่เสนอกล่องเดิมซ้ำ)", () => {
+      render(<RegisterDeviceForm />);
+      expect(useDevices).toHaveBeenCalledWith({ includeDecommissioned: true });
     });
 
     it("ไม่เสนอกล่องที่ลงทะเบียนในระบบเราไปแล้ว", async () => {

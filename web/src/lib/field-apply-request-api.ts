@@ -110,3 +110,66 @@ export function rejectFieldApplyRequest(
     body: JSON.stringify(body),
   });
 }
+
+/** 1 รอบการส่งของคำขอ (docs/31 §3.6, openapi v3.87 `retry.attempts[]`) */
+export type FieldApplyAttempt = {
+  attemptNo: number;
+  /** sending | sent | succeeded | failed | skipped — สถานะที่ไม่รู้จัก (backend ใหม่กว่า) ถูกข้ามตอนอ่าน */
+  status: string;
+  errorCode: string | null;
+  detail: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
+/** ลองส่งใหม่อัตโนมัติ (docs/31 §3.6) — `nextRetryAt` มีค่าเฉพาะตอนรอรอบใหม่จริง */
+export type FieldApplyRetry = {
+  attemptNo: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  attempts: FieldApplyAttempt[];
+};
+
+/** `GET /tasks/{taskId}/config-apply-requests/{id}/progress` — เฉพาะ field ที่หน้าเว็บใช้ ·
+ * `retry` null = ไม่มีประวัติรายรอบ (ไม่ใช่โหมด central, ยังไม่ปล่อย, หรือส่งก่อน docs/31) */
+export type FieldApplyProgress = {
+  requestId: string;
+  kind: "config" | "firmware";
+  status: FieldApplyRequestStatus;
+  fromVersion: string | null;
+  toVersion: string | null;
+  releasedAt: string | null;
+  completedAt: string | null;
+  retry: FieldApplyRetry | null;
+};
+
+const KNOWN_ATTEMPT_STATUSES = new Set([
+  "sending",
+  "sent",
+  "succeeded",
+  "failed",
+  "skipped",
+]);
+
+/** ความคืบหน้าของคำขอหนึ่งใบ — Operation/Auditor/Admin/SuperAdmin เรียกได้ (กฎเดียวกับ
+ * `GET /tasks/{id}`) · รอบที่สถานะไม่รู้จักถูกข้าม ไม่ให้ทั้งหน้าพัง (เหมือนฝั่ง Mobile) */
+export async function getFieldApplyProgress(
+  token: string,
+  taskId: string,
+  requestId: string,
+): Promise<FieldApplyProgress> {
+  const progress = await apiJson<FieldApplyProgress>(
+    `/tasks/${encodeURIComponent(taskId)}/config-apply-requests/${encodeURIComponent(requestId)}/progress`,
+    { token },
+  );
+  if (!progress.retry) return { ...progress, retry: null };
+  return {
+    ...progress,
+    retry: {
+      ...progress.retry,
+      attempts: progress.retry.attempts.filter((a) =>
+        KNOWN_ATTEMPT_STATUSES.has(a.status),
+      ),
+    },
+  };
+}
