@@ -38,6 +38,7 @@ import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
 import { lockCustomerForReference } from '../customer/customer-lock';
+import { lockDeviceForChange, lockDeviceForUse } from './device-lock';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import {
   assertDeviceIdentifiersFree,
@@ -304,12 +305,23 @@ export class DeviceService {
    * เอง (เดิมมีแค่แสดงผลฝั่ง client อย่างเดียว)
    */
   findAll(query: QueryDeviceDto): Promise<DeviceWithCustomer[]> {
-    const { search, deviceModel, protocol, status, customerId } = query;
+    const {
+      search,
+      deviceModel,
+      protocol,
+      status,
+      customerId,
+      includeDecommissioned,
+    } = query;
 
     const where: Prisma.DeviceWhereInput = {
       deviceModel: deviceModel || undefined,
       protocol: protocol || undefined,
-      status: status || undefined,
+      // เครื่องที่ปลดระวางแล้วซ่อนเป็นค่าเริ่มต้น (มติ A 2026-11-05) — ระบุ status ตรงๆ หรือ
+      // includeDecommissioned=true ถึงจะเห็น
+      status:
+        status ||
+        (includeDecommissioned ? undefined : { not: 'decommissioned' }),
       customerId: customerId || undefined,
     };
     if (search) {
@@ -642,6 +654,14 @@ export class DeviceService {
       // (ใช้ไม่ได้) แต่ key ใหม่ไม่ถูกส่งกลับ อุปกรณ์ติดต่อระบบไม่ได้จนกว่าจะออก
       // key ซ้ำ · ตอนนี้บันทึกไม่ได้ = ย้อนกลับ key เดิมยังใช้ได้อยู่
       device = await this.prisma.$transaction(async (tx) => {
+        // เครื่องที่ปลดระวางแล้วออก key ใหม่ไม่ได้ (key ถูกล้างตอนปลดระวาง — ออกใหม่ตรงนี้จะทำให้กล่อง
+        // กลับมาคุยกับระบบได้โดยไม่ผ่านการเปิดใช้งานกลับ) · ตรวจหลังล็อก FOR UPDATE กันปลดระวางแทรก
+        const locked = await lockDeviceForChange(tx, deviceId);
+        if (locked.status === 'decommissioned') {
+          throw new ConflictException(
+            `เครื่อง ${deviceId} ปลดระวางแล้ว ออก API key ใหม่ไม่ได้ - เปิดใช้งานเครื่องกลับก่อน (จะได้ key ใหม่ให้)`,
+          );
+        }
         const updated = await tx.device.update({
           where: { deviceId },
           data: { apiKeyHash },
@@ -1580,6 +1600,8 @@ export class DeviceService {
 
     try {
       const override = await this.prisma.$transaction(async (tx) => {
+        // กันปลดระวางเครื่องแทรกระหว่างตรวจกับสร้างคำขอ (ดู device-lock.ts)
+        await lockDeviceForUse(tx, deviceId);
         // scope ด้วย configId ปัจจุบันของอุปกรณ์ด้วย (มติ 2026-09-25, issue
         // #226 ข้อ 3) — เดิมเช็คแค่ deviceId เฉยๆ ถ้าเครื่องถูก Confirm
         // Install เป็น Config ใหม่ทับระหว่างที่คำขอเก่ายังรอ Operation
@@ -1988,6 +2010,8 @@ export class DeviceService {
 
     try {
       const override = await this.prisma.$transaction(async (tx) => {
+        // กันปลดระวางเครื่องแทรกระหว่างตรวจกับสร้างคำขอ (ดู device-lock.ts)
+        await lockDeviceForUse(tx, device.deviceId);
         const existingPending = await tx.deviceFirmwareOverride.findFirst({
           where: { deviceId: device.deviceId, status: 'pending' },
         });

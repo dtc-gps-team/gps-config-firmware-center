@@ -235,13 +235,15 @@ describe('ConfigApplyRequestService', () => {
       },
       auditLog,
       user: users,
-      // ล็อกแถว Config/Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
+      // ล็อกแถว Config/Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่อง (FOR SHARE) -> เครื่องที่ใช้งานอยู่
       $queryRaw: jest.fn((strings: TemplateStringsArray) => {
         const sql = strings.join('');
         return Promise.resolve(
           sql.includes('"Config"') || sql.includes('"Firmware"')
             ? [{ deletedAt: null }]
-            : [],
+            : sql.includes('FROM "Device"')
+              ? [{ status: 'installed' }]
+              : [],
         );
       }),
     };

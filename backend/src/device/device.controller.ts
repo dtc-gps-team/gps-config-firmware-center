@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -23,11 +24,16 @@ import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
 import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
+import {
+  DecommissionDeviceDto,
+  ReactivateDeviceDto,
+} from './dto/decommission-device.dto';
 import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
 import { DeviceFirmwareOverrideDto } from './dto/device-firmware-override.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { QueryDeviceHistoryDto } from './dto/query-device-history.dto';
 import { RegisterDeviceDto } from './dto/register-device.dto';
+import { UpdateDeviceDto } from './dto/update-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
 import type {
   ActingUser,
@@ -38,6 +44,7 @@ import type {
   RegisterDeviceResult,
 } from './device.service';
 import { DeviceHistoryService } from './device-history.service';
+import { DeviceLifecycleService } from './device-lifecycle.service';
 import type { DeviceHistoryResult } from './device-history.types';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
@@ -92,6 +99,7 @@ export class DeviceController {
   constructor(
     private readonly deviceService: DeviceService,
     private readonly deviceHistoryService: DeviceHistoryService,
+    private readonly deviceLifecycleService: DeviceLifecycleService,
   ) {}
 
   // issue #157 PR 1 — ลงทะเบียนอุปกรณ์ใหม่ resource `device-registration`
@@ -130,6 +138,44 @@ export class DeviceController {
     @Req() req: AuthenticatedRequest,
   ): Promise<DeviceWithCustomer> {
     return this.deviceService.confirmInstalled(deviceId, toActor(req));
+  }
+
+  // แก้ไขข้อมูลเครื่อง / ปลดระวาง / เปิดใช้กลับ (มติ A 2026-11-05) — resource/action เดียวกับ
+  // rotate-key และ confirm-install (device-registration/Update) · Admin/SuperAdmin เท่านั้น
+  @Patch(':deviceId')
+  @RequirePermission('device-registration', ActionType.Update)
+  update(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: UpdateDeviceDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<DeviceWithCustomer> {
+    return this.deviceLifecycleService.update(deviceId, dto, toActor(req));
+  }
+
+  @Post(':deviceId/decommission')
+  @RequirePermission('device-registration', ActionType.Update)
+  @HttpCode(HttpStatus.OK)
+  decommission(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: DecommissionDeviceDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<DeviceWithCustomer> {
+    return this.deviceLifecycleService.decommission(
+      deviceId,
+      dto,
+      toActor(req),
+    );
+  }
+
+  @Post(':deviceId/reactivate')
+  @RequirePermission('device-registration', ActionType.Update)
+  @HttpCode(HttpStatus.OK)
+  reactivate(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: ReactivateDeviceDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<RegisterDeviceResult> {
+    return this.deviceLifecycleService.reactivate(deviceId, dto, toActor(req));
   }
 
   // Device Search / Device Detail (Sprint 2 #11) — resource `devices` action
