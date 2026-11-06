@@ -16,8 +16,12 @@ type DevicesState = {
  * โหลดรายการ Device จาก `GET /devices` — pattern เดียวกับ `useConfigs`
  * (token จาก session, คืน `refetch`) · ดึงทั้งหมดครั้งเดียว UI กรอง/ค้นหา
  * ฝั่ง client (planning/01 §3)
+ *
+ * เครื่องที่ปลดระวางแล้วซ่อนเป็นค่าเริ่มต้น (มติ A 2026-11-05) — `includeDecommissioned` รวมไว้ด้วย
+ * (หน้า Device Search มีตัวสลับ · ฟอร์มลงทะเบียนต้องรวมเพื่อไม่ให้เสนอ Device ID ของเครื่องที่ปลดระวางซ้ำ)
  */
-export function useDevices() {
+export function useDevices(options?: { includeDecommissioned?: boolean }) {
+  const includeDecommissioned = options?.includeDecommissioned ?? false;
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
   const [state, setState] = useState<DevicesState>({
@@ -30,7 +34,7 @@ export function useDevices() {
     if (!token) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const data = await listDevices(token);
+      const data = await listDevices(token, { includeDecommissioned });
       setState({ data, isLoading: false, error: null });
     } catch (err) {
       setState((prev) => ({
@@ -40,7 +44,7 @@ export function useDevices() {
           err instanceof ApiError ? err.message : "โหลดรายการอุปกรณ์ไม่สำเร็จ",
       }));
     }
-  }, [token]);
+  }, [token, includeDecommissioned]);
 
   useEffect(() => {
     void refetch();

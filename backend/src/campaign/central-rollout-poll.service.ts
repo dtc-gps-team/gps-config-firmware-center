@@ -4,9 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import {
   FieldApplyRetryService,
+  isAutoRetryCampaign,
   type FieldApplyDueAction,
 } from './field-apply-retry.service';
-import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 
 export interface CentralPollResult {
   success: number;
@@ -85,7 +85,7 @@ export class CentralRolloutPollService {
             configId: true,
             firmwareId: true,
             // docs/31 — รู้ว่าเป็น Rollout ส่งจากหน้างานไหม (รีวิว A #436)
-            campaign: { select: { name: true } },
+            campaign: { select: { name: true, autoRetry: true } },
           },
         },
       },
@@ -100,9 +100,9 @@ export class CentralRolloutPollService {
         : { configId: target.rollout.configId };
       // defensive — Config rollout ต้องมี configId เสมอ, Firmware ต้องมี firmwareId เสมอ
       if (!payload.configId && !payload.firmwareId) continue;
+      // เปิดลองใหม่: Campaign ระบบ (หน้างาน) เสมอ · Campaign ปกติตามสวิตช์ (อ่านสดทุกรอบ poll)
       const retry =
-        this.fieldApplyRetry &&
-        target.rollout.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME
+        this.fieldApplyRetry && isAutoRetryCampaign(target.rollout.campaign)
           ? this.fieldApplyRetry
           : null;
 
@@ -171,9 +171,10 @@ export class CentralRolloutPollService {
     }
 
     if (this.fieldApplyRetry) {
-      for (const action of await this.fieldApplyRetry.claimDueRetries()) {
-        await this.runDueAction(action, result);
-      }
+      // claim ทีละตัวตอนจะส่ง ไม่เกิน `maxDuePerPoll` ตัวต่อรอบ (docs/31 §6.3 ข้อ 1)
+      await this.fieldApplyRetry.processDueRetries((action) =>
+        this.runDueAction(action, result),
+      );
     }
     return result;
   }

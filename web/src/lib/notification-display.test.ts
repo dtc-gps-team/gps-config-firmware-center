@@ -142,6 +142,51 @@ describe("describeNotification", () => {
     ]);
   });
 
+  it("config_apply_retrying: บอกรอบที่ล้มและรอบที่กำลังลองใหม่ (docs/31 §3.5) ไม่ใช่เรื่องด่วน", () => {
+    const v = view("config_apply_retrying", {
+      deviceId: "DEV-3",
+      kind: "firmware",
+      attemptNo: 1,
+      maxAttempts: 3,
+      nextAttemptNo: 2,
+      detail: "กล่องหลุดการเชื่อมต่อ",
+    });
+    expect(v.title).toBe("ส่ง Firmware รอบ 1/3 ไม่สำเร็จ");
+    expect(v.details).toEqual([
+      "อุปกรณ์: DEV-3",
+      "เหตุผล: กล่องหลุดการเชื่อมต่อ",
+      "กำลังลองใหม่ รอบ 2/3",
+    ]);
+    expect(v.urgent).toBe(false);
+  });
+
+  it("config_apply_retrying: payload ไม่มีตัวเลขรอบ (backend รุ่นเก่า) -> หัวข้อทั่วไป ไม่พัง", () => {
+    const v = view("config_apply_retrying", { deviceId: "DEV-3", kind: "config" });
+    expect(v.title).toBe("ส่ง Config ไม่สำเร็จ ระบบกำลังลองใหม่");
+    expect(v.details).toEqual(["อุปกรณ์: DEV-3"]);
+  });
+
+  it("config_apply_failed ที่ลองหลายรอบ: หัวข้อบอกจำนวนครั้ง · รอบเดียวไม่ต่อท้าย", () => {
+    const attempts = [
+      { attemptNo: 1, status: "failed", errorCode: null, detail: "x" },
+      { attemptNo: 2, status: "failed", errorCode: null, detail: "y" },
+      { attemptNo: 3, status: "failed", errorCode: null, detail: "z" },
+    ];
+    const operation = view(
+      "config_apply_failed",
+      { deviceId: "DEV-9", kind: "config", detail: "z", attempts },
+      "Operation",
+    );
+    expect(operation.title).toBe("ส่ง Config เข้ากล่อง DEV-9 ไม่สำเร็จ (ลองส่ง 3 ครั้ง)");
+
+    const single = view(
+      "config_apply_failed",
+      { deviceId: "DEV-9", kind: "config", detail: "z", attempts: attempts.slice(0, 1) },
+      "Operation",
+    );
+    expect(single.title).toBe("ส่ง Config เข้ากล่อง DEV-9 ไม่สำเร็จ");
+  });
+
   it("config_apply_succeeded/failed: backend ส่งให้ Operation ด้วย — ข้อความต้องไม่พูดว่า 'คุณขอ' และลิงก์ไปหน้าอุปกรณ์ได้ (รีวิว B #411)", () => {
     const succeeded = view(
       "config_apply_succeeded",

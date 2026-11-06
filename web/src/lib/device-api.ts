@@ -34,8 +34,11 @@ export type Device = {
   status: DeviceStatus;
   registeredAt: string;
   installedAt: string | null;
+  /** ปลดระวาง (มติ A 2026-11-05): เวลา + เหตุผลที่ Admin กรอก — null ทั้งคู่เมื่อไม่ได้ปลดระวาง */
+  decommissionedAt: string | null;
+  decommissionReason: string | null;
   /** ลูกค้าที่ผูกไว้ (ถ้ามี) — null = ยังไม่ได้กำหนดลูกค้า (docs/12 เฟส B,
-   * PR #127/#153) — read-only รอบนี้ ยังไม่มี endpoint กำหนด/แก้ */
+   * PR #127/#153) · แก้ได้ผ่าน `updateDevice` (Admin/SuperAdmin) */
   customer: CustomerSummary | null;
 };
 
@@ -44,6 +47,8 @@ export type ListDevicesParams = {
   deviceModel?: string;
   protocol?: string;
   status?: DeviceStatus;
+  /** เครื่องที่ปลดระวางแล้วซ่อนเป็นค่าเริ่มต้น — `true` = รวมไว้ด้วย (ระบุ `status=decommissioned` ก็เห็น) */
+  includeDecommissioned?: boolean;
 };
 
 /**
@@ -60,6 +65,7 @@ export function listDevices(
   if (params?.deviceModel) qs.set("deviceModel", params.deviceModel);
   if (params?.protocol) qs.set("protocol", params.protocol);
   if (params?.status) qs.set("status", params.status);
+  if (params?.includeDecommissioned) qs.set("includeDecommissioned", "true");
   const query = qs.toString();
   return apiJson<Device[]>(`/devices${query ? `?${query}` : ""}`, { token });
 }
@@ -161,4 +167,56 @@ export function registerDevice(
     token,
     body: JSON.stringify(input),
   });
+}
+
+/** request body ของ `PATCH /devices/{deviceId}` — ส่งเฉพาะ field ที่เปลี่ยน · Device ID/โมเดล/โปรโตคอลแก้ไม่ได้
+ * · IMEI/Serial/Blackbox/SIM ล้างค่าไม่ได้ · `hardwareRevisionCode` ส่งค่าว่างเพื่อล้าง · `customerId`
+ * ต้องเป็นลูกค้าที่ใช้งานอยู่ */
+export type UpdateDeviceInput = {
+  simNumber?: string;
+  customerId?: string;
+  hardwareRevisionCode?: string | null;
+  imei?: string;
+  serialNumber?: string;
+  blackboxId?: string;
+};
+
+/** `PATCH /devices/{deviceId}` — Admin/SuperAdmin เท่านั้น · 409 ถ้าเครื่องปลดระวางแล้ว, IMEI/Serial/
+ * Blackbox ซ้ำกับเครื่องอื่น (รวมที่ปลดระวางแล้ว), SIM ซ้ำกับเครื่องที่ใช้งานอยู่ หรือลูกค้าปิดใช้งานอยู่ */
+export function updateDevice(
+  token: string,
+  deviceId: string,
+  input: UpdateDeviceInput,
+): Promise<Device> {
+  return apiJson<Device>(`/devices/${encodeURIComponent(deviceId)}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+/** `POST /devices/{deviceId}/decommission` — Admin/SuperAdmin เท่านั้น · เหตุผลบังคับ · ล้าง API key ทันที ·
+ * 409 พร้อมจำนวนต่อชนิดถ้ายังมีงานค้าง (คำขอส่งเข้ากล่อง/Rollout เปิดอยู่/Task/Override ที่รออนุมัติ) */
+export function decommissionDevice(
+  token: string,
+  deviceId: string,
+  reason: string,
+): Promise<Device> {
+  return apiJson<Device>(
+    `/devices/${encodeURIComponent(deviceId)}/decommission`,
+    { method: "POST", token, body: JSON.stringify({ reason }) },
+  );
+}
+
+/** `POST /devices/{deviceId}/reactivate` — Admin/SuperAdmin เท่านั้น · กลับเป็น `registered` + API key ใหม่
+ * (โชว์ได้ครั้งเดียว) · 409 ถ้า SIM เดิมถูกเครื่องอื่นที่ใช้งานอยู่ใช้ไปแล้ว ให้ส่ง `simNumber` ใหม่ */
+export function reactivateDevice(
+  token: string,
+  deviceId: string,
+  input?: { simNumber?: string },
+): Promise<RegisterDeviceResult> {
+  return apiJson<RegisterDeviceResult>(
+    `/devices/${encodeURIComponent(deviceId)}/reactivate`,
+    { method: "POST", token, body: JSON.stringify(input ?? {}) },
+  );
 }

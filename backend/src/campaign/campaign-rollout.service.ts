@@ -168,14 +168,14 @@ export class CampaignRolloutService {
   ) {}
 
   /**
-   * เปิดการลองส่งใหม่ให้ Rollout นี้ไหม (docs/31 §1.3): โหมด `central` + Rollout ของคำขอส่งจาก
-   * หน้างานเท่านั้น · Campaign ปกติคืน null และทำงานแบบเดิมทุกประการ
+   * เปิดการลองส่งใหม่ให้ Rollout นี้ไหม (docs/31 §1.3, §6.3): โหมด `central` + (Rollout ของคำขอส่งจากหน้างาน
+   * หรือ Campaign ปกติที่เปิดสวิตช์ `autoRetry`) · ปิดสวิตช์ = คืน null และทำงานแบบเดิมทุกประการ
    */
   private async fieldApplyRetryFor(
     rollout: CampaignRollout,
   ): Promise<FieldApplyRetryService | null> {
     if (rollout.applyMode !== 'central' || !this.fieldApplyRetry) return null;
-    return (await this.fieldApplyRetry.isFieldApplyRollout(rollout.id))
+    return (await this.fieldApplyRetry.isAutoRetryEnabled(rollout.id))
       ? this.fieldApplyRetry
       : null;
   }
