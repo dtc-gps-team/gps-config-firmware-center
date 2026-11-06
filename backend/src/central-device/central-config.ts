@@ -190,12 +190,49 @@ export function classifyCentralCommand(
   };
 }
 
-/** รหัสที่ส่งซ้ำแล้วไม่มีทางผ่าน — มีคนสั่งทับหรือยกเลิกคำสั่งนี้ที่ Server กลาง (docs/31 §3.1) */
-const NON_RETRYABLE_ERROR_CODES = new Set(['SUPERSEDED', 'CANCELLED']);
+/**
+ * รหัสที่ส่งซ้ำแล้วไม่มีทางผ่าน (docs/31 §3.1 + §6.3 ข้อ 4 / R1.1) — ตรวจจาก `ws-gateway/src/errors.js`
+ * และ `finishCommand()` ของ firmware: กล่องรายงานว่ารับของชุดนี้ไม่ได้เลย ไม่ได้ล้มเพราะเน็ตหรือจังหวะ
+ * · รหัสที่ล้มเพราะข้อมูลเสียระหว่างทาง (`SHA256_MISMATCH`, `SIZE_MISMATCH`, `*_INVALID_JSON`),
+ * Server เปลี่ยนระหว่างส่ง (`CONFIG_VERSION_MISMATCH`), เขียน flash ไม่ผ่าน, HTTP ของกล่อง (`*_HTTP_n`)
+ * และ rollback **ยังลองใหม่**
+ */
+const NON_RETRYABLE_ERROR_CODES = new Set([
+  // มีคนสั่งทับหรือยกเลิกคำสั่งนี้ที่ Server กลาง
+  'SUPERSEDED',
+  'CANCELLED',
+  // Config ที่ firmware ในกล่องรับไม่ได้
+  'SCHEMA_NOT_SUPPORTED',
+  'SETTINGS_MISSING',
+  // Firmware ที่กล่องนี้ติดตั้งไม่ได้ (รุ่นบอร์ด / เวอร์ชันที่ Server ส่ง / ลายเซ็น / พื้นที่ OTA)
+  'HARDWARE_MISMATCH',
+  'VERSION_MISMATCH',
+  'UNSIGNED_FIRMWARE',
+  'SIGNATURE_INVALID', // ตรวจหลัง SHA-256 ผ่านแล้ว ไฟล์ไม่เสีย ลายเซ็นผิดจริง
+  'NO_OTA_PARTITION',
+  'SIZE_NOT_SUPPORTED',
+  'DOWNLOAD_URL_INVALID', // PUBLIC_BASE_URL ของ delivery-server ผิด ต้องแก้ที่ Server
+  // firmware ในกล่องไม่รู้จักคำสั่ง
+  'UNSUPPORTED_ACTION',
+]);
+
+/** รหัสที่กล่องต่อท้ายด้วยชื่อ field (`device_config.h`) — ค่า Config ที่ firmware ไม่รองรับหรือไม่ผ่าน */
+const NON_RETRYABLE_ERROR_CODE_PREFIXES = [
+  'UNSUPPORTED_PARAMETER:',
+  'INVALID_VALUE:',
+  'INVALID_GROUP:',
+];
+
+function isNonRetryableErrorCode(code: string): boolean {
+  return (
+    NON_RETRYABLE_ERROR_CODES.has(code) ||
+    NON_RETRYABLE_ERROR_CODE_PREFIXES.some((prefix) => code.startsWith(prefix))
+  );
+}
 
 /**
  * ผลจบของคำสั่งที่ลองส่งใหม่ได้ (docs/31 §3.1) — เขียนเป็น **denylist ของ "ไม่ลอง"**
- * (รีวิว A #436): ล้มเหลว / ข้ามทุกแบบลองใหม่ ยกเว้น `SUPERSEDED` / `CANCELLED` · รหัสใหม่ที่
+ * (รีวิว A #436): ล้มเหลว / ข้ามทุกแบบลองใหม่ ยกเว้นรหัสใน {@link NON_RETRYABLE_ERROR_CODES} · รหัสใหม่ที่
  * gateway เพิ่มในอนาคตจึงได้ลองใหม่โดยไม่ต้องแก้โค้ด (ครบ 3 ครั้งก็จบเหมือนกัน) · Server กลาง
  * ปฏิเสธตอนส่ง (`rejected`) ไม่ผ่านฟังก์ชันนี้ ผู้เรียกจบทันที · ไม่แก้ `classifyCentralCommand()`
  * เพราะ Campaign ปกติใช้ความหมายเดิมอยู่
@@ -204,5 +241,5 @@ export function isRetryableCentralOutcome(
   outcome: CentralCommandOutcome,
 ): boolean {
   if (outcome.kind !== 'failed' && outcome.kind !== 'skipped') return false;
-  return !NON_RETRYABLE_ERROR_CODES.has(outcome.errorCode ?? '');
+  return !isNonRetryableErrorCode(outcome.errorCode ?? '');
 }
