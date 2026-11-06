@@ -376,11 +376,11 @@ describe('DeviceTelemetryService', () => {
 describe('resolveTelemetrySettings', () => {
   const hex = 'a'.repeat(64);
 
-  it('ค่าเริ่มต้น 30 วัน / 60 / 300 · ไม่ตั้ง key กลาง -> null + เตือน', () => {
+  it('ค่าเริ่มต้น 7 วัน / 60 / 300 · ไม่ตั้ง key กลาง -> null + เตือน', () => {
     const warn = jest.fn();
     expect(resolveTelemetrySettings(() => undefined, { warn })).toEqual({
       centralKeyHash: null,
-      retentionDays: 30,
+      retentionDays: 7,
       perDeviceLimit: 60,
       perIpLimit: 300,
     });
@@ -390,7 +390,7 @@ describe('resolveTelemetrySettings', () => {
   it('อ่านค่าจาก env · key กลางเป็น Buffer 32 byte', () => {
     const env: Record<string, string> = {
       TELEMETRY_INGEST_KEY_SHA256: hex,
-      TELEMETRY_RETENTION_DAYS: '7',
+      TELEMETRY_RETENTION_DAYS: '14',
       TELEMETRY_RATE_LIMIT_PER_DEVICE: '10',
       TELEMETRY_RATE_LIMIT_PER_IP: '20',
     };
@@ -398,7 +398,7 @@ describe('resolveTelemetrySettings', () => {
     const s = resolveTelemetrySettings((k) => env[k], { warn });
     expect(s.centralKeyHash).toEqual(Buffer.from(hex, 'hex'));
     expect(s).toMatchObject({
-      retentionDays: 7,
+      retentionDays: 14,
       perDeviceLimit: 10,
       perIpLimit: 20,
     });
@@ -415,7 +415,7 @@ describe('resolveTelemetrySettings', () => {
     const s = resolveTelemetrySettings((k) => env[k], { warn });
     expect(s).toMatchObject({
       centralKeyHash: null,
-      retentionDays: 30,
+      retentionDays: 7,
       perDeviceLimit: 60,
     });
     expect(warn).toHaveBeenCalledTimes(3);

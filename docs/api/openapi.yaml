@@ -228,7 +228,7 @@ paths:
         จำกัด 60 คำขอ/นาทีต่อ `deviceId` และ 300 คำขอ/นาทีต่อ IP (ตั้งได้ผ่าน env)
         · `firmware_version` ที่กล่องรายงานเก็บที่ `Device.reportedFirmwareVersion`
         ไม่เก็บทุกแถว · ไม่ลง AuditLog และยังไม่สร้าง Incident/Notification จาก
-        เหตุการณ์ · ข้อมูลเก่ากว่า `TELEMETRY_RETENTION_DAYS` วัน (30) ถูกลบเอง
+        เหตุการณ์ · ข้อมูลเก่ากว่า `TELEMETRY_RETENTION_DAYS` วัน (7) ถูกลบเอง
       security: []   # key อยู่ใน path parameter `key` (ไม่ใช่ bearerAuth/deviceApiKey)
       parameters:
         - in: path
