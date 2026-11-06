@@ -2366,6 +2366,10 @@ paths:
           description: ไม่มีสิทธิ์ออก/หมุนเวียน API key ของอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
         "404":
           description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: >-
+            เครื่องปลดระวางแล้ว (v3.89) — ออก key ใหม่ไม่ได้ เพราะ key ถูกล้างตอนปลดระวาง ถ้าออกใหม่กล่องจะกลับมา
+            คุยกับระบบได้โดยไม่ผ่านการเปิดใช้งานกลับ · ให้เรียก `reactivateDevice` (ออก key ใหม่ให้เอง)
 
   /devices/{deviceId}/confirm-install:
     post:

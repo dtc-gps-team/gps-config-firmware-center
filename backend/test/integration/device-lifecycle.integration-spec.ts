@@ -461,6 +461,72 @@ describe('Device lifecycle — PATCH / decommission / reactivate (integration)',
     });
   });
 
+  describe('POST rotate-key กับเครื่องที่ปลดระวางแล้ว', () => {
+    const rotate = (deviceId: string) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/devices/${deviceId}/rotate-key`)
+        .set(auth(adminToken))
+        .send({});
+    const hash = async (deviceId: string) =>
+      (
+        await prisma.$queryRaw<{ apiKeyHash: string | null }[]>`
+          SELECT "apiKeyHash" FROM "Device" WHERE "deviceId" = ${deviceId}`
+      )[0].apiKeyHash;
+
+    it('ปลดระวางแล้ว -> 409 และ key ยังเป็นค่าว่าง (กล่องไม่กลับมาคุยกับระบบโดยไม่ผ่านการเปิดใช้งานกลับ) · เครื่องที่ใช้งานอยู่ออก key ได้ปกติ', async () => {
+      await seedDevice('DEV-1');
+      await seedDevice('DEV-2');
+      await decommission('DEV-1', { reason: 'x' });
+      expect(await hash('DEV-1')).toBeNull();
+
+      const blocked = await rotate('DEV-1');
+      expect(blocked.status).toBe(409);
+      expect(b(blocked).message).toContain('เปิดใช้งานเครื่องกลับก่อน');
+      expect(await hash('DEV-1')).toBeNull();
+
+      const ok = await rotate('DEV-2');
+      expect(ok.status).toBe(200);
+      expect(b(ok).apiKey).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('race: ผู้ปลดระวางถือล็อกเครื่อง (FOR UPDATE) -> ออก key รอ แล้วถูกปฏิเสธ ไม่เขียน key ทับที่ถูกล้าง', async () => {
+      await seedDevice('DEV-1');
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const holding = new Promise<void>((r) => (locked = r));
+
+      const decommissioner = prisma.$transaction(async (tx) => {
+        await lockDeviceForChange(tx, 'DEV-1');
+        locked();
+        await gate;
+        await tx.device.update({
+          where: { deviceId: 'DEV-1' },
+          data: {
+            status: 'decommissioned',
+            apiKeyHash: null,
+            telemetryKeyHash: null,
+          },
+        });
+      });
+      await holding;
+
+      let settled = false;
+      const rotateCall = rotate('DEV-1').then((r) => {
+        settled = true;
+        return r;
+      });
+      await sleep(500);
+      expect(settled).toBe(false); // ยังรอล็อก ไม่ใช่ผ่านเพราะเรียงคิวบังเอิญ
+
+      release();
+      await decommissioner;
+      const res = await rotateCall;
+      expect(res.status).toBe(409);
+      expect(await hash('DEV-1')).toBeNull();
+    });
+  });
+
   describe('POST reactivate', () => {
     it('เปิดใช้กลับ: กลับเป็น registered + API key ใหม่ (แสดงครั้งเดียว ตรงกับ hash) + ล้างเวลา/เหตุผล + AuditLog', async () => {
       await seedDevice('DEV-1');

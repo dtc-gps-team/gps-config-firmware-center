@@ -342,7 +342,7 @@ describe('DeviceService', () => {
         const sql = strings.join('?');
         return Promise.resolve(
           sql.includes('FROM "Device"')
-            ? sql.includes('FOR SHARE')
+            ? sql.includes('FOR SHARE') || sql.includes('FOR UPDATE')
               ? [{ status: 'installed' }]
               : []
             : [{ deletedAt: null, isActive: true }],
