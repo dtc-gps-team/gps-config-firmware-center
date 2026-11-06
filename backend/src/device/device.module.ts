@@ -27,6 +27,7 @@ import { DeviceFirmwareOverrideController } from './device-firmware-override.con
 import { DeviceController } from './device.controller';
 import { DeviceHistoryService } from './device-history.service';
 import { DeviceService } from './device.service';
+import { DeviceLifecycleService } from './device-lifecycle.service';
 import { ConfigApplyRequestModule } from '../config-apply-request/config-apply-request.module';
 import { TaskModule } from '../task/task.module';
 
@@ -65,6 +66,7 @@ import { TaskModule } from '../task/task.module';
   ],
   providers: [
     DeviceService,
+    DeviceLifecycleService,
     DeviceHistoryService,
     // DEVICE_CONNECTION_TESTER: อ่านโหมดจาก env `DEVICE_CONNECTION_TEST_MODE`
     // (`mock` default | `real`) ตาม Mock Mode Pattern ใน CLAUDE.md —
