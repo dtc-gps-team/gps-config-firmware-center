@@ -1,5 +1,13 @@
 import { DeviceLifecycleStatus } from '@prisma/client';
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { DEVICE_LIFECYCLE_STATUSES } from '../device-lifecycle-status';
 
 /**
@@ -42,4 +50,13 @@ export class QueryDeviceDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  /** เครื่องที่ปลดระวางแล้ว **ซ่อนจากรายการเป็นค่าเริ่มต้น** (มติ A 2026-11-05) · `true` = รวมไว้ด้วย ·
+   * ระบุ `status=decommissioned` ตรงๆ ก็เห็นโดยไม่ต้องส่งตัวนี้ */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  includeDecommissioned?: boolean;
 }
