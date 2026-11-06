@@ -52,6 +52,7 @@ import { UrlTabs } from "@/components/url-tabs";
 import { useDeviceCentral } from "@/hooks/use-central-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { latestApprovedByModel } from "@/lib/firmware-staleness";
+import { DeviceApplyRequestCard } from "./device-apply-request-card";
 import { DeviceCentralCardView } from "./device-central-card";
 import {
   DecommissionControl,
@@ -385,6 +386,8 @@ function DeviceDetailContent({
                   <DeviceStatusCard deviceId={device.deviceId} />
                   <DeviceCentralCardView state={central} />
                 </div>
+                {/* การส่งเข้ากล่องล่าสุด (รอบที่ลองส่งใหม่/ประวัติ) — แสดงเฉพาะ role ที่อ่านคิวได้และมีคำขอ */}
+                <DeviceApplyRequestCard deviceId={device.deviceId} />
                 <DeviceIdentityCard device={device} />
               </div>
             ),

@@ -305,6 +305,22 @@ export function canDecideFirmwareOverride(
 }
 
 /**
+ * ดูคำขอส่ง Config/Firmware เข้ากล่องของเครื่องหนึ่งบนหน้ารายละเอียดอุปกรณ์ (สถานะ รอบที่ลองส่งใหม่ ประวัติ) —
+ * `GET /config-apply-requests`: resource `config-apply-request` action `Read` ให้ Operation/Auditor/Admin/
+ * SuperAdmin (role อื่นเรียกแล้วได้ 403 จึงไม่ยิง) UX-level เท่านั้น backend บังคับจริง
+ */
+export function canReadFieldApplyRequests(
+  role: string | null | undefined,
+): boolean {
+  return (
+    role === "Operation" ||
+    role === "Auditor" ||
+    role === "Admin" ||
+    role === "SuperAdmin"
+  );
+}
+
+/**
  * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิวคำขอส่ง Config/Firmware เข้ากล่องจากหน้างาน —
  * RBAC_Matrix.md ตาราง 4.1 `POST /config-apply-requests/{id}/approve` /
  * `.../reject`: resource `config-apply-request` action `Approve` — Operation
