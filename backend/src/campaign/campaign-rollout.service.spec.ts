@@ -151,6 +151,7 @@ describe('CampaignRolloutService', () => {
     count: jest.Mock;
     findUniqueOrThrow: jest.Mock;
   };
+  let campaignRolloutTargetAttempt: { findMany: jest.Mock };
   let config: { findUnique: jest.Mock };
   let firmware: { findUnique: jest.Mock; findFirst: jest.Mock };
   let device: {
@@ -249,6 +250,9 @@ describe('CampaignRolloutService', () => {
       count: jest.fn(),
       findUniqueOrThrow: jest.fn(),
     };
+    campaignRolloutTargetAttempt = {
+      findMany: jest.fn().mockResolvedValue([]),
+    };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
     firmware = {
       findUnique: jest.fn().mockResolvedValue(storedFirmware),
@@ -302,6 +306,7 @@ describe('CampaignRolloutService', () => {
       campaignTarget,
       campaignRollout,
       campaignRolloutTarget,
+      campaignRolloutTargetAttempt,
       config,
       firmware,
       device,
@@ -5337,12 +5342,14 @@ describe('CampaignRolloutService', () => {
         rolloutId: sampleRollout.id,
         deviceId: 'DEV-0001',
         proposedFields: { SPEED_LIMIT: 180, COMMAND_PASSWORD: 'secret' },
+        attempts: [],
       },
       {
         id: 'rt-2',
         rolloutId: sampleRollout.id,
         deviceId: 'DEV-0002',
         proposedFields: null,
+        attempts: [],
       },
     ];
 
@@ -5373,6 +5380,89 @@ describe('CampaignRolloutService', () => {
         COMMAND_PASSWORD: '********',
       });
       expect(result[1].proposedFields).toBeNull();
+    });
+  });
+
+  describe('findTargets: รอบที่ลองส่ง (docs/31 §6.4)', () => {
+    it('ขอรอบล่าสุดของแต่ละเครื่องมาด้วย และคืน lastAttempt / attemptCount', async () => {
+      const last = {
+        attemptNo: 2,
+        status: 'failed',
+        errorCode: 'DEVICE_NO_RESPONSE',
+        detail: 'กล่องไม่ตอบ',
+        startedAt: new Date('2026-11-06T10:00:00.000Z'),
+        finishedAt: new Date('2026-11-06T10:01:00.000Z'),
+      };
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        {
+          id: 'rt-1',
+          rolloutId: sampleRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+          centralCommandId: null,
+          attemptCount: 2,
+          nextRetryAt: new Date('2026-11-06T10:03:00.000Z'),
+          proposedFields: null,
+          attempts: [last],
+        },
+      ]);
+
+      const [t] = await service.findTargets(sampleRollout.id, operation);
+
+      expect(campaignRolloutTarget.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { rolloutId: sampleRollout.id },
+          include: {
+            attempts: expect.objectContaining({
+              orderBy: { attemptNo: 'desc' },
+              take: 1,
+            }) as unknown,
+          },
+        }),
+      );
+      expect(t.attemptCount).toBe(2);
+      expect(t.lastAttempt).toEqual(last);
+      expect(t.nextRetryAt).toEqual(new Date('2026-11-06T10:03:00.000Z'));
+    });
+  });
+
+  describe('findTargetAttempts (ประวัติรายรอบของเครื่องหนึ่ง)', () => {
+    it('ไม่พบ target ใน Rollout/Campaign นี้ -> 404 ไม่ query ประวัติ (กัน IDOR ข้าม Campaign)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findTargetAttempts('camp-1', sampleRollout.id, 'rt-x'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'rt-x',
+          rolloutId: sampleRollout.id,
+          rollout: { campaignId: 'camp-1' },
+        },
+        select: { id: true },
+      });
+      expect(campaignRolloutTargetAttempt.findMany).not.toHaveBeenCalled();
+    });
+
+    it('พบ -> คืนประวัติเรียงรอบที่ 1 ก่อน', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ id: 'rt-1' });
+      const attempts = [{ attemptNo: 1 }, { attemptNo: 2 }];
+      campaignRolloutTargetAttempt.findMany.mockResolvedValue(attempts);
+
+      const result = await service.findTargetAttempts(
+        'camp-1',
+        sampleRollout.id,
+        'rt-1',
+      );
+
+      expect(result).toEqual(attempts);
+      expect(campaignRolloutTargetAttempt.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { targetId: 'rt-1' },
+          orderBy: { attemptNo: 'asc' },
+        }),
+      );
     });
   });
 });

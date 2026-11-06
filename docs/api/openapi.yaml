@@ -4315,7 +4315,9 @@ paths:
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) — อัปเดตจาก
         `applyConfigToDevice`/`confirmFirmwareInstall` จริง (mock mode ก็
-        รายงานผลได้ ดู `MockConfigApplier`)
+        รายงานผลได้ ดู `MockConfigApplier`) · **v3.91 (docs/31 §6.4):** แต่ละแถวบอกรอบที่ลองส่ง —
+        `attemptCount`, `nextRetryAt` (เฉพาะตอนรอส่งรอบใหม่จริง) และ `lastAttempt` (รอบล่าสุด) ·
+        ประวัติเต็มของเครื่องหนึ่งที่ `listCampaignRolloutTargetAttempts`
       parameters:
         - in: path
           name: id
@@ -4340,6 +4342,53 @@ paths:
                   $ref: "#/components/schemas/CampaignRolloutTarget"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /campaigns/{id}/rollouts/{rolloutId}/targets/{targetId}/attempts:
+    get:
+      tags: [campaign]
+      operationId: listCampaignRolloutTargetAttempts
+      summary: ประวัติการส่งรายรอบของเครื่องหนึ่งใน Rollout (ลองส่งใหม่อัตโนมัติ) — v3.91
+      description: >-
+        ทุก Role ที่ดูผลต่อเครื่องได้ (resource `campaign` action `Read`) · เรียงรอบที่ 1 ก่อน · แยกจาก
+        `listCampaignRolloutTargets` ไม่ฝังในทุกแถวเพื่อไม่ให้ตอบหนักเมื่อมีหลายร้อยเครื่อง (เว็บเรียกตอนกดขยายแถว) ·
+        ไม่คืนรหัสคำสั่งของ Server กลาง · **`targetId` ต้องเป็นของ Rollout นี้และ Rollout ต้องอยู่ใต้ Campaign นี้**
+        ไม่งั้น 404 (ไม่เปิดเผยว่ามี target นั้นอยู่ที่อื่น)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: targetId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ประวัติรายรอบ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignRolloutTargetAttempt"
+        "400":
+          description: id ใน path ไม่ใช่ uuid
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Read
+        "404":
+          description: ไม่พบผลของเครื่องนี้ใน Rollout/Campaign นี้
 
   /campaigns/{id}/rollouts/{rolloutId}/approve:
     post:
@@ -5534,12 +5583,60 @@ components:
             (v3.56, docs/19 §4.1) เวลาที่อุปกรณ์ดึงงานนี้ครั้งแรก · null =
             ยังไม่ได้ดึง (หรือ Rollout โหมด mock) · แยก "รอเครื่องดึง" ออกจาก
             "ดึงแล้วรอผล"
+        attemptCount:
+          type: integer
+          minimum: 1
+          description: >-
+            (v3.91, docs/31) จำนวนครั้งที่ส่งไปแล้ว (1 = ครั้งแรก) · ลองส่งใหม่ได้สูงสุด 3 ครั้ง
+        nextRetryAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            (v3.91) กำลังรอส่งรอบใหม่ = เวลาที่จะส่ง · `null` = ไม่ได้รอ (กำลังส่ง รอผล หรือจบแล้ว) ·
+            **ไม่ใช่ค่าคอลัมน์ดิบ**: ระหว่างกำลังส่งคอลัมน์นี้คือ lease (เวลาที่ถ้าระบบหยุดกลางทางจะถูกหยิบซ้ำ)
+            ซึ่งไม่ใช่เวลารอ จึงไม่คืนออกไป
+        lastAttempt:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CampaignRolloutTargetAttempt"
+          description: >-
+            (v3.91) รอบล่าสุดของเครื่องนี้ · `null` = ไม่มีประวัติรายรอบ (ไม่ใช่โหมด central, ยังไม่ปล่อย
+            หรือส่งก่อน docs/31)
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+
+    CampaignRolloutTargetAttempt:
+      type: object
+      description: >-
+        (v3.91, docs/31) การส่ง 1 รอบของเครื่องหนึ่งใน Rollout — ไม่มีรหัสคำสั่งของ Server กลาง
+      required: [attemptNo, status, errorCode, detail, startedAt, finishedAt]
+      properties:
+        attemptNo:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [sending, sent, succeeded, failed, skipped]
+        errorCode:
+          type: string
+          nullable: true
+          description: error_code จาก Server กลาง (null = ไม่มีรหัส เช่นติดต่อ Server กลางไม่ได้)
+        detail:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
 
     DeviceConfigDraft:
       type: object

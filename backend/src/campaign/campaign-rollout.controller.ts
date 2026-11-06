@@ -11,16 +11,16 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ActionType,
-  CampaignRollout,
-  CampaignRolloutTarget,
-} from '@prisma/client';
+import { ActionType, CampaignRollout } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { ActingUser } from './campaign.service';
+import type {
+  CampaignRolloutTargetView,
+  RolloutTargetAttempt,
+} from './campaign-rollout-target-view';
 import {
   CampaignRolloutService,
   type RolloutDeviceValuesItem,
@@ -89,8 +89,19 @@ export class CampaignRolloutController {
   findTargets(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
-  ): Promise<CampaignRolloutTarget[]> {
+  ): Promise<CampaignRolloutTargetView[]> {
     return this.rolloutService.findTargets(id, toActor(req));
+  }
+
+  // ประวัติการส่งรายรอบของเครื่องหนึ่ง (docs/31 §6.4 ลองส่งใหม่อัตโนมัติ) — สิทธิ์เดียวกับดูผลต่อเครื่อง
+  @Get(':id/targets/:targetId/attempts')
+  @RequirePermission('campaign', ActionType.Read)
+  findTargetAttempts(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('targetId', ParseUUIDPipe) targetId: string,
+  ): Promise<RolloutTargetAttempt[]> {
+    return this.rolloutService.findTargetAttempts(campaignId, id, targetId);
   }
 
   // Campaign Approval (แก้ครั้งที่ 39) — resource `campaign` action `Approve`
