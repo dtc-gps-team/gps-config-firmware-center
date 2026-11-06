@@ -210,6 +210,82 @@ describe('classifyCentralCommand', () => {
     expect((r as { detail: string }).detail).toBe(message);
   });
 
+  // รหัสที่กล่องรายงานเอง (ws-gateway/src/errors.js + finishCommand ของ firmware)
+  it.each([
+    [
+      'SCHEMA_NOT_SUPPORTED',
+      'Firmware ในกล่องไม่รองรับ Config ชุดนี้ — อัปเดต Firmware ก่อน',
+    ],
+    ['SETTINGS_MISSING', 'Config ไม่มีค่าตั้งให้กล่อง'],
+    ['HARDWARE_MISMATCH', 'Firmware นี้ไม่ใช่ของรุ่นบอร์ดในกล่อง'],
+    ['VERSION_MISMATCH', 'Server ส่ง Firmware ไม่ตรงกับเวอร์ชันที่สั่ง'],
+    ['UNSIGNED_FIRMWARE', 'Firmware ไม่มีลายเซ็น กล่องไม่ยอมติดตั้ง'],
+    ['SIGNATURE_INVALID', 'ลายเซ็น Firmware ไม่ถูกต้อง กล่องไม่ยอมติดตั้ง'],
+    [
+      'NO_OTA_PARTITION',
+      'กล่องไม่มีพื้นที่สำหรับอัปเดต Firmware ผ่านเน็ต — ต้องแฟลชผ่าน USB',
+    ],
+    ['SIZE_NOT_SUPPORTED', 'Firmware ใหญ่เกินพื้นที่ในกล่อง'],
+    [
+      'DOWNLOAD_URL_INVALID',
+      'ลิงก์ดาวน์โหลด Firmware บน Server ไม่ถูกต้อง — แจ้งผู้ดูแล Server',
+    ],
+    ['UNSUPPORTED_ACTION', 'Firmware ในกล่องไม่รู้จักคำสั่งนี้'],
+    ['SHA256_MISMATCH', 'ไฟล์ Firmware เสียระหว่างดาวน์โหลด กล่องไม่ติดตั้ง'],
+    ['SIZE_MISMATCH', 'ขนาดไฟล์ Firmware ที่ดาวน์โหลดไม่ตรงกับที่ Server แจ้ง'],
+    ['UPDATE_BEGIN_FAILED', 'กล่องเตรียมพื้นที่ติดตั้ง Firmware ไม่ได้'],
+    ['FLASH_WRITE_FAILED', 'เขียน Firmware ลงกล่องไม่สำเร็จ'],
+    ['UPDATE_END_FAILED', 'ติดตั้ง Firmware ไม่สำเร็จ'],
+    ['CONFIG_INVALID_JSON', 'Config ที่กล่องได้รับเสียหาย'],
+    ['MANIFEST_INVALID_JSON', 'ข้อมูล Firmware ที่กล่องได้รับเสียหาย'],
+    ['CONFIG_VERSION_MISMATCH', 'Config บน Server เปลี่ยนระหว่างส่ง'],
+  ])('กล่องรายงาน %s -> %s', (error_code, message) => {
+    const r = classifyCentralCommand(cmd({ status: 'FAILED', error_code }));
+    expect((r as { detail: string }).detail).toBe(message);
+  });
+
+  it.each([
+    [
+      'UNSUPPORTED_PARAMETER:gps.send_interval_sec',
+      'Firmware ในกล่องไม่รองรับค่า "gps.send_interval_sec" — อัปเดต Firmware ก่อน หรือเอาค่านี้ออก',
+    ],
+    [
+      'INVALID_VALUE:speed_limit.max_kmh',
+      'ค่า "speed_limit.max_kmh" ไม่ถูกต้อง (ชนิดข้อมูลหรือช่วงค่าไม่ผ่าน)',
+    ],
+    ['INVALID_GROUP:geofence', 'กลุ่มค่าตั้ง "geofence" มีรูปแบบไม่ถูกต้อง'],
+  ])('รหัสมีชื่อ field ต่อท้าย %s -> %s', (error_code, message) => {
+    const r = classifyCentralCommand(cmd({ status: 'FAILED', error_code }));
+    expect((r as { detail: string }).detail).toBe(message);
+  });
+
+  it.each([
+    ['CONFIG_HTTP_500', 'ดึง Config จาก Server ไม่สำเร็จ (HTTP 500)'],
+    ['MANIFEST_HTTP_404', 'ขอข้อมูล Firmware จาก Server ไม่สำเร็จ (HTTP 404)'],
+    ['DOWNLOAD_HTTP_403', 'ดาวน์โหลด Firmware จาก Server ไม่สำเร็จ (HTTP 403)'],
+    [
+      'DOWNLOAD_HTTP_-1',
+      'ดาวน์โหลด Firmware ไม่สำเร็จ — กล่องต่อ Server ไม่ได้',
+    ],
+  ])('HTTP ฝั่งกล่อง %s -> %s', (error_code, message) => {
+    const r = classifyCentralCommand(cmd({ status: 'FAILED', error_code }));
+    expect((r as { detail: string }).detail).toBe(message);
+  });
+
+  it('MANIFEST_HTTP_409 ที่ Server ห้ามลดเวอร์ชัน -> บอกเหตุผลจริง', () => {
+    const r = classifyCentralCommand(
+      cmd({
+        status: 'FAILED',
+        error_code: 'MANIFEST_HTTP_409',
+        error_message:
+          '{"error":"DOWNGRADE_NOT_ALLOWED","current":"1.2.1","target":"1.0.0"}',
+      }),
+    );
+    expect((r as { detail: string }).detail).toBe(
+      'Server ไม่อนุญาตให้ลดเวอร์ชัน Firmware',
+    );
+  });
+
   it('error_code ที่ไม่รู้จัก -> fallback เป็นข้อความดิบจาก Server กลาง', () => {
     const r = classifyCentralCommand(
       cmd({

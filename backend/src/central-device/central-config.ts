@@ -140,11 +140,71 @@ const FAILED_ERROR_CODE_MESSAGES: Record<string, string> = {
   NEW_FIRMWARE_FAILED_HEALTH_CHECK:
     'Firmware ใหม่ไม่ผ่านการตรวจหลังรีบูต กล่องย้อนกลับเวอร์ชันเดิม',
   DOWNLOAD_TIMEOUT: 'ดาวน์โหลด Firmware ค้าง (เน็ตช้าหรือหลุด)',
+  // รหัสที่กล่องรายงานเอง — อ้างอิง `ws-gateway/src/errors.js` และ `finishCommand()` ของ firmware
+  SCHEMA_NOT_SUPPORTED:
+    'Firmware ในกล่องไม่รองรับ Config ชุดนี้ — อัปเดต Firmware ก่อน',
+  SETTINGS_MISSING: 'Config ไม่มีค่าตั้งให้กล่อง',
+  HARDWARE_MISMATCH: 'Firmware นี้ไม่ใช่ของรุ่นบอร์ดในกล่อง',
+  VERSION_MISMATCH: 'Server ส่ง Firmware ไม่ตรงกับเวอร์ชันที่สั่ง',
+  UNSIGNED_FIRMWARE: 'Firmware ไม่มีลายเซ็น กล่องไม่ยอมติดตั้ง',
+  SIGNATURE_INVALID: 'ลายเซ็น Firmware ไม่ถูกต้อง กล่องไม่ยอมติดตั้ง',
+  NO_OTA_PARTITION:
+    'กล่องไม่มีพื้นที่สำหรับอัปเดต Firmware ผ่านเน็ต — ต้องแฟลชผ่าน USB',
+  SIZE_NOT_SUPPORTED: 'Firmware ใหญ่เกินพื้นที่ในกล่อง',
+  DOWNLOAD_URL_INVALID:
+    'ลิงก์ดาวน์โหลด Firmware บน Server ไม่ถูกต้อง — แจ้งผู้ดูแล Server',
+  UNSUPPORTED_ACTION: 'Firmware ในกล่องไม่รู้จักคำสั่งนี้',
+  SHA256_MISMATCH: 'ไฟล์ Firmware เสียระหว่างดาวน์โหลด กล่องไม่ติดตั้ง',
+  SIZE_MISMATCH: 'ขนาดไฟล์ Firmware ที่ดาวน์โหลดไม่ตรงกับที่ Server แจ้ง',
+  UPDATE_BEGIN_FAILED: 'กล่องเตรียมพื้นที่ติดตั้ง Firmware ไม่ได้',
+  FLASH_WRITE_FAILED: 'เขียน Firmware ลงกล่องไม่สำเร็จ',
+  UPDATE_END_FAILED: 'ติดตั้ง Firmware ไม่สำเร็จ',
+  CONFIG_INVALID_JSON: 'Config ที่กล่องได้รับเสียหาย',
+  MANIFEST_INVALID_JSON: 'ข้อมูล Firmware ที่กล่องได้รับเสียหาย',
+  CONFIG_VERSION_MISMATCH: 'Config บน Server เปลี่ยนระหว่างส่ง',
 };
+
+/** สิ่งที่กล่องกำลังทำตอนได้ HTTP error (`<ส่วน>_HTTP_<code>` ใน `finishCommand()` ของ firmware) */
+const HTTP_ERROR_STEPS: Record<string, string> = {
+  CONFIG: 'ดึง Config',
+  MANIFEST: 'ขอข้อมูล Firmware',
+  DOWNLOAD: 'ดาวน์โหลด Firmware',
+};
+
+/** รหัสที่กล่องสร้างขึ้นเองพร้อมค่าต่อท้าย (ชื่อ field หรือ HTTP status) — null = ไม่ใช่รหัสแบบนี้ */
+function describePatternedCode(
+  code: string,
+  errorMessage: string | null | undefined,
+): string | null {
+  let m = /^UNSUPPORTED_PARAMETER:(.+)$/.exec(code);
+  if (m) {
+    return `Firmware ในกล่องไม่รองรับค่า "${m[1]}" — อัปเดต Firmware ก่อน หรือเอาค่านี้ออก`;
+  }
+  m = /^INVALID_VALUE:(.+)$/.exec(code);
+  if (m) return `ค่า "${m[1]}" ไม่ถูกต้อง (ชนิดข้อมูลหรือช่วงค่าไม่ผ่าน)`;
+  m = /^INVALID_GROUP:(.+)$/.exec(code);
+  if (m) return `กลุ่มค่าตั้ง "${m[1]}" มีรูปแบบไม่ถูกต้อง`;
+  m = /^(CONFIG|MANIFEST|DOWNLOAD)_HTTP_(-?\d+)$/.exec(code);
+  if (m) {
+    // กล่องใส่ body ที่ Server ตอบไว้ใน error_message — 409 ของ manifest คือห้ามลดเวอร์ชัน
+    if (/DOWNGRADE_NOT_ALLOWED/.test(errorMessage ?? '')) {
+      return 'Server ไม่อนุญาตให้ลดเวอร์ชัน Firmware';
+    }
+    const step = HTTP_ERROR_STEPS[m[1]];
+    return Number(m[2]) < 0
+      ? `${step} ไม่สำเร็จ — กล่องต่อ Server ไม่ได้`
+      : `${step} จาก Server ไม่สำเร็จ (HTTP ${m[2]})`;
+  }
+  return null;
+}
 
 export function describeCentralFailure(command: RawCentralCommand): string {
   const code = command.error_code ?? '';
-  return FAILED_ERROR_CODE_MESSAGES[code] ?? describe(command);
+  return (
+    FAILED_ERROR_CODE_MESSAGES[code] ??
+    describePatternedCode(code, command.error_message) ??
+    describe(command)
+  );
 }
 
 /**
