@@ -10,8 +10,28 @@ vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { role: "Admin", accessToken: "tok" } }),
 }));
 vi.mock("@/lib/device-api", () => ({ registerDevice }));
+const customers = vi.hoisted(() => ({
+  value: [{ id: "c1", companyName: "Acme", isActive: true }] as {
+    id: string;
+    companyName: string;
+    isActive: boolean;
+  }[],
+  refetch: vi.fn(),
+}));
 vi.mock("@/hooks/use-customers", () => ({
-  useCustomers: () => ({ data: [] }),
+  useCustomers: () => ({ data: customers.value, refetch: customers.refetch }),
+}));
+// ฟอร์มเพิ่มลูกค้าทดสอบแยกที่ customers/ — ที่นี่แทนด้วยปุ่มจำลองว่าเพิ่มสำเร็จ
+vi.mock("@/app/(app)/customers/customer-form", () => ({
+  CustomerForm: ({
+    onSaved,
+  }: {
+    onSaved: (c: { id: string; companyName: string }) => void;
+  }) => (
+    <button onClick={() => onSaved({ id: "c-new", companyName: "ลูกค้าใหม่" })}>
+      จำลองเพิ่มลูกค้าสำเร็จ
+    </button>
+  ),
 }));
 vi.mock("@/hooks/use-device-models", () => ({
   useDeviceModels: () => ({
@@ -44,14 +64,22 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
     registerDevice.mockReset();
     useDevices.mockReset();
     useDevices.mockReturnValue({ data: [{ deviceId: "DEV-TAKEN" }] });
+    customers.refetch.mockReset();
+    customers.value = [{ id: "c1", companyName: "Acme", isActive: true }];
     central.value = { mode: "real", reachable: true, devices: [] };
   });
+
+  async function pickCustomer(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByLabelText("ลูกค้า"));
+    await user.click(await screen.findByRole("option", { name: "Acme" }));
+  }
 
   async function fillBase(user: ReturnType<typeof userEvent.setup>) {
     await user.type(screen.getByLabelText("Device ID"), "DEV-1");
     await user.type(screen.getByLabelText("SIM Number"), "0899999999");
     await user.click(screen.getByLabelText("โมเดล"));
     await user.click(await screen.findByRole("option", { name: "GT06N" }));
+    await pickCustomer(user);
   }
 
   it("ใช้คำว่า โมเดล และโปรโตคอลถูกเลือกให้เองและล็อกช่อง (1 โมเดลมีได้โปรโตคอลเดียว)", async () => {
@@ -83,7 +111,7 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
 
     expect(
       screen.getByText(
-        "ยังขาด: Device ID, SIM Number, IMEI, Serial Number, Blackbox ID, โมเดล, โปรโตคอล",
+        "ยังขาด: Device ID, SIM Number, IMEI, Serial Number, Blackbox ID, โมเดล, โปรโตคอล, ลูกค้า",
       ),
     ).toBeInTheDocument();
 
@@ -101,7 +129,7 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
   it("ช่องบังคับมีเครื่องหมาย * ที่ label ส่วนช่องที่ไม่บังคับไม่มี", () => {
     render(<RegisterDeviceForm />);
 
-    for (const name of ["Device ID", "SIM Number", "IMEI", "Serial Number", "Blackbox ID", "โมเดล", "โปรโตคอล"]) {
+    for (const name of ["Device ID", "SIM Number", "IMEI", "Serial Number", "Blackbox ID", "โมเดล", "โปรโตคอล", "ลูกค้า"]) {
       const label = document.querySelector(
         `label[for="${(screen.getByLabelText(name) as HTMLElement).id}"]`,
       );
@@ -110,9 +138,49 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
     expect(
       document.querySelector('label[for="device-hw-revision"]')?.className,
     ).not.toContain("after:content-['*']");
+  });
+
+  it("ลูกค้าบังคับเลือก: ยังไม่เลือก ปุ่มลงทะเบียนกดไม่ได้ และส่ง customerId ที่เลือกให้ API", async () => {
+    registerDevice.mockResolvedValue({ deviceId: "DEV-1", apiKey: "k" });
+    const user = userEvent.setup();
+    render(<RegisterDeviceForm />);
+    await user.type(screen.getByLabelText("Device ID"), "DEV-1");
+    await user.type(screen.getByLabelText("SIM Number"), "0899999999");
+    await user.click(screen.getByLabelText("โมเดล"));
+    await user.click(await screen.findByRole("option", { name: "GT06N" }));
+    await user.type(screen.getByLabelText("IMEI"), "860000000000001");
+    await user.type(screen.getByLabelText("Serial Number"), "SN-1");
+    await user.type(screen.getByLabelText("Blackbox ID"), "BB-1");
+
+    expect(screen.getByText("ยังขาด: ลูกค้า")).toBeInTheDocument();
     expect(
-      document.querySelector('label[for="device-customer"]')?.className,
-    ).not.toContain("after:content-['*']");
+      screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }),
+    ).toBeDisabled();
+
+    await pickCustomer(user);
+    await user.click(screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }));
+
+    expect(registerDevice).toHaveBeenCalledWith(
+      "tok",
+      expect.objectContaining({ customerId: "c1" }),
+    );
+  });
+
+  it("เพิ่มลูกค้าใหม่จากฟอร์ม: เลือกลูกค้าที่เพิ่งเพิ่มให้เครื่องนี้ทันที และโหลดรายการลูกค้าใหม่", async () => {
+    customers.value = [];
+    const user = userEvent.setup();
+    render(<RegisterDeviceForm />);
+
+    expect(
+      screen.getByText(/ยังไม่มีลูกค้าที่ใช้งานอยู่/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /เพิ่มลูกค้าใหม่/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "จำลองเพิ่มลูกค้าสำเร็จ" }),
+    );
+
+    expect(customers.refetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/ยังขาด:/).textContent).not.toContain("ลูกค้า");
   });
 
   it("กรอกครบแล้วส่งค่าที่ตัดช่องว่างหัวท้ายให้ API", async () => {
@@ -194,6 +262,7 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
       await user.type(screen.getByLabelText("IMEI"), "Central:BOX-0001");
       await user.type(screen.getByLabelText("Serial Number"), "SN-1");
       await user.type(screen.getByLabelText("Blackbox ID"), "BB-1");
+      await pickCustomer(user);
 
       await user.click(
         screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }),
