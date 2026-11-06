@@ -62,6 +62,7 @@
 | รหัส failed อื่นที่ไม่รู้จัก | failed | **ลองใหม่** (ไม่รู้ = ให้โอกาส · ครบ 3 ครั้งก็จบเหมือนกัน) |
 | Server กลางปฏิเสธคำสั่ง (`rejected`: ไม่รู้จักกล่อง, ไม่ผ่าน schema) | failed | **ไม่ลอง** — ส่งซ้ำก็ผิดซ้ำ |
 | `SUPERSEDED`, `CANCELLED` | skipped_offline | **ไม่ลอง** — มีคนสั่งทับหรือยกเลิก |
+| กล่องรายงานว่ารับของชุดนี้ไม่ได้เลย (R1.1): `SCHEMA_NOT_SUPPORTED`, `SETTINGS_MISSING`, `HARDWARE_MISMATCH`, `VERSION_MISMATCH`, `UNSIGNED_FIRMWARE`, `SIGNATURE_INVALID`, `NO_OTA_PARTITION`, `SIZE_NOT_SUPPORTED`, `DOWNLOAD_URL_INVALID`, `UNSUPPORTED_ACTION` และรหัสที่ขึ้นต้น `UNSUPPORTED_PARAMETER:` / `INVALID_VALUE:` / `INVALID_GROUP:` | failed | **ไม่ลอง** — ส่งซ้ำก็ผิดซ้ำ (§6.3 ข้อ 4) |
 
 **จุดที่แก้ (ไม่เปลี่ยนความหมายของโค้ดเดิม):**
 - **ไม่แก้ `classifyCentralCommand()`** — ยังคืน `skipped` สำหรับ `DEVICE_OFFLINE` / `TTL_EXPIRED` / `SUPERSEDED` /
@@ -320,6 +321,14 @@ Incident ให้บอก "ล้มหลังลอง 3 ครั้ง" �
    (ที่ B เจอใน ws-gateway / delivery-server / firmware): `UNKNOWN_SCHEMA`, `HARDWARE_MISMATCH`, `INVALID_HARDWARE_MODEL`, `DOWNGRADE_NOT_ALLOWED`, `RELEASE_NOT_FOUND`, `INVALID_JSON`,
    `PAYLOAD_TOO_LARGE`, `INVALID_VERSION` · **แยกเป็น PR เล็กของ B (R1.1) ก่อน C1** เพราะ `central-config.ts` เป็นงาน R1 และการขยายนี้มีผลกับงานส่งของช่างด้วย (ไม่ใช่เฉพาะ Campaign) ·
    ยังคงหลักเดิมของ §3.1 คือ denylist ของ "ไม่ลอง" รหัสที่ไม่รู้จักยังได้ลองใหม่ · รายการรหัสข้างบนมาจากการอ่านโค้ดของ B A ยังไม่ได้ตรวจเอง ให้ตรวจใน PR นั้น
+
+   > **ผลตรวจใน R1.1 (B, 6 พ.ย. 2569):** รายการข้างบน**ส่วนใหญ่ไม่ใช่ `error_code` ของคำสั่ง** แต่เป็น error ที่ delivery-server ตอบ HTTP
+   > 4xx ตอนสั่ง (`UNKNOWN_SCHEMA`, `INVALID_HARDWARE_MODEL`, `DOWNGRADE_NOT_ALLOWED` ฝั่ง admin, `RELEASE_NOT_FOUND`, `INVALID_JSON`,
+   > `PAYLOAD_TOO_LARGE`, `INVALID_VERSION`) ซึ่ง backend จัดเป็น `rejected` และ **ไม่ลองซ้ำอยู่แล้ว** (`decideAfterFailure()`) ·
+   > รายการที่ใส่จริงมาจาก `ws-gateway/src/errors.js` + `finishCommand()` ของ firmware คือรหัสที่กล่องรายงานว่ารับของชุดนี้ไม่ได้เลย
+   > (ดูตาราง §3.1 แถวใหม่) · รหัสที่ล้มเพราะข้อมูลเสียระหว่างทาง (`SHA256_MISMATCH`, `SIZE_MISMATCH`, `*_INVALID_JSON`), Server เปลี่ยนระหว่างส่ง
+   > (`CONFIG_VERSION_MISMATCH`), เขียน flash ไม่ผ่าน และ HTTP ของกล่อง (`CONFIG_HTTP_n` ฯลฯ) **ยังลองใหม่** · `DOWNGRADE_NOT_ALLOWED` ที่กล่องได้ตอนขอ
+   > manifest มาเป็น `MANIFEST_HTTP_409` (ใส่ชื่อจริงไว้ใน `error_message`) ยังลองใหม่ เพราะแยกจาก 409 แบบอื่นด้วยรหัสอย่างเดียวไม่ได้ · ครบ 3 ครั้งก็จบเหมือนกัน
 
 ### 6.4 ฝั่งเว็บ
 - **ฟอร์มสร้าง/แก้ Campaign:** สวิตช์ "ลองส่งใหม่อัตโนมัติ (สูงสุด 3 ครั้ง)" เปิดเป็นค่าเริ่มต้น พร้อมคำอธิบายว่าปิดแล้วเครื่องที่ส่งไม่สำเร็จจะนับเป็นล้มทันที
