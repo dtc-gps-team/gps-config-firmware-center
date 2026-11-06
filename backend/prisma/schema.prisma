@@ -1270,6 +1270,11 @@ model Campaign {
   // Campaign จริง · @unique ทำให้เป็น 1:1 กับ Incident (promote ซ้ำไม่ได้ —
   // P2002 ถ้าพยายามผูก incident เดิมกับ Campaign อีกตัว)
   sourceIncidentId String?  @unique
+  // ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ (สูงสุด 3 ครั้ง docs/31 §6 มติ C5 ของ A) — เลือกได้ต่อ
+  // Campaign เพราะบาง Operation ไม่อยากให้ระบบส่งซ้ำเองเพื่อกันความเสียหาย · Campaign ใหม่เปิดเป็นค่าเริ่มต้น แต่
+  // Campaign ที่มีอยู่ก่อน migration เป็น false (ดู migration `..._add_campaign_auto_retry`) · Campaign ระบบของคำขอ
+  // จากหน้างานไม่อ่านค่านี้ (ลองใหม่เสมอ) · โหมด central เท่านั้น
+  autoRetry   Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

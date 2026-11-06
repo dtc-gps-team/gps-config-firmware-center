@@ -89,6 +89,7 @@ import {
           maxAttempts: read('FIELD_APPLY_MAX_ATTEMPTS', d.maxAttempts),
           retryDelaySec: read('FIELD_APPLY_RETRY_DELAY_SEC', d.retryDelaySec),
           claimLeaseSec: read('FIELD_APPLY_CLAIM_LEASE_SEC', d.claimLeaseSec),
+          maxDuePerPoll: read('FIELD_APPLY_MAX_DUE_PER_POLL', d.maxDuePerPoll),
         };
       },
       inject: [NestConfigService],

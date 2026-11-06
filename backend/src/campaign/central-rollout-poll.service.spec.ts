@@ -48,7 +48,7 @@ describe('CentralRolloutPollService', () => {
   let retry: {
     decideAfterFailure: jest.Mock;
     markLatestAttemptSucceeded: jest.Mock;
-    claimDueRetries: jest.Mock;
+    processDueRetries: jest.Mock;
   } | null;
 
   async function build(withCentral = true): Promise<CentralRolloutPollService> {
@@ -237,20 +237,48 @@ describe('CentralRolloutPollService', () => {
         attemptCount: 1,
         rollout: {
           ...t.rollout,
-          campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          // Campaign ระบบเปิดลองใหม่เสมอ ไม่สนค่า autoRetry (ตั้ง false ไว้พิสูจน์ว่าไม่ถูกอ่าน)
+          campaign: {
+            name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+            autoRetry: false,
+          },
         },
       };
     };
+
+    /** Campaign ปกติ (ไม่ใช่ระบบ) ที่ตั้งสวิตช์ autoRetry ตามที่ส่งมา */
+    const normalTarget = (
+      id: string,
+      deviceId: string,
+      commandId: string,
+      autoRetry: boolean,
+    ) => {
+      const t = target(id, deviceId, commandId);
+      return {
+        ...t,
+        attemptCount: 1,
+        rollout: { ...t.rollout, campaign: { name: 'กลุ่มจริง', autoRetry } },
+      };
+    };
+
+    /** ให้ processDueRetries() ป้อน action ตามรายการ (เหมือนที่ claim ได้ทีละตัว) */
+    const dueActions = (actions: unknown[]) =>
+      retry!.processDueRetries.mockImplementation(
+        async (handler: (a: unknown) => Promise<void>) => {
+          for (const a of actions) await handler(a);
+          return actions.length;
+        },
+      );
 
     beforeEach(() => {
       retry = {
         decideAfterFailure: jest.fn(),
         markLatestAttemptSucceeded: jest.fn().mockResolvedValue(undefined),
-        claimDueRetries: jest.fn().mockResolvedValue([]),
+        processDueRetries: jest.fn().mockResolvedValue(0),
       };
     });
 
-    it('query ดึงชื่อ Campaign มาด้วย (เช็ค Campaign ระบบ)', async () => {
+    it('query ดึงชื่อ Campaign และสวิตช์ autoRetry มาด้วย (ตัดสินว่าเปิดลองใหม่ไหม)', async () => {
       const service = await build();
       await service.poll();
       expect(findMany).toHaveBeenCalledWith(
@@ -258,7 +286,7 @@ describe('CentralRolloutPollService', () => {
           include: {
             rollout: {
               select: expect.objectContaining({
-                campaign: { select: { name: true } },
+                campaign: { select: { name: true, autoRetry: true } },
               }) as unknown,
             },
           },
@@ -266,17 +294,9 @@ describe('CentralRolloutPollService', () => {
       );
     });
 
-    it('Campaign ปกติล้ม -> recordTargetResult() ทันทีเหมือนเดิม ไม่ผ่านตัวลองใหม่', async () => {
+    it('Campaign ปกติที่ปิดสวิตช์ autoRetry ล้ม -> recordTargetResult() ทันทีเหมือนเดิม ไม่ผ่านตัวลองใหม่', async () => {
       const service = await build();
-      findMany.mockResolvedValue([
-        {
-          ...target('t1', 'D1', 'C1'),
-          rollout: {
-            ...target('t1', 'D1', 'C1').rollout,
-            campaign: { name: 'กลุ่มจริง' },
-          },
-        },
-      ]);
+      findMany.mockResolvedValue([normalTarget('t1', 'D1', 'C1', false)]);
       getCommandOutcome.mockResolvedValue({
         kind: 'failed',
         detail: 'ล้ม',
@@ -291,6 +311,39 @@ describe('CentralRolloutPollService', () => {
         { configId: 'cfg-1' },
         false,
         'ล้ม',
+        'r-1',
+      );
+    });
+
+    it('Campaign ปกติที่เปิดสวิตช์ autoRetry ล้ม -> ผ่านตัวลองใหม่ (ตั้งรอบใหม่ ไม่บันทึกผล) · สำเร็จ -> ปิดรอบล่าสุด', async () => {
+      const service = await build();
+      findMany.mockResolvedValue([
+        normalTarget('t1', 'D1', 'C1', true),
+        normalTarget('t2', 'D2', 'C2', true),
+      ]);
+      getCommandOutcome
+        .mockResolvedValueOnce({
+          kind: 'failed',
+          detail: 'ล้ม',
+          errorCode: 'DEVICE_DISCONNECTED',
+        })
+        .mockResolvedValueOnce({ kind: 'success' });
+      retry!.decideAfterFailure.mockResolvedValue({
+        kind: 'scheduled',
+        nextRetryAt: new Date(),
+      });
+
+      const result = await service.poll();
+
+      expect(retry!.decideAfterFailure).toHaveBeenCalledTimes(1);
+      expect(result.retrying).toBe(1);
+      expect(retry!.markLatestAttemptSucceeded).toHaveBeenCalledWith('t2');
+      expect(recordTargetResult).toHaveBeenCalledTimes(1); // เฉพาะ t2 ที่สำเร็จ
+      expect(recordTargetResult).toHaveBeenCalledWith(
+        'D2',
+        { configId: 'cfg-1' },
+        true,
+        expect.any(String),
         'r-1',
       );
     });
@@ -373,7 +426,7 @@ describe('CentralRolloutPollService', () => {
 
     it('รอบใหม่ที่ถึงเวลา: push -> startFieldApplyRollout() · finish -> บันทึกผลตามชนิด', async () => {
       const service = await build();
-      retry!.claimDueRetries.mockResolvedValue([
+      dueActions([
         { kind: 'push', rolloutId: 'r-9', targetId: 't-9', actorId: 'op-1' },
         {
           kind: 'finish',
@@ -413,7 +466,7 @@ describe('CentralRolloutPollService', () => {
 
     it('ส่งรอบใหม่ throw -> ไม่ทำให้ poll ล้ม (lease หมดแล้วหยิบใหม่เอง)', async () => {
       const service = await build();
-      retry!.claimDueRetries.mockResolvedValue([
+      dueActions([
         { kind: 'push', rolloutId: 'r-9', targetId: 't-9', actorId: 'op-1' },
       ]);
       startFieldApplyRollout.mockRejectedValue(new Error('boom'));

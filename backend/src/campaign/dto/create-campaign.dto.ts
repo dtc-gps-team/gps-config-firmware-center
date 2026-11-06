@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsOptional,
   IsString,
   MinLength,
@@ -56,4 +57,10 @@ export class CreateCampaignDto {
   @IsOptional()
   @IsString()
   sourceIncidentId?: string;
+
+  /** ลองส่งเข้ากล่องใหม่อัตโนมัติ (สูงสุด 3 ครั้ง docs/31 §6) — ไม่ส่ง = เปิด (ค่าเริ่มต้นของ Campaign ใหม่) ·
+   * ปิดแล้วเครื่องที่ส่งไม่สำเร็จนับเป็นล้มทันทีเหมือนเดิม (กันความเสียหายถ้าไม่อยากให้ส่งซ้ำเอง) */
+  @IsOptional()
+  @IsBoolean()
+  autoRetry?: boolean;
 }
