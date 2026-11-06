@@ -11,6 +11,7 @@ import {
   ScrollTextIcon,
   UsersIcon,
   LayersIcon,
+  Building2Icon,
 } from "lucide-react";
 
 import type { Role } from "@/lib/permissions";
@@ -206,6 +207,17 @@ export const NAV_ITEMS: NavItem[] = [
     // ตาราง 4.1 createDeviceModel/updateDeviceModel: Admin เท่านั้น
     // (SuperAdmin ได้อัตโนมัติจาก seed.ts) — Role อื่นอ่านได้ผ่าน dropdown
     // ตอนสร้าง Config/Parameter อยู่แล้ว ไม่ต้องมีเมนูเข้าหน้านี้ตรงๆ
+    allowedRoles: ["Admin", "SuperAdmin"],
+  },
+  {
+    label: "Customer",
+    href: "/customers",
+    group: "system",
+    screenName: "Customer Management (ไม่มีชื่อจอทางการใน RBAC_Matrix.md —"
+      + " หน้าจัดการลูกค้า มติ A 2026-11-05 ต่อจาก backend PR #443)",
+    icon: Building2Icon,
+    // resource `customer`: Admin เท่านั้น (SuperAdmin ข้ามได้ที่ PermissionGuard) —
+    // Role อื่นเลือกลูกค้าได้จาก dropdown ตอนลงทะเบียนอุปกรณ์ ไม่ต้องมีเมนูเข้าหน้านี้
     allowedRoles: ["Admin", "SuperAdmin"],
   },
 ];
