@@ -67,6 +67,8 @@ function device(deviceId: string, status: Device["status"] = "installed") {
     status,
     registeredAt: "2026-01-01T00:00:00Z",
     installedAt: null,
+    decommissionedAt: null,
+    decommissionReason: null,
     customer: null,
   } satisfies Device;
 }

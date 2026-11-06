@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
-import { listCustomers, type CustomerSummary } from "@/lib/customer-api";
+import { listCustomers, type CustomerListItem } from "@/lib/customer-api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type CustomersState = {
-  data: CustomerSummary[] | null;
+  data: CustomerListItem[] | null;
   isLoading: boolean;
   error: string | null;
 };
@@ -16,15 +16,12 @@ type CustomersState = {
  * โหลดรายชื่อลูกค้าแบบย่อจาก `GET /customers` (docs/12_CustomerScope_Proposal.md
  * เฟส B, PR #127/#153) — mirror `useConfigs`
  *
- * **ยังไม่ถูกใช้ที่ไหนในรอบนี้ ("ช่วงที่ 1")** — dropdown filter "ลูกค้า" บน
- * Device Search ใช้ `getFacetedUniqueValues` ของ `DataTable` เอง (อ่านจาก
- * `Device.customer` ที่ embed มากับ `GET /devices` โดยตรง ไม่ต้องยิง endpoint
- * นี้แยก) — hook นี้เตรียมไว้สำหรับ "ช่วงที่ 2" (ปุ่ม "กำหนดลูกค้า" บน Device
- * Search) ที่ต้องเลือกลูกค้าให้อุปกรณ์ได้แม้ลูกค้านั้นยังไม่มีอุปกรณ์ผูกอยู่เลย
- * (เช่น Metro Transit ใน seed) ซึ่ง `getFacetedUniqueValues` ทำไม่ได้เพราะมัน
- * derive จากข้อมูลที่โหลดมาแล้วเท่านั้น
+ * ใช้เลือกลูกค้าตอนลงทะเบียนอุปกรณ์ (`activeOnly` ตัดลูกค้าที่ปิดใช้งานออก) — dropdown filter
+ * "ลูกค้า" บน Device Search ใช้ `getFacetedUniqueValues` ของ `DataTable` เอง (อ่านจาก
+ * `Device.customer` ที่ embed มากับ `GET /devices`) ซึ่งเห็นเฉพาะลูกค้าที่มีเครื่องผูกอยู่แล้ว
  */
-export function useCustomers() {
+export function useCustomers(options?: { activeOnly?: boolean }) {
+  const activeOnly = options?.activeOnly ?? false;
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
   const [state, setState] = useState<CustomersState>({
@@ -37,7 +34,7 @@ export function useCustomers() {
     if (!token) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const data = await listCustomers(token);
+      const data = await listCustomers(token, { activeOnly });
       setState({ data, isLoading: false, error: null });
     } catch (err) {
       setState((prev) => ({
@@ -49,7 +46,7 @@ export function useCustomers() {
             : "โหลดรายชื่อลูกค้าไม่สำเร็จ",
       }));
     }
-  }, [token]);
+  }, [token, activeOnly]);
 
   useEffect(() => {
     void refetch();

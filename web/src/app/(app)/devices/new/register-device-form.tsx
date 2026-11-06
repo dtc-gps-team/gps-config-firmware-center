@@ -65,7 +65,10 @@ export function RegisterDeviceForm() {
   const { data: models } = useDeviceModels();
   const { data: customers } = useCustomers();
   const { data: central } = useCentralDevices();
-  const { data: registeredDevices } = useDevices();
+  // รวมเครื่องที่ปลดระวางแล้วด้วย: Device ID ห้ามซ้ำตลอดกาล ไม่งั้นจะเสนอกล่องที่ลงทะเบียนไปแล้วซ้ำ
+  const { data: registeredDevices } = useDevices({
+    includeDecommissioned: true,
+  });
 
   const [deviceId, setDeviceId] = useState("");
   const [simNumber, setSimNumber] = useState("");
