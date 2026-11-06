@@ -329,6 +329,17 @@ describe('isRetryableCentralOutcome', () => {
     ['FAILED', 'DEVICE_OFFLINE'],
     ['EXPIRED', 'TTL_EXPIRED'],
     ['FAILED', 'SOME_NEW_CODE_FROM_GATEWAY'],
+    // R1.1: ส่งซ้ำแล้วอาจผ่าน (ข้อมูลเสียระหว่างทาง / Server เปลี่ยนระหว่างส่ง / เน็ต)
+    ['FAILED', 'SHA256_MISMATCH'],
+    ['FAILED', 'SIZE_MISMATCH'],
+    ['FAILED', 'FLASH_WRITE_FAILED'],
+    ['FAILED', 'UPDATE_BEGIN_FAILED'],
+    ['FAILED', 'UPDATE_END_FAILED'],
+    ['FAILED', 'CONFIG_INVALID_JSON'],
+    ['FAILED', 'CONFIG_VERSION_MISMATCH'],
+    ['FAILED', 'MANIFEST_INVALID_JSON'],
+    ['FAILED', 'CONFIG_HTTP_500'],
+    ['FAILED', 'DOWNLOAD_HTTP_-1'],
   ])('%s %s -> ลองใหม่', (status, error_code) => {
     const outcome = classifyCentralCommand(cmd({ status, error_code }));
     expect(outcome).toMatchObject({ errorCode: error_code });
@@ -349,6 +360,44 @@ describe('isRetryableCentralOutcome', () => {
       expect(isRetryableCentralOutcome(outcome)).toBe(false);
     },
   );
+
+  // R1.1 (docs/31 §6.3 ข้อ 4): กล่องรายงานว่ารับของชุดนี้ไม่ได้เลย ส่งซ้ำก็ผิดซ้ำ
+  it.each([
+    'SCHEMA_NOT_SUPPORTED',
+    'SETTINGS_MISSING',
+    'HARDWARE_MISMATCH',
+    'VERSION_MISMATCH',
+    'UNSIGNED_FIRMWARE',
+    'SIGNATURE_INVALID',
+    'NO_OTA_PARTITION',
+    'SIZE_NOT_SUPPORTED',
+    'DOWNLOAD_URL_INVALID',
+    'UNSUPPORTED_ACTION',
+  ])('FAILED %s -> ไม่ลอง (ส่งซ้ำก็ผิดซ้ำ)', (error_code) => {
+    const outcome = classifyCentralCommand(cmd({ error_code }));
+    expect(outcome).toMatchObject({ kind: 'failed', errorCode: error_code });
+    expect(isRetryableCentralOutcome(outcome)).toBe(false);
+  });
+
+  it.each([
+    'UNSUPPORTED_PARAMETER:gps.send_interval_sec',
+    'INVALID_VALUE:speed_limit.max_kmh',
+    'INVALID_GROUP:geofence',
+  ])('FAILED %s -> ไม่ลอง (รหัสมีชื่อ field ต่อท้าย)', (error_code) => {
+    const outcome = classifyCentralCommand(cmd({ error_code }));
+    expect(isRetryableCentralOutcome(outcome)).toBe(false);
+  });
+
+  it('ชื่อที่แค่ขึ้นต้นคล้ายกัน ไม่นับว่าอยู่ในรายการไม่ลอง', () => {
+    for (const error_code of [
+      'INVALID_VALUE',
+      'SIGNATURE_INVALID_TEMPORARY',
+      'HARDWARE_MISMATCHED',
+    ]) {
+      const outcome = classifyCentralCommand(cmd({ error_code }));
+      expect(isRetryableCentralOutcome(outcome)).toBe(true);
+    }
+  });
 
   it('ยังรอ / สำเร็จ / ถามไม่ได้ -> ไม่ใช่ผลที่ต้องลองใหม่', () => {
     expect(isRetryableCentralOutcome({ kind: 'pending' })).toBe(false);
