@@ -214,7 +214,7 @@ describe('classifyCentralCommand', () => {
   it.each([
     [
       'SCHEMA_NOT_SUPPORTED',
-      'Firmware ในกล่องไม่รองรับ Config ชุดนี้ — อัปเดต Firmware ก่อน',
+      'Firmware ในกล่องไม่รองรับ Config ชุดนี้ อัปเดต Firmware ก่อน',
     ],
     ['SETTINGS_MISSING', 'Config ไม่มีค่าตั้งให้กล่อง'],
     ['HARDWARE_MISMATCH', 'Firmware นี้ไม่ใช่ของรุ่นบอร์ดในกล่อง'],
@@ -223,12 +223,12 @@ describe('classifyCentralCommand', () => {
     ['SIGNATURE_INVALID', 'ลายเซ็น Firmware ไม่ถูกต้อง กล่องไม่ยอมติดตั้ง'],
     [
       'NO_OTA_PARTITION',
-      'กล่องไม่มีพื้นที่สำหรับอัปเดต Firmware ผ่านเน็ต — ต้องแฟลชผ่าน USB',
+      'กล่องไม่มีพื้นที่สำหรับอัปเดต Firmware ผ่านเน็ต ต้องแฟลชผ่าน USB',
     ],
     ['SIZE_NOT_SUPPORTED', 'Firmware ใหญ่เกินพื้นที่ในกล่อง'],
     [
       'DOWNLOAD_URL_INVALID',
-      'ลิงก์ดาวน์โหลด Firmware บน Server ไม่ถูกต้อง — แจ้งผู้ดูแล Server',
+      'ลิงก์ดาวน์โหลด Firmware บน Server ไม่ถูกต้อง แจ้งผู้ดูแล Server',
     ],
     ['UNSUPPORTED_ACTION', 'Firmware ในกล่องไม่รู้จักคำสั่งนี้'],
     ['SHA256_MISMATCH', 'ไฟล์ Firmware เสียระหว่างดาวน์โหลด กล่องไม่ติดตั้ง'],
@@ -247,7 +247,7 @@ describe('classifyCentralCommand', () => {
   it.each([
     [
       'UNSUPPORTED_PARAMETER:gps.send_interval_sec',
-      'Firmware ในกล่องไม่รองรับค่า "gps.send_interval_sec" — อัปเดต Firmware ก่อน หรือเอาค่านี้ออก',
+      'Firmware ในกล่องไม่รองรับค่า "gps.send_interval_sec" อัปเดต Firmware ก่อน หรือเอาค่านี้ออก',
     ],
     [
       'INVALID_VALUE:speed_limit.max_kmh',
@@ -265,7 +265,7 @@ describe('classifyCentralCommand', () => {
     ['DOWNLOAD_HTTP_403', 'ดาวน์โหลด Firmware จาก Server ไม่สำเร็จ (HTTP 403)'],
     [
       'DOWNLOAD_HTTP_-1',
-      'ดาวน์โหลด Firmware ไม่สำเร็จ — กล่องต่อ Server ไม่ได้',
+      'ดาวน์โหลด Firmware ไม่สำเร็จ เพราะกล่องต่อ Server ไม่ได้',
     ],
   ])('HTTP ฝั่งกล่อง %s -> %s', (error_code, message) => {
     const r = classifyCentralCommand(cmd({ status: 'FAILED', error_code }));

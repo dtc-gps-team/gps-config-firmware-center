@@ -142,17 +142,17 @@ const FAILED_ERROR_CODE_MESSAGES: Record<string, string> = {
   DOWNLOAD_TIMEOUT: 'ดาวน์โหลด Firmware ค้าง (เน็ตช้าหรือหลุด)',
   // รหัสที่กล่องรายงานเอง — อ้างอิง `ws-gateway/src/errors.js` และ `finishCommand()` ของ firmware
   SCHEMA_NOT_SUPPORTED:
-    'Firmware ในกล่องไม่รองรับ Config ชุดนี้ — อัปเดต Firmware ก่อน',
+    'Firmware ในกล่องไม่รองรับ Config ชุดนี้ อัปเดต Firmware ก่อน',
   SETTINGS_MISSING: 'Config ไม่มีค่าตั้งให้กล่อง',
   HARDWARE_MISMATCH: 'Firmware นี้ไม่ใช่ของรุ่นบอร์ดในกล่อง',
   VERSION_MISMATCH: 'Server ส่ง Firmware ไม่ตรงกับเวอร์ชันที่สั่ง',
   UNSIGNED_FIRMWARE: 'Firmware ไม่มีลายเซ็น กล่องไม่ยอมติดตั้ง',
   SIGNATURE_INVALID: 'ลายเซ็น Firmware ไม่ถูกต้อง กล่องไม่ยอมติดตั้ง',
   NO_OTA_PARTITION:
-    'กล่องไม่มีพื้นที่สำหรับอัปเดต Firmware ผ่านเน็ต — ต้องแฟลชผ่าน USB',
+    'กล่องไม่มีพื้นที่สำหรับอัปเดต Firmware ผ่านเน็ต ต้องแฟลชผ่าน USB',
   SIZE_NOT_SUPPORTED: 'Firmware ใหญ่เกินพื้นที่ในกล่อง',
   DOWNLOAD_URL_INVALID:
-    'ลิงก์ดาวน์โหลด Firmware บน Server ไม่ถูกต้อง — แจ้งผู้ดูแล Server',
+    'ลิงก์ดาวน์โหลด Firmware บน Server ไม่ถูกต้อง แจ้งผู้ดูแล Server',
   UNSUPPORTED_ACTION: 'Firmware ในกล่องไม่รู้จักคำสั่งนี้',
   SHA256_MISMATCH: 'ไฟล์ Firmware เสียระหว่างดาวน์โหลด กล่องไม่ติดตั้ง',
   SIZE_MISMATCH: 'ขนาดไฟล์ Firmware ที่ดาวน์โหลดไม่ตรงกับที่ Server แจ้ง',
@@ -178,7 +178,7 @@ function describePatternedCode(
 ): string | null {
   let m = /^UNSUPPORTED_PARAMETER:(.+)$/.exec(code);
   if (m) {
-    return `Firmware ในกล่องไม่รองรับค่า "${m[1]}" — อัปเดต Firmware ก่อน หรือเอาค่านี้ออก`;
+    return `Firmware ในกล่องไม่รองรับค่า "${m[1]}" อัปเดต Firmware ก่อน หรือเอาค่านี้ออก`;
   }
   m = /^INVALID_VALUE:(.+)$/.exec(code);
   if (m) return `ค่า "${m[1]}" ไม่ถูกต้อง (ชนิดข้อมูลหรือช่วงค่าไม่ผ่าน)`;
@@ -192,7 +192,7 @@ function describePatternedCode(
     }
     const step = HTTP_ERROR_STEPS[m[1]];
     return Number(m[2]) < 0
-      ? `${step} ไม่สำเร็จ — กล่องต่อ Server ไม่ได้`
+      ? `${step} ไม่สำเร็จ เพราะกล่องต่อ Server ไม่ได้`
       : `${step} จาก Server ไม่สำเร็จ (HTTP ${m[2]})`;
   }
   return null;
