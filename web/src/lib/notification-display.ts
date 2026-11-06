@@ -29,6 +29,11 @@ function text(payload: Record<string, unknown>, key: string): string | null {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 }
 
+function num(payload: Record<string, unknown>, key: string): number | null {
+  const v = payload[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
 function line(label: string, value: string | null): string[] {
   return value ? [`${label}: ${value}`] : [];
 }
@@ -151,6 +156,29 @@ export function describeNotification(
         urgent: false,
       };
     }
+    case "config_apply_retrying": {
+      // ส่งรอบหนึ่งไม่สำเร็จ ระบบกำลังลองใหม่เอง (docs/31 §3.5) คำขอยัง sending ไม่ต้องมีใครทำอะไร
+      // backend ส่งให้ช่างที่ถืองานเท่านั้น (Operation ไม่ได้รับ) จึงไม่ผูกลิงก์ตาม role
+      const what = p.kind === "firmware" ? "Firmware" : "Config";
+      const attemptNo = num(p, "attemptNo");
+      const max = num(p, "maxAttempts");
+      const next = num(p, "nextAttemptNo");
+      return {
+        title:
+          attemptNo !== null && max !== null
+            ? `ส่ง ${what} รอบ ${attemptNo}/${max} ไม่สำเร็จ`
+            : `ส่ง ${what} ไม่สำเร็จ ระบบกำลังลองใหม่`,
+        details: [
+          ...line("อุปกรณ์", deviceId),
+          ...line("เหตุผล", text(p, "detail")),
+          ...(next !== null && max !== null
+            ? [`กำลังลองใหม่ รอบ ${next}/${max}`]
+            : []),
+        ],
+        href: null,
+        urgent: false,
+      };
+    }
     case "config_apply_succeeded":
     case "config_apply_failed": {
       // backend ส่งให้ทั้งช่างผู้ขอและ Operation ผู้อนุมัติ (ต่างจาก
@@ -159,14 +187,17 @@ export function describeNotification(
       // จริงจึงลิงก์ได้ด้วย ต่างจากช่างที่เว็บไม่มีหน้างาน
       const what = p.kind === "firmware" ? "Firmware" : "Config";
       const isOperation = viewerRole === "Operation";
+      // ล้มครบหลายรอบ: payload มีประวัติรายรอบ (`attempts[]`, docs/31 §3.5) — บอกจำนวนครั้งที่ลองในหัวข้อ
+      const tried = Array.isArray(p.attempts) ? p.attempts.length : 0;
+      const triedNote = tried > 1 ? ` (ลองส่ง ${tried} ครั้ง)` : "";
       const title =
         n.type === "config_apply_succeeded"
           ? isOperation
             ? `กล่อง ${deviceId ?? ""} รับ ${what} ที่อนุมัติไว้แล้ว`.trim()
             : `กล่องรับ ${what} ที่คุณขอส่งแล้ว`
           : isOperation
-            ? `ส่ง ${what} เข้ากล่อง ${deviceId ?? ""} ไม่สำเร็จ`.trim()
-            : `ส่ง ${what} ที่คุณขอเข้าเครื่องไม่สำเร็จ`;
+            ? `ส่ง ${what} เข้ากล่อง ${deviceId ?? ""} ไม่สำเร็จ${triedNote}`.trim()
+            : `ส่ง ${what} ที่คุณขอเข้าเครื่องไม่สำเร็จ${triedNote}`;
       return {
         title,
         details: [
