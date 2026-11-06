@@ -1140,11 +1140,14 @@ paths:
         "403":
           description: ไม่มีสิทธิ์สร้างงาน — เฉพาะ Role Operation เท่านั้น
         "404":
-          description: ไม่พบ Config (configId) ที่ระบุ
+          description: >-
+            ไม่พบ Config (configId) ที่ระบุ · หรือไม่พบเครื่อง (deviceId) ที่ระบุ
+            (ต้องเป็นเครื่องที่ลงทะเบียนแล้ว)
         "409":
           description: >-
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
-            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือเครื่อง (deviceId)
+            ปลดระวางแล้ว สร้างงานใหม่ให้เครื่องนี้ไม่ได้
 
   /tasks/start:
     post:
@@ -1251,11 +1254,12 @@ paths:
           description: >-
             ไม่พบงานนี้ (รวมถึงกรณี ST/OT พยายามแก้งานที่ไม่ใช่ของตัวเอง — ตอบ 404
             แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่) หรือไม่พบ Config (configId)
-            ที่ระบุ
+            ที่ระบุ · หรือย้ายงานไปเครื่อง (deviceId) ที่ไม่มีอยู่
         "409":
           description: >-
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
-            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือ ST/OT
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือย้ายงานไปเครื่อง
+            (deviceId) ที่ปลดระวางแล้ว (deviceId เดิมของงานไม่เปลี่ยนก็แก้ชื่อ/ปิดงานได้ตามปกติ) · หรือ ST/OT
             (เจ้าของงาน) พยายามเปลี่ยนสถานะของงานที่ถูกยกเลิก (`cancelled`)
             หรือเสร็จแล้ว (`completed`) — ทั้งสองเป็นสถานะสุดท้ายสำหรับ ST/OT
             (กัน offline queue ของ Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว หรือ

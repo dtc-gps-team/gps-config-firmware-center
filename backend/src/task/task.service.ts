@@ -927,8 +927,9 @@ export class TaskService {
    * - ถ้า Task มี deviceId และมี Device record จริงสำหรับเลขนั้น: deviceModel/
    *   protocol ของ Config ต้องตรงกับ Device → 409
    *
-   * `deviceId` ที่ยังไม่มี Device record (อ้างลอยๆ ตามที่ Task.deviceId เป็น
-   * อยู่ตอนนี้) ข้ามการเช็ครุ่นไป — Device Registration ยังเป็น Phase 5
+   * `deviceId` ที่ไม่มี Device record: เช็คนี้ข้ามการเช็ครุ่นไปเฉยๆ แต่ `create()`/`update()`
+   * ล็อกเครื่องด้วย `lockDeviceForUse()` ต่อจากนี้ ซึ่งตอบ 404 เมื่อไม่พบเครื่อง
+   * (Device Registration มีแล้ว งานต้องอ้างเครื่องที่ลงทะเบียนจริง · รีวิว B บน #452)
    */
   private async assertConfigAssignable(
     configId: string,

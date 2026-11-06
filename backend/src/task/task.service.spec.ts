@@ -130,7 +130,9 @@ describe('TaskService', () => {
       Promise.resolve(
         strings.join('').includes('"Config"')
           ? [{ deletedAt: null }]
-          : [{ status: sampleTask.status, createdAt: sampleTask.createdAt }],
+          : strings.join('').includes('"Device"')
+            ? [{ status: 'registered' }] // ล็อกเครื่อง (lockDeviceForUse) - เครื่องมีอยู่และใช้งานได้
+            : [{ status: sampleTask.status, createdAt: sampleTask.createdAt }],
       ),
     );
     // $transaction (interactive form) เรียก callback ด้วย prisma mock ตัวเดียวกัน
@@ -273,22 +275,33 @@ describe('TaskService', () => {
         expect(task.create).not.toHaveBeenCalled();
       });
 
-      it('deviceId ยังไม่มี Device record: ข้ามการเช็ครุ่น สร้างงานได้', async () => {
+      it('deviceId ที่ยังไม่ลงทะเบียน: 404 ไม่สร้างงาน', async () => {
         config.findUnique.mockResolvedValue(approvedConfig);
         device.findUnique.mockResolvedValue(null);
         task.create.mockResolvedValue(sampleTask);
-
-        await service.create(
-          {
-            title: 'x',
-            assignedTo: 'tech-1',
-            deviceId: 'DEV-FLOATING',
-            configId: CONFIG_ID,
-          },
-          operation,
+        // ล็อกเครื่องไม่เจอแถว Device
+        queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+          Promise.resolve(
+            strings.join('').includes('"Device"')
+              ? []
+              : strings.join('').includes('"Config"')
+                ? [{ deletedAt: null }]
+                : [],
+          ),
         );
 
-        expect(task.create).toHaveBeenCalled();
+        await expect(
+          service.create(
+            {
+              title: 'x',
+              assignedTo: 'tech-1',
+              deviceId: 'DEV-FLOATING',
+              configId: CONFIG_ID,
+            },
+            operation,
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(task.create).not.toHaveBeenCalled();
       });
     });
   });
@@ -465,6 +478,31 @@ describe('TaskService', () => {
         await expect(
           service.update(sampleTask.id, { status: 'completed' }, operation),
         ).rejects.toBe(other);
+      });
+
+      it('ย้ายงานไปเครื่องที่ไม่มีอยู่: 404 ไม่แก้งาน', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+          Promise.resolve(
+            strings.join('').includes('"Device"')
+              ? []
+              : [
+                  {
+                    status: sampleTask.status,
+                    createdAt: sampleTask.createdAt,
+                  },
+                ],
+          ),
+        );
+
+        await expect(
+          service.update(
+            sampleTask.id,
+            { deviceId: 'DEV-NOPE-9999' },
+            operation,
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(task.update).not.toHaveBeenCalled();
       });
 
       it('แก้ทุก field ได้ ไม่ว่างานนั้นเป็นของใคร', async () => {
