@@ -490,6 +490,11 @@ model Device {
   status               DeviceLifecycleStatus @default(registered)
   registeredAt         DateTime              @default(now())
   installedAt          DateTime?
+  // ปลดระวาง (มติ A 2026-11-05): เวลา + เหตุผลที่ Admin กรอก — null ทั้งคู่เมื่อไม่ได้ปลดระวาง · เปิดใช้กลับ
+  // (`POST /devices/{id}/reactivate`) ล้างค่าทั้งสอง · เก็บแยกจาก `status` เพื่อให้ประวัติ/รายงานบอกได้ว่า
+  // ปลดระวางเมื่อไรและทำไม โดยไม่ต้องย้อนอ่าน AuditLog (additive migration ไม่แตะแถวเดิม)
+  decommissionedAt     DateTime?
+  decommissionReason   String?
   // เวลาที่อุปกรณ์เรียก endpoint `/device-sync/*` สำเร็จล่าสุด (ผ่าน
   // `DeviceApiKeyGuard`) ใช้ตัดสิน online/offline (docs/19 §4.3) — เขียนเมื่อ
   // ค่าเดิมเก่ากว่า 1 นาทีเท่านั้น กันเขียนทุกคำขอ · nullable: เครื่องที่ไม่เคย

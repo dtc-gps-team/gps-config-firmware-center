@@ -43,6 +43,7 @@ import {
 import { NotificationService } from '../notification/notification.service';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
+import { lockDeviceForUse } from '../device/device-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
 import {
@@ -568,6 +569,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
   ): Promise<ConfigApplyRequest> {
     const { deviceId } = data;
     await this.lockDevice(tx, deviceId);
+    // กันปลดระวางเครื่องแทรกระหว่างตรวจกับสร้างคำขอ (ดู device/device-lock.ts)
+    await lockDeviceForUse(tx, deviceId);
     // ล็อก Firmware ที่คำขอจะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้างคำขอ
     // (review B บน #426)
     if (data.kind === 'firmware') {

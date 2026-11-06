@@ -50,6 +50,8 @@ export interface AuditLogMetadata {
    * AuditLog ไม่มี FK ไป Customer) **ไม่เก็บ** อีเมล/เบอร์โทร/ผู้ติดต่อ */
   customerId?: string;
   companyName?: string;
-  /** customer: ชื่อ field ที่แก้ (ไม่ใช่ค่า) */
+  /** customer/device: ชื่อ field ที่แก้ (ไม่ใช่ค่า) */
   changedFields?: string[];
+  /** device: เหตุผลที่ Admin กรอกตอนปลดระวาง (ข้อความอิสระ ไม่มีข้อมูลอ่อนไหว) */
+  reason?: string;
 }

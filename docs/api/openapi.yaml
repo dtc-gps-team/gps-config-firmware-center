@@ -1140,11 +1140,14 @@ paths:
         "403":
           description: ไม่มีสิทธิ์สร้างงาน — เฉพาะ Role Operation เท่านั้น
         "404":
-          description: ไม่พบ Config (configId) ที่ระบุ
+          description: >-
+            ไม่พบ Config (configId) ที่ระบุ · หรือไม่พบเครื่อง (deviceId) ที่ระบุ
+            (ต้องเป็นเครื่องที่ลงทะเบียนแล้ว)
         "409":
           description: >-
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
-            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือเครื่อง (deviceId)
+            ปลดระวางแล้ว สร้างงานใหม่ให้เครื่องนี้ไม่ได้
 
   /tasks/start:
     post:
@@ -1251,11 +1254,12 @@ paths:
           description: >-
             ไม่พบงานนี้ (รวมถึงกรณี ST/OT พยายามแก้งานที่ไม่ใช่ของตัวเอง — ตอบ 404
             แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่) หรือไม่พบ Config (configId)
-            ที่ระบุ
+            ที่ระบุ · หรือย้ายงานไปเครื่อง (deviceId) ที่ไม่มีอยู่
         "409":
           description: >-
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
-            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือ ST/OT
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือย้ายงานไปเครื่อง
+            (deviceId) ที่ปลดระวางแล้ว (deviceId เดิมของงานไม่เปลี่ยนก็แก้ชื่อ/ปิดงานได้ตามปกติ) · หรือ ST/OT
             (เจ้าของงาน) พยายามเปลี่ยนสถานะของงานที่ถูกยกเลิก (`cancelled`)
             หรือเสร็จแล้ว (`completed`) — ทั้งสองเป็นสถานะสุดท้ายสำหรับ ST/OT
             (กัน offline queue ของ Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว หรือ
@@ -2114,8 +2118,9 @@ paths:
       description: >-
         ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Device Search /
         Device Detail" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา =
-        คืนทุกเครื่อง · `search` match ทั้ง `deviceId` และ `simNumber`
-        (contains, case-insensitive) · ยังไม่มี paging (จำนวน Device ใน MVP น้อย)
+        คืนทุกเครื่อง **ยกเว้นเครื่องที่ปลดระวางแล้ว** (ซ่อนเป็นค่าเริ่มต้น v3.89 — ส่ง
+        `includeDecommissioned=true` หรือ `status=decommissioned` ถึงจะเห็น) · `search` match ทั้ง
+        `deviceId` และ `simNumber` (contains, case-insensitive) · ยังไม่มี paging (จำนวน Device ใน MVP น้อย)
       parameters:
         - in: query
           name: search
@@ -2152,6 +2157,14 @@ paths:
             กรองเฉพาะอุปกรณ์ของลูกค้ารายนี้ (v3.28, issue #204) — เครื่องที่
             `customerId` เป็น `null` (ยังไม่ผูกบริษัท) จะไม่ถูกคืนเมื่อส่ง
             filter นี้มา
+        - in: query
+          name: includeDecommissioned
+          required: false
+          schema:
+            type: boolean
+          description: >-
+            (v3.89) `true` = รวมเครื่องที่ปลดระวางแล้วด้วย · ไม่ส่ง/`false` = ซ่อน (ค่าเริ่มต้น) · ระบุ
+            `status=decommissioned` ตรงๆ เห็นเครื่องที่ปลดระวางโดยไม่ต้องส่งตัวนี้
       responses:
         "200":
           description: รายการ Device (เรียงตาม deviceId)
@@ -2194,6 +2207,137 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบ Device (deviceId) นี้
+    patch:
+      tags: [device]
+      operationId: updateDevice
+      summary: แก้ไขข้อมูลอุปกรณ์ (v3.89)
+      description: >-
+        **Admin/SuperAdmin** (resource `device-registration` action `Update`) · มติ A 2026-11-05 · แก้เฉพาะ field
+        ที่ส่งมา · **แก้ได้:** `simNumber`, `customerId` (เปลี่ยนไปลูกค้าอื่นที่ใช้งานอยู่ ล้างออกไม่ได้),
+        `hardwareRevisionCode` (ส่งค่าว่างเพื่อล้าง), `imei`, `serialNumber`, `blackboxId` · **แก้ไม่ได้:**
+        `deviceId`, โมเดล, โปรโตคอล (ส่งมา = 400) · เครื่องที่ปลดระวางแล้วแก้ไม่ได้ (409) ·
+        IMEI/Serial/Blackbox ห้ามซ้ำกับเครื่องอื่นตลอดกาลรวมที่ปลดระวางแล้ว และ SIM ห้ามซ้ำกับเครื่องที่ใช้งานอยู่
+        (409) — ตรวจเฉพาะช่องที่ค่าเปลี่ยนจริง · ไม่มีช่องไหนเปลี่ยน = คืนค่าเดิม ไม่เขียน AuditLog ·
+        ล็อกแถวเครื่อง FOR UPDATE ตลอด transaction · AuditLog `update` เก็บ `deviceId` + `changedFields` (ชื่อ field ไม่ใช่ค่า)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeviceRequest"
+      responses:
+        "200":
+          description: ข้อมูลเครื่องหลังแก้ไข
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "400":
+          description: validation ไม่ผ่าน หรือส่ง field ที่แก้ไม่ได้ (deviceId/โมเดล/โปรโตคอล)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แก้ไขอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ Device หรือลูกค้า (customerId) นี้
+        "409":
+          description: >-
+            เครื่องปลดระวางแล้ว · IMEI/Serial/Blackbox ซ้ำกับเครื่องอื่น · SIM ซ้ำกับเครื่องที่ใช้งานอยู่ ·
+            ลูกค้าที่เลือกปิดใช้งานอยู่
+
+  /devices/{deviceId}/decommission:
+    post:
+      tags: [device]
+      operationId: decommissionDevice
+      summary: ปลดระวางอุปกรณ์ (v3.89)
+      description: >-
+        **Admin/SuperAdmin** (resource `device-registration` action `Update`) · มติ A 2026-11-05: ปลดระวางเป็นทางหลัก
+        แทนการลบ · `status = decommissioned` + ล้าง API key กับ key telemetry (กล่องคุยกับระบบไม่ได้ทันที) + เก็บ
+        `decommissionedAt`/`decommissionReason` · ประวัติทั้งหมดอยู่ต่อ · ซ่อนจาก `GET /devices` เป็นค่าเริ่มต้น ·
+        **ที่ตัดทางคุยของกล่องจริงๆ:** device-sync ตัดเพราะ `apiKeyHash` เป็น null ส่วน telemetry ตัดเพราะ guard ปฏิเสธ
+        สถานะ `decommissioned` (ไม่ใช่เพราะล้าง `telemetryKeyHash` — ค่า null แปลว่าใช้ key กลาง) · กล่องยังเชื่อม
+        ws-gateway ของ Server กลางได้ตามเดิม (ยังไม่ได้สั่ง revoke ฝั่งนั้น) ·
+        **คำขอ Override Config ที่อนุมัติแล้วแต่ยังไม่ถูกใช้ไม่ถูกแตะ** — ถ้าเปิดใช้เครื่องกลับ ค่านั้นยังมีผลตามที่อนุมัติไว้ ·
+        SIM ถูกปล่อยให้เครื่องอื่นใช้ได้ ส่วน IMEI/Serial/Blackbox **ไม่ถูกปล่อย** (เครื่องเดิมที่กลับมาให้เปิดใช้งานกลับ) ·
+        **409 พร้อมจำนวนต่อชนิด** ถ้ายังมีงานค้าง: คำขอส่งเข้ากล่องที่ยังไม่จบ (pending/approved/sending),
+        Rollout ที่ยังเปิดอยู่และเครื่องนี้ยังรอผล, Task ที่ยังไม่จบ, คำขอ Override Config/Firmware ที่รออนุมัติ ·
+        ตรวจหลังล็อกแถวเครื่อง FOR UPDATE ใน transaction เดียวกับการเปลี่ยนสถานะ (ผู้สร้างงานล็อก FOR SHARE) ·
+        AuditLog `decommission` เก็บ `deviceId` + `reason`
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecommissionDeviceRequest"
+      responses:
+        "200":
+          description: ข้อมูลเครื่องหลังปลดระวาง
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "400":
+          description: ไม่มีเหตุผล หรือเหตุผลเป็นช่องว่างล้วน/ยาวเกิน 500 ตัวอักษร
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปลดระวางอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: ปลดระวางไปแล้ว หรือยังมีงานค้างอ้างเครื่องนี้ (ข้อความบอกจำนวนแต่ละชนิด)
+
+  /devices/{deviceId}/reactivate:
+    post:
+      tags: [device]
+      operationId: reactivateDevice
+      summary: เปิดใช้อุปกรณ์ที่ปลดระวางกลับ (v3.89)
+      description: >-
+        **Admin/SuperAdmin** (resource `device-registration` action `Update`) · เฉพาะเครื่องที่ปลดระวางอยู่ ·
+        กลับเป็น `registered` (ต้องยืนยันติดตั้งใหม่ — ล้าง `installedAt` ด้วย) + ออก API key ใหม่ **แสดงครั้งเดียว** เหมือน `registerDevice` ·
+        ล้าง `decommissionedAt`/`decommissionReason` · SIM ของเครื่องเดิมอาจถูกเครื่องอื่นที่ใช้งานอยู่ใช้ไปแล้ว
+        (SIM ห้ามซ้ำเฉพาะเครื่องที่ใช้งานอยู่) → 409 ให้ส่ง `simNumber` ใหม่มา · AuditLog `reactivate`
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactivateDeviceRequest"
+      responses:
+        "200":
+          description: เปิดใช้งานกลับสำเร็จ — เก็บ apiKey ที่ได้รับไว้ให้ดี ดูซ้ำไม่ได้แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterDeviceResponse"
+        "400":
+          description: simNumber เป็นช่องว่างล้วนหรือยาวเกิน
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: เครื่องไม่ได้ปลดระวางอยู่ หรือ SIM ซ้ำกับเครื่องที่ใช้งานอยู่ (ส่ง simNumber ใหม่)
 
   /devices/{deviceId}/rotate-key:
     post:
@@ -2230,6 +2374,10 @@ paths:
           description: ไม่มีสิทธิ์ออก/หมุนเวียน API key ของอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
         "404":
           description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: >-
+            เครื่องปลดระวางแล้ว (v3.89) — ออก key ใหม่ไม่ได้ เพราะ key ถูกล้างตอนปลดระวาง ถ้าออกใหม่กล่องจะกลับมา
+            คุยกับระบบได้โดยไม่ผ่านการเปิดใช้งานกลับ · ให้เรียก `reactivateDevice` (ออก key ใหม่ให้เอง)
 
   /devices/{deviceId}/confirm-install:
     post:
@@ -7224,6 +7372,60 @@ components:
             จะไม่มีของเก่าให้ย้อนกลับไป (Dual Partition bookkeeping ไม่มีจุด
             เริ่มต้น)
 
+    UpdateDeviceRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        (v3.89) แก้เฉพาะ field ที่ส่ง · `deviceId`/โมเดล/โปรโตคอลแก้ไม่ได้ (ส่งมา = 400) · ช่องที่บังคับกรอก
+        ตอนลงทะเบียน (SIM/IMEI/Serial/Blackbox) ล้างค่าไม่ได้
+      properties:
+        simNumber:
+          type: string
+          minLength: 1
+          maxLength: 50
+        customerId:
+          type: string
+          format: uuid
+          description: ต้องเป็นลูกค้าที่ใช้งานอยู่ · ล้างลูกค้าออกไม่ได้
+        hardwareRevisionCode:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: ส่งค่าว่างเพื่อล้าง
+        imei:
+          type: string
+          minLength: 1
+          maxLength: 50
+        serialNumber:
+          type: string
+          minLength: 1
+          maxLength: 50
+        blackboxId:
+          type: string
+          minLength: 1
+          maxLength: 50
+
+    DecommissionDeviceRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: เหตุผลที่ปลดระวาง (บังคับ) — เก็บลง `Device.decommissionReason` และ AuditLog
+
+    ReactivateDeviceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        simNumber:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: SIM ใหม่ (ไม่ส่ง = ใช้ SIM เดิม) — ส่งเมื่อ SIM เดิมถูกเครื่องอื่นที่ใช้งานอยู่ใช้ไปแล้ว
+
     RegisterDeviceResponse:
       allOf:
         - $ref: "#/components/schemas/Device"
@@ -7289,6 +7491,15 @@ components:
           type: string
           format: date-time
           nullable: true
+        decommissionedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: (v3.89) เวลาที่ปลดระวาง · null = ไม่ได้ปลดระวาง
+        decommissionReason:
+          type: string
+          nullable: true
+          description: (v3.89) เหตุผลที่ Admin กรอกตอนปลดระวาง · null = ไม่ได้ปลดระวาง
         reportedFirmwareVersion:
           type: string
           nullable: true
