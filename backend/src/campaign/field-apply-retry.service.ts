@@ -16,6 +16,9 @@ export interface FieldApplyRetrySettings {
   retryDelaySec: number;
   /** อายุ lease ระหว่างกำลังส่ง ต้องมากกว่าเวลาส่งหนึ่งครั้ง — `FIELD_APPLY_CLAIM_LEASE_SEC` */
   claimLeaseSec: number;
+  /** หยิบรอบลองใหม่ที่ถึงเวลาได้ไม่เกินกี่ตัวต่อรอบ poll — กันรอบ poll ยาวจน Rollout อื่นต้องรอถามผล
+   * (docs/31 §6.3 ความเสี่ยงข้อ 1) ตัวที่เหลือไปรอบถัดไป (ทุก 4 วินาที) — `FIELD_APPLY_MAX_DUE_PER_POLL` */
+  maxDuePerPoll: number;
 }
 
 export const FIELD_APPLY_RETRY_SETTINGS = Symbol('FIELD_APPLY_RETRY_SETTINGS');
@@ -24,6 +27,7 @@ export const DEFAULT_FIELD_APPLY_RETRY_SETTINGS: FieldApplyRetrySettings = {
   maxAttempts: 3,
   retryDelaySec: 30,
   claimLeaseSec: 60,
+  maxDuePerPoll: 20,
 };
 
 /** ผลที่ทำให้รอบหนึ่งไม่สำเร็จ — ผลจบจาก poll (`failed`/`skipped`) หรือส่งไม่ถึง Server กลาง */
@@ -68,9 +72,23 @@ const STUCK_DETAIL =
   'ส่งไม่ถึง Server กลาง (ระบบหยุดกลางทางหลังเริ่มส่ง ไม่ได้รับรหัสคำสั่ง)';
 const NOT_ACTIVE_DETAIL = 'Rollout ไม่ได้ทำงานต่อแล้ว ไม่ลองส่งรอบใหม่';
 
+/** เปิดการลองใหม่ให้ Campaign นี้ไหม: ระบบ (หน้างาน) เปิดเสมอ · ปกติตามสวิตช์ `autoRetry` · ไม่รู้จัก Campaign = ปิด */
+export function isAutoRetryCampaign(
+  campaign: { name: string; autoRetry: boolean } | null | undefined,
+): boolean {
+  if (!campaign) return false;
+  return (
+    campaign.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME || campaign.autoRetry
+  );
+}
+
+const AUTO_RETRY_OFF_DETAIL =
+  'Campaign นี้ปิดการลองส่งใหม่อัตโนมัติแล้ว ไม่ลองส่งรอบใหม่';
+
 /**
- * ลองส่งเข้ากล่องใหม่อัตโนมัติ (docs/31) — เฉพาะ Rollout เครื่องเดียวของคำขอส่งจากหน้างาน
- * (Campaign ระบบ `FIELD_APPLY_SYSTEM_CAMPAIGN_NAME`) โหมด `central`
+ * ลองส่งเข้ากล่องใหม่อัตโนมัติ (docs/31) — Rollout เครื่องเดียวของคำขอส่งจากหน้างาน (Campaign ระบบ
+ * `FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` เปิดเสมอ) และ Rollout ของ Campaign ปกติที่เปิดสวิตช์
+ * `Campaign.autoRetry` (§6) · โหมด `central` เท่านั้น
  *
  * - เก็บประวัติทุกรอบใน `CampaignRolloutTargetAttempt`
  * - ตัดสินหลังรอบที่ไม่สำเร็จ (`decideAfterFailure()`) — จุดดัก 2 ทาง (§3.1): ผลจบจาก poll และส่งไม่ถึง
@@ -108,6 +126,19 @@ export class FieldApplyRetryService {
       select: { campaign: { select: { name: true } } },
     });
     return rollout?.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME;
+  }
+
+  /**
+   * เปิดการลองส่งใหม่ให้ Rollout นี้ไหม (docs/31 §6.3 — จุดตัดสินเดียวแทนการเช็คชื่อ Campaign): Campaign ระบบของ
+   * คำขอจากหน้างานเปิดเสมอ · Campaign ปกติเปิดเมื่อ `autoRetry = true` · อ่านค่าสดทุกครั้ง (ไม่ snapshot) ให้ Operation
+   * ปิดระหว่าง Rollout ยังรันอยู่ได้ · ไม่ตรวจโหมด `central` ที่นี่ (ผู้เรียกตรวจจาก `applyMode` ของ Rollout)
+   */
+  async isAutoRetryEnabled(rolloutId: string): Promise<boolean> {
+    const rollout = await this.prisma.campaignRollout.findUnique({
+      where: { id: rolloutId },
+      select: { campaign: { select: { name: true, autoRetry: true } } },
+    });
+    return isAutoRetryCampaign(rollout?.campaign);
   }
 
   /** เริ่มรอบ `attemptNo` (idempotent — รอบลองใหม่ถูกสร้างไว้แล้วตอน claim) */
@@ -207,23 +238,52 @@ export class FieldApplyRetryService {
   }
 
   /**
-   * หา target ที่ถึงเวลาลองใหม่ (หรือ lease หมด) แล้ว claim ทีละตัวแบบ atomic (§3.4):
-   * `where` มี `attemptCount` + `nextRetryAt` เดิม สอง poll จึงหยิบตัวเดียวกันไม่ได้ · claim ตั้ง
-   * `nextRetryAt = now + lease` (ไม่ใช่ null) ถ้า process ตายหลัง claim พอ lease หมดก็ถูกหยิบใหม่
+   * ผู้สมัครรอบลองใหม่ที่ถึงเวลา (หรือ lease หมด) เรียงตามที่ถึงเวลาก่อน จำกัด `limit` ตัว (§6.3 ข้อ 1)
+   *
+   * - Campaign ระบบ (หน้างาน): Rollout `active` หรือ `paused` (ไม่ active แล้ว `claimOne` จบ target ด้วยผลรอบล่าสุด)
+   * - Campaign ปกติ: **เฉพาะ Rollout `active`** — `paused` ปล่อยรอ (`pending`, `nextRetryAt` ผ่านเวลาแล้ว) พอ
+   *   `resume()` แล้วรอบ poll ถัดไปหยิบเอง ไม่จบเป็น failed ทิ้ง (Auto Pause ไม่ทำให้ทุกเครื่องที่รออยู่ล้มพร้อมกัน) ·
+   * - Campaign ปกติที่ **ปิดสวิตช์** (`autoRetry = false`) และ Rollout `active`: หยิบเครื่องที่รอรอบใหม่ **ไม่ต้องรอถึง
+   *   `nextRetryAt`** เพื่อให้จบด้วยผลรอบล่าสุดในรอบ poll ถัดไป (รีวิว B บน #457 — Operation ปิดเพื่อหยุด หน้าจอไม่ควร
+   *   นับถอยหลังต่อ) · เฉพาะเครื่องที่ **ไม่มีรอบค้างส่ง** (`attempts` ที่ `finishedAt` ว่าง = กำลังส่งอยู่ ให้ผู้ส่งจบเอง
+   *   ไม่ใช่ถูกจบซ้อน) · `paused` ยังปล่อยรอจน Resume เหมือนเดิม
    */
-  async claimDueRetries(
-    now: Date = new Date(),
-  ): Promise<FieldApplyDueAction[]> {
-    const due = await this.prisma.campaignRolloutTarget.findMany({
+  private findDueCandidates(now: Date, limit: number) {
+    return this.prisma.campaignRolloutTarget.findMany({
       where: {
         status: 'pending',
         centralCommandId: null,
-        nextRetryAt: { not: null, lte: now },
-        rollout: {
-          applyMode: 'central',
-          status: { in: ['active', 'paused'] },
-          campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
-        },
+        OR: [
+          {
+            nextRetryAt: { not: null, lte: now },
+            rollout: {
+              applyMode: 'central',
+              OR: [
+                {
+                  status: { in: ['active', 'paused'] },
+                  campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+                },
+                {
+                  status: 'active',
+                  campaign: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+                },
+              ],
+            },
+          },
+          {
+            // ปิดสวิตช์แล้ว: จบเลยไม่ต้องรอถึงเวลา (ดู doc ด้านบน)
+            nextRetryAt: { not: null },
+            attempts: { none: { finishedAt: null } },
+            rollout: {
+              applyMode: 'central',
+              status: 'active',
+              campaign: {
+                name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+                autoRetry: false,
+              },
+            },
+          },
+        ],
       },
       include: {
         rollout: {
@@ -234,17 +294,52 @@ export class FieldApplyRetryService {
             firmwareId: true,
             approvedBy: true,
             createdBy: true,
+            campaign: { select: { name: true, autoRetry: true } },
           },
         },
       },
       orderBy: { nextRetryAt: 'asc' },
+      take: limit,
     });
+  }
 
-    const actions: FieldApplyDueAction[] = [];
+  /**
+   * หยิบรอบที่ถึงเวลาแล้วทำต่อ **ทีละตัว** (§3.4 + §6.3 ข้อ 1): `claimOne()` แล้วเรียก `handler` (ส่ง/จบ) ให้เสร็จก่อน
+   * ตัวถัดไป — lease ของแต่ละตัวนับจากตอน claim จริง ไม่ใช่ต้นรอบ (ถ้า claim ทั้งชุดก่อนแล้วค่อยส่ง lease ของตัวท้าย ๆ
+   * อาจหมดระหว่างรอส่งตัวก่อนหน้า) · ไม่เกิน `maxDuePerPoll` ตัวต่อครั้ง · `where` ของ claim มี `attemptCount` +
+   * `nextRetryAt` เดิม สอง poll จึงหยิบตัวเดียวกันไม่ได้ · claim ตั้ง `nextRetryAt = now + lease` (ไม่ใช่ null) ถ้า process
+   * ตายหลัง claim พอ lease หมดก็ถูกหยิบใหม่ · คืนจำนวนที่ claim ได้
+   */
+  async processDueRetries(
+    handler: (action: FieldApplyDueAction) => Promise<void>,
+    now: Date = new Date(),
+    limit: number = this.settings.maxDuePerPoll,
+  ): Promise<number> {
+    const due = await this.findDueCandidates(now, limit);
+    let processed = 0;
     for (const target of due) {
-      const action = await this.claimOne(target, now);
-      if (action) actions.push(action);
+      const action = await this.claimOne(target, new Date());
+      if (!action) continue;
+      processed += 1;
+      await handler(action);
     }
+    return processed;
+  }
+
+  /** รูปเดิม: claim ทั้งชุดก่อนแล้วคืนรายการ (ใช้ในเทส/ผู้เรียกที่ไม่ต้องการทำทีละตัว) — poll ใช้ `processDueRetries()` */
+  async claimDueRetries(
+    now: Date = new Date(),
+    limit: number = this.settings.maxDuePerPoll,
+  ): Promise<FieldApplyDueAction[]> {
+    const actions: FieldApplyDueAction[] = [];
+    await this.processDueRetries(
+      (a) => {
+        actions.push(a);
+        return Promise.resolve();
+      },
+      now,
+      limit,
+    );
     return actions;
   }
 
@@ -262,6 +357,7 @@ export class FieldApplyRetryService {
         firmwareId: string | null;
         approvedBy: string | null;
         createdBy: string;
+        campaign: { name: string; autoRetry: boolean } | null;
       };
     },
     now: Date,
@@ -278,9 +374,13 @@ export class FieldApplyRetryService {
 
     const latest = await this.latestAttempt(target.id);
     const stuck = !!latest && !latest.finishedAt;
+    const system =
+      target.rollout.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME;
     const notActive = target.rollout.status !== 'active';
     const exhausted = target.attemptCount >= this.settings.maxAttempts;
-    const finishNow = notActive || exhausted;
+    // Campaign ปกติที่ปิดสวิตช์ระหว่างทาง: ไม่ส่งรอบใหม่ จบด้วยผลรอบล่าสุด (Operation ใช้หยุดความเสียหายได้)
+    const disabled = !isAutoRetryCampaign(target.rollout.campaign);
+    const finishNow = notActive || exhausted || disabled;
 
     const claim = await this.prisma.campaignRolloutTarget.updateMany({
       where: {
@@ -289,6 +389,9 @@ export class FieldApplyRetryService {
         centralCommandId: null,
         attemptCount: target.attemptCount,
         nextRetryAt: target.nextRetryAt,
+        // Campaign ปกติ: ยัง `active` ตอน claim จริง (สถานะที่อ่านมาอาจเก่า) — ถูก Pause พอดีระหว่างทางไม่ claim
+        // ปล่อยรอจน Resume แทนที่จะจบเป็น failed (§6.3 Pause) · Campaign ระบบคงพฤติกรรมเดิม
+        ...(system ? {} : { rollout: { status: 'active' as const } }),
       },
       // lease ทั้งสองทาง (รีวิว A #440): ทางจบก็ตั้ง lease ไม่ใช่ null — ถ้า process ตายก่อน
       // ผู้เรียกบันทึกผลจบ lease หมดแล้วรอบ poll ถัดไปหยิบมาจบใหม่ ไม่ค้าง pending ถาวร ·
@@ -315,7 +418,13 @@ export class FieldApplyRetryService {
       const last = stuck ? null : latest;
       const lastDetail = stuck
         ? STUCK_DETAIL
-        : (last?.detail ?? NOT_ACTIVE_DETAIL);
+        : (last?.detail ??
+          (disabled ? AUTO_RETRY_OFF_DETAIL : NOT_ACTIVE_DETAIL));
+      const finishNote = notActive
+        ? NOT_ACTIVE_DETAIL
+        : disabled && !exhausted
+          ? AUTO_RETRY_OFF_DETAIL
+          : null;
       return {
         kind: 'finish',
         targetId: target.id,
@@ -325,7 +434,7 @@ export class FieldApplyRetryService {
         outcome: last?.status === 'skipped' ? 'skipped' : 'failed',
         detail: await this.summarize(
           target.id,
-          notActive ? `${lastDetail} (${NOT_ACTIVE_DETAIL})` : lastDetail,
+          finishNote ? `${lastDetail} (${finishNote})` : lastDetail,
         ),
       };
     }

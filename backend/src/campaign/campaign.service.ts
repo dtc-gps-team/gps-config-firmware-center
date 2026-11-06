@@ -129,6 +129,7 @@ export class CampaignService {
             description: dto.description,
             createdBy: actor.id,
             sourceIncidentId: dto.sourceIncidentId,
+            autoRetry: dto.autoRetry,
           },
         });
 
@@ -168,9 +169,13 @@ export class CampaignService {
     dto: UpdateCampaignDto,
     actor: ActingUser,
   ): Promise<Campaign> {
-    if (dto.name === undefined && dto.description === undefined) {
+    if (
+      dto.name === undefined &&
+      dto.description === undefined &&
+      dto.autoRetry === undefined
+    ) {
       throw new BadRequestException(
-        'ต้องส่ง name หรือ description อย่างน้อย 1 อย่าง',
+        'ต้องส่ง name, description หรือ autoRetry อย่างน้อย 1 อย่าง',
       );
     }
     if (dto.name !== undefined) this.assertNotReservedName(dto.name);
@@ -178,7 +183,11 @@ export class CampaignService {
 
     const updated = await this.prisma.campaign.update({
       where: { id },
-      data: { name: dto.name, description: dto.description },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        autoRetry: dto.autoRetry,
+      },
     });
 
     await this.logAudit('update', actor, {
