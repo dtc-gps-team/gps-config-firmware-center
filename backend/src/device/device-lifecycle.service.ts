@@ -136,7 +136,11 @@ export class DeviceLifecycleService {
 
   /**
    * `POST /devices/{deviceId}/decommission` — ปลดระวาง: `status = decommissioned` + ล้าง API key กับ key
-   * telemetry (กล่องคุยกับระบบไม่ได้ทันที) + เก็บเวลา/เหตุผล · ประวัติทุกอย่างอยู่ต่อ · ซ่อนจากรายการ
+   * telemetry + เก็บเวลา/เหตุผล · **ที่ตัดทางคุยของกล่อง:** device-sync ตัดเพราะ `apiKeyHash` เป็น null
+   * (`DeviceApiKeyGuard`) ส่วน telemetry ตัดเพราะ `TelemetryKeyGuard` ปฏิเสธสถานะ `decommissioned`
+   * — **ไม่ใช่เพราะล้าง `telemetryKeyHash`** (null = ใช้ key กลางจาก env) จึงห้ามย้ายการเช็คสถานะออกจาก
+   * guard โดยคิดว่าล้าง key พอแล้ว (รีวิว B บน #452) · กล่องยังเชื่อม ws-gateway ของ Server กลางได้ตามเดิม
+   * (ยังไม่ได้สั่ง revoke ฝั่งนั้น — งานถัดไปของก้อน 4) · ประวัติทุกอย่างอยู่ต่อ · ซ่อนจากรายการ
    * Device Search ตามค่าเริ่มต้น · SIM ถูกปล่อย (เครื่องอื่นใช้ต่อได้) ส่วน IMEI/Serial/Blackbox **ไม่ถูกปล่อย**
    * (เครื่องเดิมที่กลับมาให้เปิดใช้กลับที่เรคคอร์ดเดิม)
    *
@@ -249,6 +253,9 @@ export class DeviceLifecycleService {
           data: {
             status: 'registered',
             apiKeyHash,
+            // ต้องยืนยันติดตั้งใหม่ — ล้างเวลาติดตั้งรอบก่อนให้ตรงกับเครื่องที่เพิ่งลงทะเบียน (เวลาติดตั้งเดิมยัง
+            // ดูได้จาก History/AuditLog) · รีวิว B บน #452
+            installedAt: null,
             decommissionedAt: null,
             decommissionReason: null,
             ...(dto.simNumber ? { simNumber: dto.simNumber } : {}),

@@ -10,6 +10,7 @@ import {
   lockDeviceForUse,
 } from '../../src/device/device-lock';
 import { DeviceModule } from '../../src/device/device.module';
+import { TaskService } from '../../src/task/task.service';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import {
   createTestPrisma,
@@ -527,14 +528,103 @@ describe('Device lifecycle — PATCH / decommission / reactivate (integration)',
     });
   });
 
-  describe('POST reactivate', () => {
-    it('เปิดใช้กลับ: กลับเป็น registered + API key ใหม่ (แสดงครั้งเดียว ตรงกับ hash) + ล้างเวลา/เหตุผล + AuditLog', async () => {
+  describe('Task create/update กับเครื่องที่ปลดระวาง (รีวิว B บน #452)', () => {
+    const operation = () => ({ id: adminId, role: 'Operation' });
+    const taskDto = (deviceId: string) => ({
+      title: 'งานใหม่',
+      assignedTo: otId,
+      deviceId,
+    });
+
+    it('สร้างงานให้เครื่องที่ปลดระวางแล้ว -> 409 ไม่มีงานค้าง · เครื่องที่ใช้งานอยู่สร้างได้', async () => {
       await seedDevice('DEV-1');
+      await seedDevice('DEV-2');
+      await decommission('DEV-1', { reason: 'x' });
+      const tasks = app.get(TaskService, { strict: false });
+
+      await expect(tasks.create(taskDto('DEV-1'), operation())).rejects.toThrow(
+        /ปลดระวางแล้ว/,
+      );
+      expect(await prisma.task.count({ where: { deviceId: 'DEV-1' } })).toBe(0);
+
+      const ok = await tasks.create(taskDto('DEV-2'), operation());
+      expect(ok.deviceId).toBe('DEV-2');
+    });
+
+    it('ย้ายงานไปผูกเครื่องที่ปลดระวางแล้ว -> 409 · แก้งานเดิมของเครื่องที่ปลดระวางโดยไม่เปลี่ยนเครื่องยังทำได้', async () => {
+      await seedDevice('DEV-1');
+      await seedDevice('DEV-2');
+      const tasks = app.get(TaskService, { strict: false });
+      const onDev2 = await tasks.create(taskDto('DEV-2'), operation());
+      const onDev1 = await tasks.create(taskDto('DEV-1'), operation());
+      await prisma.task.update({
+        where: { id: onDev1.id },
+        data: { status: 'cancelled' },
+      });
+      await decommission('DEV-1', { reason: 'x' });
+
+      await expect(
+        tasks.update(onDev2.id, { deviceId: 'DEV-1' }, operation()),
+      ).rejects.toThrow(/ปลดระวางแล้ว/);
+      expect(
+        (await prisma.task.findUniqueOrThrow({ where: { id: onDev2.id } }))
+          .deviceId,
+      ).toBe('DEV-2');
+
+      const renamed = await tasks.update(
+        onDev1.id,
+        { title: 'แก้ชื่อ' },
+        operation(),
+      );
+      expect(renamed.title).toBe('แก้ชื่อ');
+    });
+
+    it('race: ผู้ปลดระวางถือล็อกเครื่อง (FOR UPDATE) -> สร้างงานต้องรอ แล้วถูกปฏิเสธ ไม่มีงานค้างกับเครื่องที่ปลดระวาง', async () => {
+      await seedDevice('DEV-1');
+      const tasks = app.get(TaskService, { strict: false });
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const holding = new Promise<void>((r) => (locked = r));
+
+      const decommissioner = prisma.$transaction(async (tx) => {
+        await lockDeviceForChange(tx, 'DEV-1');
+        locked();
+        await gate;
+        await tx.device.update({
+          where: { deviceId: 'DEV-1' },
+          data: { status: 'decommissioned' },
+        });
+      });
+      await holding;
+
+      let settled = false;
+      const createCall = tasks
+        .create(taskDto('DEV-1'), operation())
+        .then(
+          () => 'created',
+          (e: Error) => e.message,
+        )
+        .finally(() => (settled = true));
+      await sleep(500);
+      expect(settled).toBe(false); // ยังรอล็อก ไม่ใช่ผ่านเพราะเรียงคิวบังเอิญ
+
+      release();
+      await decommissioner;
+      expect(await createCall).toContain('ปลดระวางแล้ว');
+      expect(await prisma.task.count({ where: { deviceId: 'DEV-1' } })).toBe(0);
+    });
+  });
+
+  describe('POST reactivate', () => {
+    it('เปิดใช้กลับ: กลับเป็น registered + API key ใหม่ (แสดงครั้งเดียว ตรงกับ hash) + ล้างเวลา/เหตุผล/เวลาติดตั้งรอบก่อน + AuditLog', async () => {
+      await seedDevice('DEV-1', { installedAt: new Date() });
       await decommission('DEV-1', { reason: 'x' });
 
       const res = await reactivate('DEV-1');
       expect(res.status).toBe(200);
       expect(b(res).status).toBe('registered');
+      expect(b(res).installedAt).toBeNull(); // ต้องยืนยันติดตั้งใหม่
       expect(b(res).decommissionedAt).toBeNull();
       expect(b(res).decommissionReason).toBeNull();
       expect(b(res).apiKey).toMatch(/^[0-9a-f]{64}$/);

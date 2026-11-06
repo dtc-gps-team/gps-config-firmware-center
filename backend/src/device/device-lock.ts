@@ -8,19 +8,23 @@ import { Prisma } from '@prisma/client';
  *
  * งานเหล่านี้อ้างเครื่องด้วยเลขเครื่อง (`Device.deviceId`) เป็น string ไม่มี FK ฐานข้อมูลจึงกันให้ไม่ได้
  *
- * - ผู้สร้างงาน (คำขอส่งเข้ากล่อง, Override, เริ่มงาน) เรียก `lockDeviceForUse()` ใน transaction เดียวกับการ insert
+ * - ผู้สร้างงาน (คำขอส่งเข้ากล่อง, Override, สร้าง/แก้/เริ่มงาน) เรียก `lockDeviceForUse()` ใน transaction เดียวกับการ insert
  * - ผู้ปลดระวาง/แก้ไขเรียก `lockDeviceForChange()` แล้วตรวจ "มีงานค้างไหม" ซ้ำหลังได้ล็อก
  *   Postgres จึงบังคับให้สองฝั่งต่อคิวกัน
  */
 
-/** ฝั่งสร้างงานที่อ้างเครื่อง - ล็อกร่วม (FOR SHARE) หลายคนสร้างพร้อมกันได้ แต่รอผู้ปลดระวางให้จบก่อน
- * เครื่องที่ปลดระวางแล้ว = 409 (สร้างงานใหม่ให้เครื่องที่ปลดระวางไม่ได้) */
+/** ฝั่งสร้างงานที่อ้างเครื่อง - ล็อกร่วม (FOR KEY SHARE) หลายคนสร้างพร้อมกันได้ แต่รอผู้ปลดระวางให้จบก่อน
+ * เครื่องที่ปลดระวางแล้ว = 409 (สร้างงานใหม่ให้เครื่องนี้ไม่ได้)
+ *
+ * ใช้ `FOR KEY SHARE` ไม่ใช่ `FOR SHARE` (รีวิว B บน #452): ชนกับ `FOR UPDATE` ของผู้ปลดระวางอยู่แล้ว
+ * แต่ไม่ชนกับ `UPDATE` ธรรมดาของคอลัมน์ที่ไม่ใช่คีย์ เช่น `lastSeenAt` ที่ `DeviceApiKeyGuard` เขียนทุกนาที
+ * และ `reportedFirmwareVersion` จาก telemetry — กล่องที่ส่งข้อมูลถี่จึงไม่ต้องรอผู้สร้างงาน */
 export async function lockDeviceForUse(
   tx: Prisma.TransactionClient,
   deviceId: string,
 ): Promise<void> {
   const rows = await tx.$queryRaw<{ status: string }[]>`
-    SELECT status::text AS status FROM "Device" WHERE "deviceId" = ${deviceId} FOR SHARE`;
+    SELECT status::text AS status FROM "Device" WHERE "deviceId" = ${deviceId} FOR KEY SHARE`;
   if (rows.length === 0) {
     throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
   }

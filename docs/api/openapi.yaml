@@ -2256,6 +2256,10 @@ paths:
         **Admin/SuperAdmin** (resource `device-registration` action `Update`) · มติ A 2026-11-05: ปลดระวางเป็นทางหลัก
         แทนการลบ · `status = decommissioned` + ล้าง API key กับ key telemetry (กล่องคุยกับระบบไม่ได้ทันที) + เก็บ
         `decommissionedAt`/`decommissionReason` · ประวัติทั้งหมดอยู่ต่อ · ซ่อนจาก `GET /devices` เป็นค่าเริ่มต้น ·
+        **ที่ตัดทางคุยของกล่องจริงๆ:** device-sync ตัดเพราะ `apiKeyHash` เป็น null ส่วน telemetry ตัดเพราะ guard ปฏิเสธ
+        สถานะ `decommissioned` (ไม่ใช่เพราะล้าง `telemetryKeyHash` — ค่า null แปลว่าใช้ key กลาง) · กล่องยังเชื่อม
+        ws-gateway ของ Server กลางได้ตามเดิม (ยังไม่ได้สั่ง revoke ฝั่งนั้น) ·
+        **คำขอ Override Config ที่อนุมัติแล้วแต่ยังไม่ถูกใช้ไม่ถูกแตะ** — ถ้าเปิดใช้เครื่องกลับ ค่านั้นยังมีผลตามที่อนุมัติไว้ ·
         SIM ถูกปล่อยให้เครื่องอื่นใช้ได้ ส่วน IMEI/Serial/Blackbox **ไม่ถูกปล่อย** (เครื่องเดิมที่กลับมาให้เปิดใช้งานกลับ) ·
         **409 พร้อมจำนวนต่อชนิด** ถ้ายังมีงานค้าง: คำขอส่งเข้ากล่องที่ยังไม่จบ (pending/approved/sending),
         Rollout ที่ยังเปิดอยู่และเครื่องนี้ยังรอผล, Task ที่ยังไม่จบ, คำขอ Override Config/Firmware ที่รออนุมัติ ·
@@ -2298,7 +2302,7 @@ paths:
       summary: เปิดใช้อุปกรณ์ที่ปลดระวางกลับ (v3.89)
       description: >-
         **Admin/SuperAdmin** (resource `device-registration` action `Update`) · เฉพาะเครื่องที่ปลดระวางอยู่ ·
-        กลับเป็น `registered` (ต้องยืนยันติดตั้งใหม่) + ออก API key ใหม่ **แสดงครั้งเดียว** เหมือน `registerDevice` ·
+        กลับเป็น `registered` (ต้องยืนยันติดตั้งใหม่ — ล้าง `installedAt` ด้วย) + ออก API key ใหม่ **แสดงครั้งเดียว** เหมือน `registerDevice` ·
         ล้าง `decommissionedAt`/`decommissionReason` · SIM ของเครื่องเดิมอาจถูกเครื่องอื่นที่ใช้งานอยู่ใช้ไปแล้ว
         (SIM ห้ามซ้ำเฉพาะเครื่องที่ใช้งานอยู่) → 409 ให้ส่ง `simNumber` ใหม่มา · AuditLog `reactivate`
       parameters:

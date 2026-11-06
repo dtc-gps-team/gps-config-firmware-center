@@ -90,6 +90,7 @@ interface LockedTask {
   status: TaskStatus;
   createdAt: Date;
   assignedTo: string;
+  deviceId: string | null;
 }
 // ST/OT = ผู้ใช้ Mobile ที่เห็น/แก้ได้เฉพาะงานที่ตัวเองถูก assign เท่านั้น
 // (ดู docs/architecture/RBAC_Matrix.md Section 4.3 และ Section 5 ข้อ 8)
@@ -243,6 +244,8 @@ export class TaskService {
     const created = await this.prisma.$transaction(async (tx) => {
       // ล็อก Config ที่งานจะผูก กันถูกลบแทรกระหว่างตรวจกับสร้างงาน (review B บน #425)
       if (dto.configId != null) await lockConfigForReference(tx, dto.configId);
+      // ผูกงานกับเครื่อง -> ล็อกเครื่อง FOR KEY SHARE กันปลดระวางแทรก · เครื่องที่ปลดระวางแล้ว 409 (รีวิว B บน #452)
+      if (dto.deviceId) await lockDeviceForUse(tx, dto.deviceId);
       const task = await tx.task.create({
         data: {
           title: dto.title,
@@ -446,6 +449,11 @@ export class TaskService {
           // ผูก Config ใหม่เข้างาน = สร้าง reference ใหม่ -> ล็อก Config กันถูกลบแทรก (review B บน #425)
           if (dto.configId != null) {
             await lockConfigForReference(tx, dto.configId);
+          }
+          // ย้ายงานไปผูกเครื่องอื่น -> ล็อกเครื่องปลายทาง (ไม่ล็อกเมื่อ deviceId ไม่เปลี่ยน — งานเดิมของเครื่อง
+          // ที่ปลดระวางแล้วยังแก้ชื่อ/ปิดงานได้ตามปกติ) · รีวิว B บน #452
+          if (dto.deviceId && dto.deviceId !== previous.deviceId) {
+            await lockDeviceForUse(tx, dto.deviceId);
           }
           const task = await tx.task.update({
             where: { id },
@@ -769,7 +777,7 @@ export class TaskService {
     id: string,
   ): Promise<LockedTask | null> {
     const rows = await tx.$queryRaw<LockedTask[]>`
-      SELECT "status", "createdAt", "assignedTo" FROM "Task" WHERE "id" = ${id} FOR UPDATE
+      SELECT "status", "createdAt", "assignedTo", "deviceId" FROM "Task" WHERE "id" = ${id} FOR UPDATE
     `;
     return rows[0] ?? null;
   }
