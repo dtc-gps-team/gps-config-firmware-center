@@ -55,6 +55,12 @@ import { latestApprovedByModel } from "@/lib/firmware-staleness";
 import { DeviceApplyRequestCard } from "./device-apply-request-card";
 import { DeviceCentralCardView } from "./device-central-card";
 import {
+  DecommissionControl,
+  DecommissionedNotice,
+  EditDeviceControl,
+  ReactivateControl,
+} from "./device-lifecycle-controls";
+import {
   DeviceConfigTab,
   DeviceFirmwareTab,
   DeviceLogsTab,
@@ -344,10 +350,22 @@ function DeviceDetailContent({
               device={device}
               onConfirmed={onDeviceUpdated}
             />
-            <RotateKeyControl deviceId={device.deviceId} />
+            <EditDeviceControl device={device} onUpdated={onDeviceUpdated} />
+            {/* เครื่องที่ปลดระวางแล้วออก key ใหม่ไม่ได้ (key ถูกล้างไปแล้ว) — ต้องเปิดใช้งานกลับก่อน ซึ่งออก key ใหม่ให้ */}
+            {device.status !== "decommissioned" && (
+              <RotateKeyControl deviceId={device.deviceId} />
+            )}
+            <DecommissionControl
+              device={device}
+              online={central.data?.device?.online === true}
+              onDone={onDeviceUpdated}
+            />
+            <ReactivateControl device={device} onDone={onDeviceUpdated} />
           </div>
         }
       />
+
+      <DecommissionedNotice device={device} />
 
       <DeviceSummaryBar
         device={device}

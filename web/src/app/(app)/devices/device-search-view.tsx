@@ -1,7 +1,7 @@
 "use client";
 
 import { downloadCsv, toCsv } from "@/lib/csv";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -309,7 +310,11 @@ export function DeviceSearchView({
 }) {
   const router = useRouter();
   const { session } = useAuth();
-  const { data, isLoading, error, refetch } = useDevices();
+  // เครื่องที่ปลดระวางแล้วซ่อนเป็นค่าเริ่มต้น (มติ A 2026-11-05) — เปิดดูได้ด้วยตัวสลับ
+  const [includeDecommissioned, setIncludeDecommissioned] = useState(false);
+  const { data, isLoading, error, refetch } = useDevices({
+    includeDecommissioned,
+  });
   const devices = useMemo(() => data ?? [], [data]);
   // ข้อมูลเสริมจาก Server กลาง/รายการ Firmware: โหลดไม่ได้ก็แค่ไม่มีข้อมูลเสริม ตารางหลักไม่กระทบ
   const { data: central } = useCentralDevices();
@@ -347,12 +352,23 @@ export function DeviceSearchView({
         title="Device Search"
         description="ค้นหาอุปกรณ์ด้วย Device ID หรือเบอร์ SIM แล้วกรองตามโมเดล โปรโตคอล หรือสถานะ คลิกแถวเพื่อดูรายละเอียด"
         actions={
-          canRegisterDevice(session?.role) && (
-            <Link href="/devices/new" className={buttonVariants()}>
-              <PlusIcon />
-              ลงทะเบียนอุปกรณ์
-            </Link>
-          )
+          <>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={includeDecommissioned}
+                onCheckedChange={(checked) =>
+                  setIncludeDecommissioned(checked === true)
+                }
+              />
+              แสดงเครื่องที่ปลดระวางแล้ว
+            </label>
+            {canRegisterDevice(session?.role) && (
+              <Link href="/devices/new" className={buttonVariants()}>
+                <PlusIcon />
+                ลงทะเบียนอุปกรณ์
+              </Link>
+            )}
+          </>
         }
       />
 
