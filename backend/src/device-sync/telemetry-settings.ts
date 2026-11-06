@@ -3,7 +3,8 @@ import { Logger } from '@nestjs/common';
 /** DI token ของ {@link TelemetrySettings} (docs/23 §7) */
 export const TELEMETRY_SETTINGS = Symbol('TELEMETRY_SETTINGS');
 
-export const DEFAULT_TELEMETRY_RETENTION_DAYS = 30;
+// 7 วัน (B ตัดสิน 5 พ.ย. 2569 — เดิม 30) · ยังไม่มีหน้าจอใช้ข้อมูลย้อนหลัง เก็บพอสำหรับตรวจย้อนหลังระยะสั้น
+export const DEFAULT_TELEMETRY_RETENTION_DAYS = 7;
 export const DEFAULT_TELEMETRY_RATE_LIMIT_PER_DEVICE = 60;
 export const DEFAULT_TELEMETRY_RATE_LIMIT_PER_IP = 300;
 
