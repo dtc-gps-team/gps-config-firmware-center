@@ -21,6 +21,7 @@ import { useDevices } from "@/hooks/use-devices";
 import { useIncident } from "@/hooks/use-incident";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { AutoRetryField } from "./auto-retry-field";
 
 /** ค่าที่ใช้แทน "ไม่ได้ผูกลูกค้า" ในตัวกรอง — mirror ข้อความเดียวกับคอลัมน์
  * "ลูกค้า" ในหน้า Device Search (docs/12 เฟส B) */
@@ -76,6 +77,8 @@ export function CampaignCreateForm({
   const [nameInput, setNameInput] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [selectedInput, setSelectedInput] = useState<string[] | null>(null);
+  // เปิดเป็นค่าเริ่มต้น (ตรงกับ backend) · Operation ปิดได้ถ้าไม่ต้องการให้ลองซ้ำ
+  const [autoRetry, setAutoRetry] = useState(true);
 
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -148,6 +151,7 @@ export function CampaignCreateForm({
         name: trimmedName,
         targets: targetInputs,
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
+        autoRetry,
         ...(linkableSource ? { sourceIncidentId: linkableSource.id } : {}),
       });
       toast.success(`สร้างกลุ่ม "${created.name}" แล้ว`);
@@ -300,6 +304,13 @@ export function CampaignCreateForm({
             rows={2}
             placeholder="อธิบายวัตถุประสงค์ของกลุ่มนี้…"
             className="min-h-16 resize-y rounded-lg border border-input bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <AutoRetryField
+            id="campaign-auto-retry"
+            checked={autoRetry}
+            onChange={setAutoRetry}
           />
         </div>
       </Card>

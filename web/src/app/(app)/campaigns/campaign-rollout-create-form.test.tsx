@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
@@ -20,6 +20,7 @@ vi.mock("@/components/auth/auth-provider", () => ({
 }));
 
 const createCampaignRollout = vi.fn();
+const updateCampaign = vi.fn();
 vi.mock("@/lib/campaign-api", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/campaign-api")>(
@@ -29,6 +30,7 @@ vi.mock("@/lib/campaign-api", async () => {
     ...actual,
     createCampaignRollout: (...args: unknown[]) =>
       createCampaignRollout(...args),
+    updateCampaign: (...args: unknown[]) => updateCampaign(...args),
   };
 });
 
@@ -92,8 +94,12 @@ const hookState = vi.hoisted(() => ({
   targets: [] as { deviceId: string }[],
   devices: [] as unknown[],
   configs: [] as unknown[],
+  campaign: { autoRetry: true } as { autoRetry: boolean } | null,
 }));
 
+vi.mock("@/hooks/use-campaign", () => ({
+  useCampaign: () => queryState(hookState.campaign),
+}));
 vi.mock("@/hooks/use-campaign-targets", () => ({
   useCampaignTargets: () => queryState(hookState.targets),
 }));
@@ -133,6 +139,9 @@ function checkboxFor(deviceId: string) {
 describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
   beforeEach(() => {
     createCampaignRollout.mockReset();
+    updateCampaign.mockReset();
+    updateCampaign.mockResolvedValue({});
+    hookState.campaign = { autoRetry: true };
     push.mockReset();
     hookState.targets = members;
     hookState.devices = devices;
@@ -232,6 +241,77 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
       configId: "cfg-gt06n",
       excludeDeviceIds: ["DEV-0003"],
     });
+  });
+
+  async function goToReview(user: ReturnType<typeof userEvent.setup>) {
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+    await user.click(
+      screen.getByRole("button", { name: "เอาเครื่องเหล่านี้ออกจากรอบนี้" }),
+    );
+    await next(user);
+  }
+
+  it("ขั้นยืนยัน: มีช่องลองส่งใหม่อัตโนมัติ ค่าเริ่มต้นตามกลุ่ม (เปิด) · ไม่เปลี่ยนค่าก็ไม่เรียก updateCampaign", async () => {
+    createCampaignRollout.mockResolvedValue({ id: "roll-1" });
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await goToReview(user);
+
+    const box = screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ });
+    expect(box).toBeChecked();
+    expect(
+      screen.getByText(/ค่านี้จะถูกจำไว้ใช้กับ Rollout ครั้งถัดไป/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    expect(updateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("กลุ่มปิดอยู่: ช่องไม่ติ๊กตั้งแต่แรก · ติ๊กเปิดแล้วเริ่ม -> สร้าง Rollout ก่อน แล้วบันทึก autoRetry=true ให้กลุ่ม", async () => {
+    hookState.campaign = { autoRetry: false };
+    createCampaignRollout.mockResolvedValue({ id: "roll-1" });
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await goToReview(user);
+
+    const box = screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ });
+    expect(box).not.toBeChecked();
+    await user.click(box);
+    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+
+    await waitFor(() =>
+      expect(updateCampaign).toHaveBeenCalledWith("tok", "camp-1", {
+        autoRetry: true,
+      }),
+    );
+    expect(createCampaignRollout.mock.invocationCallOrder[0]).toBeLessThan(
+      updateCampaign.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("ติ๊กปิดแล้วเริ่ม: บันทึก autoRetry=false · บันทึกไม่สำเร็จก็ไม่ย้อน Rollout แค่เตือน", async () => {
+    createCampaignRollout.mockResolvedValue({ id: "roll-1" });
+    updateCampaign.mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await goToReview(user);
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+
+    await waitFor(() =>
+      expect(updateCampaign).toHaveBeenCalledWith("tok", "camp-1", {
+        autoRetry: false,
+      }),
+    );
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    expect(createCampaignRollout).toHaveBeenCalledTimes(1);
   });
 
   it("เอาเครื่องที่ไม่เข้ากันออกตั้งแต่ขั้นแรก: ไปต่อได้เลย และ excludeDeviceIds ไม่ซ้ำ", async () => {

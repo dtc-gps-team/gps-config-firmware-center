@@ -152,8 +152,8 @@ function Content({
           <p className="text-sm font-medium">การใช้สิทธิ์ (single-use)</p>
           <p className="text-sm text-muted-foreground">
             {item.consumedAt
-              ? `ใช้ไปแล้วตอน ${formatDateTime(item.consumedAt)} (ช่างยืนยันติดตั้งไปแล้ว) — ติดตั้งซ้ำอีกครั้งต้องขอ override ใหม่`
-              : "ยังไม่เคยถูกใช้ — รอช่างกดยืนยันติดตั้ง Firmware เวอร์ชันนี้ผ่านแอป"}
+              ? `ใช้ไปแล้วตอน ${formatDateTime(item.consumedAt)} (ช่างยืนยันติดตั้งไปแล้ว) ติดตั้งซ้ำอีกครั้งต้องขอ override ใหม่`
+              : "ยังไม่เคยถูกใช้ รอช่างกดยืนยันติดตั้ง Firmware เวอร์ชันนี้ผ่านแอป"}
           </p>
         </Card>
       )}

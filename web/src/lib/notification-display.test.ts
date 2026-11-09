@@ -101,7 +101,7 @@ describe("describeNotification", () => {
   it.each([
     [
       "config_apply_approved",
-      "คำขอส่ง Config อนุมัติแล้ว — กดส่งเข้ากล่องได้",
+      "คำขอส่ง Config อนุมัติแล้ว กดส่งเข้ากล่องได้",
     ],
     ["config_apply_succeeded", "กล่องรับ Config ที่คุณขอส่งแล้ว"],
     [

@@ -137,7 +137,7 @@ export function describeNotification(
     case "config_apply_expired": {
       const what = p.kind === "firmware" ? "Firmware" : "Config";
       const title = {
-        config_apply_approved: `คำขอส่ง ${what} อนุมัติแล้ว — กดส่งเข้ากล่องได้`,
+        config_apply_approved: `คำขอส่ง ${what} อนุมัติแล้ว กดส่งเข้ากล่องได้`,
         config_apply_rejected: `คำขอส่ง ${what} ของคุณถูกปฏิเสธ`,
         config_apply_expired: `คำขอส่ง ${what} ของคุณหมดอายุ (ไม่มีใครตัดสิน หรือไม่ได้กดส่งใน 24 ชม.)`,
       }[n.type as string]!;
