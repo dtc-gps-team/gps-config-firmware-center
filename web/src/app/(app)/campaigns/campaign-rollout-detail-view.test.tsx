@@ -32,6 +32,9 @@ vi.mock("@/hooks/use-campaign-rollout-targets", () => ({
     refetch: targetsQuery.refetch,
   }),
 }));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
+}));
 vi.mock("@/hooks/use-config", () => ({
   useConfig: () => ({ data: null }),
 }));
@@ -82,6 +85,9 @@ function target(
     deviceId,
     status,
     resultDetail,
+    attemptCount: 1,
+    nextRetryAt: null,
+    lastAttempt: null,
     createdAt: "2026-10-20T00:00:00.000Z",
     updatedAt: "2026-10-20T00:00:05.000Z",
   };

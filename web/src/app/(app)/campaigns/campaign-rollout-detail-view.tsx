@@ -49,6 +49,7 @@ import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel"
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
 import { RolloutProgressCard } from "./rollout-progress-card";
+import { RolloutTargetRow } from "./rollout-target-row";
 
 /**
  * รายละเอียด Rollout 1 รอบ — ต่อ `GET /campaigns/{id}/rollouts/{rolloutId}`
@@ -210,32 +211,12 @@ export function CampaignRolloutDetailView({
                   </TableHeader>
                   <TableBody>
                     {targets.map((target) => (
-                      <TableRow key={target.id} className="relative">
-                        <TableCell className="font-instrument text-xs">
-                          <ChangeFlash signal={target.status} />
-                          {target.deviceId}
-                        </TableCell>
-                        <TableCell>
-                          <StatusPill
-                            tone={
-                              CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE[
-                                target.status
-                              ] ?? "neutral"
-                            }
-                          >
-                            {rolloutTargetStatusLabel(target.status)}
-                          </StatusPill>
-                        </TableCell>
-                        <TableCell className="max-w-md whitespace-normal break-words text-muted-foreground">
-                          {target.resultDetail ?? "-"}
-                        </TableCell>
-                        <TableCell
-                          className="text-right text-muted-foreground"
-                          title={formatDateTime(target.updatedAt)}
-                        >
-                          {formatRelativeTime(target.updatedAt)}
-                        </TableCell>
-                      </TableRow>
+                      <RolloutTargetRow
+                        key={target.id}
+                        campaignId={campaignId}
+                        rolloutId={rolloutId}
+                        target={target}
+                      />
                     ))}
                   </TableBody>
                 </Table>

@@ -19,9 +19,10 @@ const deleteMock = vi.hoisted(() => vi.fn());
 const addMock = vi.hoisted(() => vi.fn());
 const removeMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/campaign-api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/campaign-api")>(
-    "@/lib/campaign-api",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/lib/campaign-api")>(
+      "@/lib/campaign-api",
+    );
   return {
     ...actual,
     updateCampaign: updateMock,
@@ -46,6 +47,7 @@ const campaign: Campaign = {
   id: "campaign-1",
   name: "กลุ่มทดสอบ",
   description: null,
+  autoRetry: true,
   createdBy: "op-1",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -72,6 +74,30 @@ describe("EditCampaignButton", () => {
     expect(updateMock).toHaveBeenCalledWith("tok", "campaign-1", {
       name: "ชื่อใหม่",
       description: "",
+      autoRetry: true,
+    });
+  });
+
+  it("ติ๊กปิดลองส่งใหม่อัตโนมัติอย่างเดียว บันทึกได้และส่ง autoRetry=false", async () => {
+    updateMock.mockResolvedValue({ ...campaign, autoRetry: false });
+    const onUpdated = vi.fn();
+    const user = userEvent.setup();
+    render(<EditCampaignButton campaign={campaign} onUpdated={onUpdated} />);
+
+    await user.click(screen.getByRole("button", { name: /แก้ไขกลุ่ม/ }));
+    const box = screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ });
+    expect(box).toBeChecked();
+    expect(
+      screen.getByText(/มีผลทันทีกับ Rollout ที่กำลังรันอยู่/),
+    ).toBeInTheDocument();
+    await user.click(box);
+    await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+    expect(updateMock).toHaveBeenCalledWith("tok", "campaign-1", {
+      name: "กลุ่มทดสอบ",
+      description: "",
+      autoRetry: false,
     });
   });
 

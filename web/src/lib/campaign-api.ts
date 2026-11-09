@@ -67,6 +67,9 @@ export type Campaign = {
   id: string;
   name: string;
   description: string | null;
+  /** ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ สูงสุด 3 ครั้ง (openapi v3.90, docs/31 §6) ·
+   * กลุ่มที่มีอยู่ก่อน v3.90 เป็น false */
+  autoRetry: boolean;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -93,6 +96,8 @@ export type CreateCampaignInput = {
   /** `Incident.id` ของ Field Report ที่ Operation promote มาเป็นกลุ่มนี้
    * (issue #236) ส่งเฉพาะ flow "ส่งต่อเป็น Campaign" เท่านั้น */
   sourceIncidentId?: string;
+  /** ไม่ส่ง = เปิด (backend) */
+  autoRetry?: boolean;
 };
 
 /** response shape — `CampaignRollout` ใน openapi.yaml */
@@ -143,8 +148,25 @@ export type CampaignRolloutTarget = {
   deviceId: string;
   status: CampaignRolloutTargetStatus;
   resultDetail: string | null;
+  /** จำนวนครั้งที่ส่งไปแล้ว (1 = ครั้งแรก) — openapi v3.91 */
+  attemptCount: number;
+  /** กำลังรอส่งรอบใหม่ = เวลาที่จะส่ง · null = ไม่ได้รอ (backend คืนเฉพาะตอนรอจริง) */
+  nextRetryAt: string | null;
+  /** รอบล่าสุด · null = ไม่มีประวัติรายรอบ (ไม่ใช่โหมด central หรือส่งก่อน docs/31) */
+  lastAttempt: CampaignRolloutTargetAttempt | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** การส่ง 1 รอบของเครื่องหนึ่งใน Rollout — `CampaignRolloutTargetAttempt` ใน openapi.yaml (v3.91) */
+export type CampaignRolloutTargetAttempt = {
+  attemptNo: number;
+  /** sending | sent | succeeded | failed | skipped */
+  status: string;
+  errorCode: string | null;
+  detail: string | null;
+  startedAt: string;
+  finishedAt: string | null;
 };
 
 export function listCampaigns(token: string): Promise<Campaign[]> {
@@ -185,6 +207,8 @@ export function createCampaign(
 export type UpdateCampaignInput = {
   name?: string;
   description?: string;
+  /** มีผลทันทีกับ Rollout ที่กำลังรันอยู่ (ปิด = เครื่องที่รอรอบใหม่จบด้วยผลรอบล่าสุด) */
+  autoRetry?: boolean;
 };
 
 /**
@@ -350,6 +374,22 @@ export function listCampaignRolloutTargets(
 ): Promise<CampaignRolloutTarget[]> {
   return apiJson<CampaignRolloutTarget[]>(
     `/campaigns/${campaignId}/rollouts/${rolloutId}/targets`,
+    { token },
+  );
+}
+
+/**
+ * `GET /campaigns/{id}/rollouts/{rolloutId}/targets/{targetId}/attempts` — ประวัติรายรอบของเครื่องหนึ่ง
+ * เรียงรอบที่ 1 ก่อน (เรียกตอนกางแถว ไม่ฝังในรายการเพื่อไม่ให้หนักเมื่อมีหลายร้อยเครื่อง)
+ */
+export function listCampaignRolloutTargetAttempts(
+  token: string,
+  campaignId: string,
+  rolloutId: string,
+  targetId: string,
+): Promise<CampaignRolloutTargetAttempt[]> {
+  return apiJson<CampaignRolloutTargetAttempt[]>(
+    `/campaigns/${campaignId}/rollouts/${rolloutId}/targets/${targetId}/attempts`,
     { token },
   );
 }

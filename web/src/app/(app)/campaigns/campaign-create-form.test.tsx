@@ -128,7 +128,28 @@ describe("CampaignCreateForm: มาจาก ส่งต่อเป็น Cam
     expect(createCampaign).toHaveBeenCalledWith("tok", {
       name: "แก้ไขปัญหา: เครื่องรีบูตเองทุก 10 นาที",
       targets: [{ deviceId: "DEV-0124" }],
+      autoRetry: true,
       sourceIncidentId: "inc-1",
+    });
+  });
+
+  it("ลองส่งใหม่อัตโนมัติเปิดเป็นค่าเริ่มต้น ติ๊กออกแล้วส่ง autoRetry=false", async () => {
+    const user = userEvent.setup();
+    render(<CampaignCreateForm sourceIncidentId="inc-1" />);
+    const box = screen.getByRole("checkbox", {
+      name: /ลองส่งใหม่อัตโนมัติ/,
+    });
+    expect(box).toBeChecked();
+
+    await user.click(box);
+    expect(
+      screen.getByText(/ปิดอยู่ เครื่องที่ส่งไม่สำเร็จ/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "สร้างกลุ่ม" }));
+
+    await waitFor(() => expect(createCampaign).toHaveBeenCalledTimes(1));
+    expect(createCampaign.mock.calls[0][1]).toMatchObject({
+      autoRetry: false,
     });
   });
 

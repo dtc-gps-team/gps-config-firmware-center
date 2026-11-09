@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/components/auth/auth-provider";
 import { DisabledWithReason } from "@/components/disabled-with-reason";
 import { useDevices } from "@/hooks/use-devices";
+import { AutoRetryField } from "./auto-retry-field";
 import { ApiError } from "@/lib/api";
 import {
   addCampaignTargets,
@@ -59,12 +60,14 @@ export function EditCampaignButton({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(campaign.name);
   const [description, setDescription] = useState(campaign.description ?? "");
+  const [autoRetry, setAutoRetry] = useState(campaign.autoRetry);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const changed =
     name.trim() !== campaign.name ||
-    description.trim() !== (campaign.description ?? "");
+    description.trim() !== (campaign.description ?? "") ||
+    autoRetry !== campaign.autoRetry;
 
   async function submit() {
     if (!session) return;
@@ -74,6 +77,7 @@ export function EditCampaignButton({
       await updateCampaign(session.accessToken, campaign.id, {
         name: name.trim(),
         description: description.trim(),
+        autoRetry,
       });
       toast.success("บันทึกการแก้ไขแล้ว");
       setOpen(false);
@@ -93,6 +97,7 @@ export function EditCampaignButton({
         if (next) {
           setName(campaign.name);
           setDescription(campaign.description ?? "");
+          setAutoRetry(campaign.autoRetry);
           setError(null);
         }
       }}
@@ -104,7 +109,7 @@ export function EditCampaignButton({
         <DialogHeader>
           <DialogTitle>แก้ไขกลุ่ม</DialogTitle>
           <DialogDescription>
-            แก้ชื่อและคำอธิบายได้ทุกเมื่อ ไม่กระทบ Rollout ที่มีอยู่
+            แก้ชื่อและคำอธิบายได้ทุกเมื่อ ไม่กระทบ Rollout ที่มีอยู่ (ยกเว้นการลองส่งใหม่ ดูด้านล่าง)
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
@@ -124,6 +129,12 @@ export function EditCampaignButton({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+          <AutoRetryField
+            id="campaign-edit-auto-retry"
+            checked={autoRetry}
+            onChange={setAutoRetry}
+            liveEffect
+          />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
