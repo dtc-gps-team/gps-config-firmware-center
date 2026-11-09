@@ -70,7 +70,7 @@ describe("RolloutAutoRetryControl", () => {
       screen.getByRole("switch", { name: "ลองส่งใหม่อัตโนมัติ" }),
     );
     expect(updateMock).not.toHaveBeenCalled();
-    expect(screen.getByText(/ตั้งค่านี้เป็นของทั้งกลุ่ม/)).toBeInTheDocument();
+    expect(screen.getByText(/นับเป็นล้มเหลวทันที/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "ยืนยันปิด" }));
 
     await waitFor(() =>

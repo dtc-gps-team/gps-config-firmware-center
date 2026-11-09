@@ -122,9 +122,8 @@ export function RolloutAutoRetryControl({
           <AlertDialogHeader>
             <AlertDialogTitle>ปิดการลองส่งใหม่อัตโนมัติ?</AlertDialogTitle>
             <AlertDialogDescription>
-              ตั้งค่านี้เป็นของทั้งกลุ่ม {campaign.name} ไม่ใช่เฉพาะรอบนี้
-              ปิดแล้วมีผลทันที เครื่องที่กำลังรอส่งรอบใหม่จะจบด้วยผลรอบล่าสุด
-              และเครื่องที่ส่งไม่สำเร็จต่อจากนี้ จะนับเป็นล้มทันทีโดยไม่ลองซ้ำ
+              ถ้าปิด ระบบจะไม่ส่งซ้ำอีก
+              เครื่องที่กำลังรอส่งซ้ำจะนับเป็นล้มเหลวทันที
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && <p className="text-sm text-destructive">{error}</p>}
