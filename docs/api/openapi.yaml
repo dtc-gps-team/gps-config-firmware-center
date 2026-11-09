@@ -7413,9 +7413,19 @@ components:
         Request body สำหรับ registerDevice (issue #157 PR 1) — v3.53: `imei`,
         `serialNumber` และ `blackboxId` เป็นช่องบังคับ (ไม่ว่าง ตัดช่องว่าง
         หัวท้ายก่อน) ตามมติ A กับ B 13 ต.ค. 2569 · ค่าใน response ของ `Device`
-        ยัง nullable เพราะอุปกรณ์ที่ลงทะเบียนก่อนกติกานี้ไม่มีค่า
+        ยัง nullable เพราะอุปกรณ์ที่ลงทะเบียนก่อนกติกานี้ไม่มีค่า · v3.92: `customerId`
+        เป็นช่องบังคับ (ลงทะเบียนเครื่องใหม่ต้องผูกลูกค้าเสมอ)
       required:
-        [deviceId, simNumber, modelId, protocol, imei, serialNumber, blackboxId]
+        [
+          deviceId,
+          simNumber,
+          modelId,
+          protocol,
+          customerId,
+          imei,
+          serialNumber,
+          blackboxId,
+        ]
       properties:
         deviceId:
           type: string
@@ -7444,7 +7454,6 @@ components:
         customerId:
           type: string
           format: uuid
-          nullable: true
         imei:
           type: string
           minLength: 1

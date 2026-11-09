@@ -87,6 +87,11 @@ describe('POST /devices — IMEI/Serial/Blackbox ID ห้ามซ้ำ (integ
       blackboxId: `BB-${deviceId}`,
       modelId: model.id,
       protocol: 'TCP',
+      customerId: (
+        await prisma.customer.create({
+          data: { companyName: `Cus-${deviceId}-${Math.random()}` },
+        })
+      ).id,
       ...over,
     };
   }
