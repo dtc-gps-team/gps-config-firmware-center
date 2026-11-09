@@ -21,6 +21,30 @@ export function targetBadgeAttempt(target: RetryFields): number | null {
   return n > 1 ? Math.min(n, ROLLOUT_MAX_ATTEMPTS) : null;
 }
 
+/** ล้มหลังส่งครบทุกรอบแล้ว (ไม่ใช่ล้มรอบแรกตอนปิดสวิตช์) */
+export function isTargetRetryExhausted(
+  target: RetryFields & Pick<CampaignRolloutTarget, "status">,
+): boolean {
+  return (
+    target.status === "failed" && target.attemptCount >= ROLLOUT_MAX_ATTEMPTS
+  );
+}
+
+/** จำนวนเครื่องที่กำลังรอส่งรอบใหม่ (นับเป็น "รอผล" ในแถบความคืบหน้า) */
+export function countRetryingTargets(targets: RetryFields[]): number {
+  return targets.filter(isTargetWaitingRetry).length;
+}
+
+export type TargetRetryFilter = "all" | "retrying" | "exhausted";
+
+export function filterTargetsByRetry<
+  T extends RetryFields & Pick<CampaignRolloutTarget, "status">,
+>(targets: T[], filter: TargetRetryFilter): T[] {
+  if (filter === "retrying") return targets.filter(isTargetWaitingRetry);
+  if (filter === "exhausted") return targets.filter(isTargetRetryExhausted);
+  return targets;
+}
+
 /** ปุ่ม "ดูประวัติ" แสดงเมื่อส่งมากกว่า 1 รอบ หรือรอบเดียวที่ไม่สำเร็จ/ถูกข้าม */
 export function targetHasHistory(
   target: RetryFields & Pick<CampaignRolloutTarget, "lastAttempt">,

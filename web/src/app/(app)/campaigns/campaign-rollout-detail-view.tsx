@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import {
   ActivityIcon,
   CalendarCheckIcon,
@@ -10,7 +11,7 @@ import {
   TargetIcon,
 } from "lucide-react";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -51,6 +52,12 @@ import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel"
 import { RolloutProgressCard } from "./rollout-progress-card";
 import { RolloutAutoRetryControl } from "./rollout-auto-retry-control";
 import { RolloutTargetRow } from "./rollout-target-row";
+import {
+  countRetryingTargets,
+  filterTargetsByRetry,
+  isTargetRetryExhausted,
+  type TargetRetryFilter,
+} from "@/lib/rollout-retry-display";
 
 /**
  * รายละเอียด Rollout 1 รอบ — ต่อ `GET /campaigns/{id}/rollouts/{rolloutId}`
@@ -73,6 +80,7 @@ export function CampaignRolloutDetailView({
     rolloutId,
   );
   const targetsQuery = useCampaignRolloutTargets(campaignId, rolloutId);
+  const [retryFilter, setRetryFilter] = useState<TargetRetryFilter>("all");
   // resolve ชื่อ Config/Firmware เอง (backend ไม่ embed) — pattern เดียวกับ
   // campaign-detail-view.tsx เดิม
   const configQuery = useConfig(data?.configId ?? null);
@@ -114,6 +122,17 @@ export function CampaignRolloutDetailView({
 
   const targets = targetsQuery.data ?? [];
   const summary = summarizeRolloutTargets(targets);
+  const retryingCount = countRetryingTargets(targets);
+  const exhaustedCount = targets.filter(isTargetRetryExhausted).length;
+  const shownTargets = filterTargetsByRetry(targets, retryFilter);
+  // ตัวกรองแสดงเฉพาะเมื่อมีเครื่องที่ลองส่งใหม่ (หรือกำลังกรองอยู่ จะได้กลับมาเลือก "ทั้งหมด" ได้เสมอ)
+  const showRetryFilter =
+    retryingCount > 0 || exhaustedCount > 0 || retryFilter !== "all";
+  const retryFilterOptions: { value: TargetRetryFilter; label: string }[] = [
+    { value: "all", label: "ทั้งหมด" },
+    { value: "retrying", label: `รอส่งรอบใหม่ (${retryingCount})` },
+    { value: "exhausted", label: `ล้มครบทุกรอบ (${exhaustedCount})` },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -175,12 +194,17 @@ export function CampaignRolloutDetailView({
                 payloadType={data.payloadType}
                 summary={summary}
                 awaiting={awaitingResults}
+                retrying={retryingCount}
               />
             )}
           <Card className="gap-3 p-5">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-medium">
-                ผลต่อเครื่อง ({targets.length})
+                ผลต่อเครื่อง (
+                {retryFilter === "all"
+                  ? targets.length
+                  : `${shownTargets.length} จาก ${targets.length}`}
+                )
               </p>
               {awaitingResults && (
                 <span className="text-xs text-muted-foreground">
@@ -188,6 +212,26 @@ export function CampaignRolloutDetailView({
                 </span>
               )}
             </div>
+            {showRetryFilter && (
+              <div
+                role="group"
+                aria-label="กรองผลต่อเครื่อง"
+                className="flex flex-wrap gap-2"
+              >
+                {retryFilterOptions.map((o) => (
+                  <Button
+                    key={o.value}
+                    type="button"
+                    size="sm"
+                    variant={retryFilter === o.value ? "default" : "outline"}
+                    aria-pressed={retryFilter === o.value}
+                    onClick={() => setRetryFilter(o.value)}
+                  >
+                    {o.label}
+                  </Button>
+                ))}
+              </div>
+            )}
             {targetsQuery.isLoading && !targetsQuery.data ? (
               <TableSkeleton columns={4} rows={4} />
             ) : targetsQuery.error ? (
@@ -198,6 +242,10 @@ export function CampaignRolloutDetailView({
             ) : targets.length === 0 ? (
               <p className="py-4 text-sm text-muted-foreground">
                 ยังไม่มีเป้าหมายในรอบนี้
+              </p>
+            ) : shownTargets.length === 0 ? (
+              <p className="py-4 text-sm text-muted-foreground">
+                ไม่มีเครื่องในตัวกรองนี้
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
@@ -211,7 +259,7 @@ export function CampaignRolloutDetailView({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {targets.map((target) => (
+                    {shownTargets.map((target) => (
                       <RolloutTargetRow
                         key={target.id}
                         campaignId={campaignId}

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { CampaignRolloutTarget } from "@/lib/campaign-api";
 import {
+  countRetryingTargets,
+  filterTargetsByRetry,
+  isTargetRetryExhausted,
   isTargetWaitingRetry,
   targetBadgeAttempt,
   targetHasHistory,
@@ -24,6 +27,42 @@ const lastOf = (status: string): T["lastAttempt"] => ({
   detail: null,
   startedAt: "2026-11-09T00:00:00Z",
   finishedAt: null,
+});
+
+describe("rollout-retry-display: นับและกรองเครื่องที่ลองส่งใหม่", () => {
+  const waiting = {
+    status: "pending" as const,
+    attemptCount: 1,
+    nextRetryAt: "2026-11-09T00:00:30Z",
+  };
+  const exhausted = {
+    status: "failed" as const,
+    attemptCount: 3,
+    nextRetryAt: null,
+  };
+  const failedFirst = {
+    status: "failed" as const,
+    attemptCount: 1,
+    nextRetryAt: null,
+  };
+  const ok = { status: "success" as const, attemptCount: 2, nextRetryAt: null };
+  const all = [waiting, exhausted, failedFirst, ok];
+
+  it("นับเฉพาะเครื่องที่รอส่งรอบใหม่", () => {
+    expect(countRetryingTargets(all)).toBe(1);
+  });
+
+  it("ล้มครบทุกรอบ = ล้มและส่งครบเพดาน (ล้มรอบแรกตอนปิดสวิตช์ไม่นับ)", () => {
+    expect(isTargetRetryExhausted(exhausted)).toBe(true);
+    expect(isTargetRetryExhausted(failedFirst)).toBe(false);
+    expect(isTargetRetryExhausted(ok)).toBe(false);
+  });
+
+  it("กรองตามตัวเลือก", () => {
+    expect(filterTargetsByRetry(all, "all")).toEqual(all);
+    expect(filterTargetsByRetry(all, "retrying")).toEqual([waiting]);
+    expect(filterTargetsByRetry(all, "exhausted")).toEqual([exhausted]);
+  });
 });
 
 describe("rollout-retry-display", () => {
