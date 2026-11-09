@@ -12,7 +12,6 @@ import {
   CampaignPayloadType,
   CampaignRollout,
   CampaignRolloutStatus,
-  CampaignRolloutTarget,
   Device,
   Firmware,
   Prisma,
@@ -63,6 +62,12 @@ import {
   FieldApplyRetryService,
   type FieldApplyFailure,
 } from './field-apply-retry.service';
+import {
+  ROLLOUT_TARGET_ATTEMPT_SELECT,
+  toTargetView,
+  type CampaignRolloutTargetView,
+  type RolloutTargetAttempt,
+} from './campaign-rollout-target-view';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
@@ -251,15 +256,26 @@ export class CampaignRolloutService {
    * ผลต่อเครื่องของ Rollout · `proposedFields` (ค่าเฉพาะเครื่อง) ที่เป็น field
    * `sensitive` คืนค่าจริงเฉพาะ Operation (ผู้อนุมัติต้องตรวจค่าได้) role อื่น
    * ที่ดู Rollout ได้เห็นเป็น `MASKED_VALUE` (มติ A 15 ต.ค. 2569 ข้อ ก)
+   *
+   * docs/31 §6.4: แต่ละแถวมี `attemptCount`, `nextRetryAt` (เฉพาะตอนรอส่งรอบใหม่จริง) และ `lastAttempt`
+   * (รอบล่าสุด) ให้หน้ารายละเอียด Rollout แสดงรอบ/นับถอยหลัง/สาเหตุ — ประวัติเต็มอยู่ที่ `findTargetAttempts()`
    */
   async findTargets(
     rolloutId: string,
     actor?: ActingUser,
-  ): Promise<CampaignRolloutTarget[]> {
-    const targets = await this.prisma.campaignRolloutTarget.findMany({
+  ): Promise<CampaignRolloutTargetView[]> {
+    const rows = await this.prisma.campaignRolloutTarget.findMany({
       where: { rolloutId },
       orderBy: { createdAt: 'asc' },
+      include: {
+        attempts: {
+          orderBy: { attemptNo: 'desc' },
+          take: 1,
+          select: ROLLOUT_TARGET_ATTEMPT_SELECT,
+        },
+      },
     });
+    const targets = rows.map(toTargetView);
     if (actor?.role === SENSITIVE_VALUE_VIEWER_ROLE) return targets;
 
     const withValues = targets.filter((t) => t.proposedFields !== null);
@@ -281,6 +297,34 @@ export class CampaignRolloutService {
         ),
       );
       return { ...t, proposedFields: masked as Prisma.JsonObject };
+    });
+  }
+
+  /**
+   * ประวัติการส่งรายรอบของเครื่องหนึ่งใน Rollout (docs/31 §6.4) เรียงรอบที่ 1 ก่อน — แยกจากรายการผลต่อเครื่อง
+   * ไม่ฝังไว้ในทุกแถวเพื่อไม่ให้ตอบหนักเมื่อมีหลายร้อยเครื่อง (เว็บเรียกตอนกดขยายแถว)
+   *
+   * **IDOR:** `targetId` ต้องเป็นของ Rollout นี้และ Rollout ต้องอยู่ใต้ Campaign นี้ ไม่งั้น 404 (ไม่เปิดเผยว่ามี
+   * target นั้นอยู่ที่อื่น) · ไม่คืนรหัสคำสั่งของ Server กลาง
+   */
+  async findTargetAttempts(
+    campaignId: string,
+    rolloutId: string,
+    targetId: string,
+  ): Promise<RolloutTargetAttempt[]> {
+    const target = await this.prisma.campaignRolloutTarget.findFirst({
+      where: { id: targetId, rolloutId, rollout: { campaignId } },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new NotFoundException(
+        `ไม่พบผลของเครื่องนี้ใน Rollout ${rolloutId}`,
+      );
+    }
+    return this.prisma.campaignRolloutTargetAttempt.findMany({
+      where: { targetId },
+      orderBy: { attemptNo: 'asc' },
+      select: ROLLOUT_TARGET_ATTEMPT_SELECT,
     });
   }
 
