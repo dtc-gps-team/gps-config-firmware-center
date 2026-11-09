@@ -262,7 +262,7 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     const box = screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ });
     expect(box).toBeChecked();
     expect(
-      screen.getByText(/ระบบจะจำค่านี้ไว้เป็นค่าเริ่มต้นของ Rollout ครั้งถัดไป/),
+      screen.getByText(/ค่านี้จะถูกจำไว้ใช้กับ Rollout ครั้งถัดไป/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
 

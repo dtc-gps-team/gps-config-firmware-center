@@ -143,7 +143,7 @@ describe("CampaignCreateForm: มาจาก ส่งต่อเป็น Cam
 
     await user.click(box);
     expect(
-      screen.getByText(/ไม่ลองส่งซ้ำ ถ้าส่งไม่สำเร็จ/),
+      screen.getByText(/จะไม่ส่งซ้ำ/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "สร้างกลุ่ม" }));
 
