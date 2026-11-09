@@ -12,11 +12,14 @@ export function AutoRetryField({
   checked,
   onChange,
   liveEffect = false,
+  rememberNote = false,
 }: {
   id: string;
   checked: boolean;
   onChange: (next: boolean) => void;
   liveEffect?: boolean;
+  /** ตอนสร้าง Rollout: บอกว่าค่านี้เก็บไว้กับกลุ่มและเป็นค่าเริ่มต้นของรอบถัดไป */
+  rememberNote?: boolean;
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -32,6 +35,8 @@ export function AutoRetryField({
           {checked
             ? "ส่งไม่สำเร็จจะลองให้อีกสูงสุด 2 ครั้ง (รวม 3 ครั้ง) รอ 30 วินาทีแล้ว 60 วินาที"
             : "ปิดอยู่ เครื่องที่ส่งไม่สำเร็จจะนับเป็นล้มทันที ไม่ลองซ้ำ"}
+          {rememberNote &&
+            " · ค่านี้เก็บไว้กับกลุ่มและจะเป็นค่าเริ่มต้นของ Rollout รอบถัดไป"}
           {liveEffect &&
             " · มีผลทันทีกับ Rollout ที่กำลังรันอยู่ ปิดแล้วเครื่องที่รอรอบใหม่จะจบด้วยผลรอบล่าสุด"}
         </p>
