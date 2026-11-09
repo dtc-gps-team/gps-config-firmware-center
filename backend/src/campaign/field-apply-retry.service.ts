@@ -482,6 +482,6 @@ export class FieldApplyRetryService {
     const rounds = attempts
       .map((a) => `รอบ ${a.attemptNo}: ${a.detail ?? '-'}`)
       .join(', ');
-    return `ส่ง ${attempts.length} ครั้งไม่สำเร็จ (${rounds})`;
+    return `ส่ง ${attempts.length} ครั้งไม่สำเร็จ ได้แก่ ${rounds}`;
   }
 }
