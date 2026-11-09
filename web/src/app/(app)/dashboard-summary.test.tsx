@@ -237,9 +237,9 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     expect(dots).toHaveLength(3);
     // BOX-2: ออฟไลน์ + Config ไม่ตรง มาก่อน, ตามด้วยไม่ทราบ (BOX-3), ปกติ (BOX-1) ท้ายสุด
     expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual([
-      "BOX-2 · ออฟไลน์ · Config ไม่ตรง",
-      "BOX-3 · ไม่ทราบ",
-      "BOX-1 · ออนไลน์",
+      "BOX-2 (ออฟไลน์, Config ไม่ตรง)",
+      "BOX-3 (ไม่ทราบ)",
+      "BOX-1 (ออนไลน์)",
     ]);
     expect(dots[0]).toHaveAttribute("href", "/devices/BOX-2");
   });

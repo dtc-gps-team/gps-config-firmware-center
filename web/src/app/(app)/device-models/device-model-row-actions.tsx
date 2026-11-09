@@ -108,7 +108,7 @@ export function DeviceModelRowActions({
         description={
           <>
             ลบจริง กู้คืนไม่ได้ ทำได้เฉพาะรุ่นที่ยังไม่มีอุปกรณ์ Config Firmware หรือพารามิเตอร์อ้างอิง
-            (เช่นสร้างรุ่นผิดชื่อ) · ถ้ารุ่นนี้เคยถูกใช้งานแล้วให้ใช้ &quot;ปรับเป็นเลิกผลิต&quot; แทน
+            (เช่นสร้างรุ่นผิดชื่อ) ถ้ารุ่นนี้เคยถูกใช้งานแล้วให้ใช้ &quot;ปรับเป็นเลิกผลิต&quot; แทน
             {deleteError && (
               <span className="mt-2 block text-destructive">{deleteError}</span>
             )}
