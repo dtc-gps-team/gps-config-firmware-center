@@ -186,7 +186,7 @@ export function IncidentGroupRow({
             title={formatDateTime(incident.createdAt)}
           >
             เกิดเมื่อ {formatRelativeTime(incident.createdAt)}
-            {reporterName && ` · แจ้งโดย ${reporterName}`}
+            {reporterName && ` แจ้งโดย ${reporterName}`}
           </p>
         </div>
 

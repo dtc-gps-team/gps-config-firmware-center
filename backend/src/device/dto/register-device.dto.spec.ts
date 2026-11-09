@@ -7,6 +7,7 @@ const base = {
   simNumber: '0899999999',
   modelId: '3f1c2b1e-6a4d-4f6e-9a55-0c7f4f6d2a10',
   protocol: 'TCP',
+  customerId: '5b2f6d1c-3e4a-4c8e-9a10-1f2e3d4c5b6a',
   imei: '860000000000001',
   serialNumber: 'SN-0001',
   blackboxId: 'BB-0001',
@@ -22,6 +23,18 @@ describe('RegisterDeviceDto (imei / serialNumber / blackboxId บังคับ
   it('ครบทุกช่องผ่าน', async () => {
     const { fields } = await errorsFor(base);
     expect(fields).toEqual([]);
+  });
+
+  it('ไม่ส่ง customerId ไม่ผ่าน (ต้องผูกลูกค้าทุกเครื่องที่ลงทะเบียนใหม่)', async () => {
+    const input: Record<string, unknown> = { ...base };
+    delete input.customerId;
+    const { fields } = await errorsFor(input);
+    expect(fields).toContain('customerId');
+  });
+
+  it('customerId ไม่ใช่ UUID ไม่ผ่าน', async () => {
+    const { fields } = await errorsFor({ ...base, customerId: 'not-a-uuid' });
+    expect(fields).toContain('customerId');
   });
 
   it.each(['imei', 'serialNumber', 'blackboxId'])(

@@ -297,7 +297,7 @@ function ConfirmInstallControl({
             <AlertDialogTitle>ยืนยันว่า {device.deviceId} ติดตั้งแล้ว?</AlertDialogTitle>
             <AlertDialogDescription>
               สถานะจะเปลี่ยนจาก &quot;ลงทะเบียนแล้ว&quot; เป็น &quot;ติดตั้งแล้ว&quot;
-              — ต้องติดตั้งจริงแล้วเท่านั้นถึงจะเพิ่มเข้า Campaign ได้
+              ต้องติดตั้งจริงแล้วเท่านั้นถึงจะเพิ่มเข้า Campaign ได้
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && <p className="text-sm text-destructive">{error}</p>}

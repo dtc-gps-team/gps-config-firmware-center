@@ -236,7 +236,7 @@ function HistoryItemRow({
         <p className="text-xs text-muted-foreground">
           ตัดสินใจโดย {resolveName(item.decision.byId ?? "")}
           {item.decision.at && ` เมื่อ ${formatDateTime(item.decision.at)}`}
-          {item.decision.note && ` — ${item.decision.note}`}
+          {item.decision.note && ` หมายเหตุ: ${item.decision.note}`}
         </p>
       )}
       <p

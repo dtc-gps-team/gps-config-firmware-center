@@ -133,8 +133,8 @@ function describe(command: RawCentralCommand): string {
  * (รวมรหัสใหม่ที่ gateway อาจเพิ่มในอนาคต) ใช้ `describe()` เดิมเป็น fallback
  * (ไม่ throw ไม่ว่ารหัสจะเป็นอะไร)
  */
-const FAILED_ERROR_CODE_MESSAGES: Record<string, string> = {
-  DEVICE_DISCONNECTED: 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที — ส่งไม่ผ่าน',
+export const FAILED_ERROR_CODE_MESSAGES: Record<string, string> = {
+  DEVICE_DISCONNECTED: 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที ส่งไม่ผ่าน',
   DEVICE_NO_RESPONSE: 'กล่องไม่ตอบกลับภายในเวลาที่กำหนด',
   ROLLED_BACK: 'Firmware ใหม่ไม่ผ่านการตรวจหลังรีบูต กล่องย้อนกลับเวอร์ชันเดิม',
   NEW_FIRMWARE_FAILED_HEALTH_CHECK:

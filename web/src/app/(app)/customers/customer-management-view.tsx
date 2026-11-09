@@ -134,7 +134,7 @@ export function CustomerManagementView() {
       <div className="flex flex-col gap-5">
         <PageHeader
           title="Customer"
-          description="ทะเบียนลูกค้า ใช้เลือกลูกค้าตอนลงทะเบียนอุปกรณ์ · ลูกค้าที่เคยมีเครื่องแล้วให้ปิดใช้งานแทนการลบ"
+          description="ทะเบียนลูกค้าสำหรับเลือกตอนลงทะเบียนอุปกรณ์ ถ้าลูกค้าเคยมีเครื่องแล้วให้ปิดใช้งานแทนการลบ"
           actions={
             <>
               <RefreshControl />

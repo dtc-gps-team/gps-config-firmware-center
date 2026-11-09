@@ -146,6 +146,7 @@ const registerDto: RegisterDeviceDto = {
   simNumber: '0812345678',
   modelId: gt06nModel.id,
   protocol: 'TCP',
+  customerId: '44444444-4444-4444-4444-444444444444',
   // บังคับกรอกตอนลงทะเบียน (มติ A กับ B 13 ต.ค. 2569)
   imei: '860000000000001',
   serialNumber: 'SN-9001',
@@ -309,7 +310,9 @@ describe('DeviceService', () => {
       checkConfig: jest.fn(),
       mode: 'real',
     };
-    customer = { findUnique: jest.fn() };
+    customer = {
+      findUnique: jest.fn().mockResolvedValue({ id: registerDto.customerId }),
+    };
     taskService = {
       start: jest.fn().mockResolvedValue({
         task: {
@@ -743,7 +746,7 @@ describe('DeviceService', () => {
           deviceModel: gt06nModel.name,
           protocol: registerDto.protocol,
           hardwareRevisionCode: undefined,
-          customerId: undefined,
+          customerId: registerDto.customerId,
           imei: registerDto.imei,
           serialNumber: registerDto.serialNumber,
           blackboxId: registerDto.blackboxId,
