@@ -481,7 +481,7 @@ export class FieldApplyRetryService {
     if (attempts.length <= 1) return lastDetail;
     const rounds = attempts
       .map((a) => `รอบ ${a.attemptNo}: ${a.detail ?? '-'}`)
-      .join(' · ');
-    return `ส่ง ${attempts.length} ครั้งไม่สำเร็จ — ${rounds}`;
+      .join(', ');
+    return `ส่ง ${attempts.length} ครั้งไม่สำเร็จ (${rounds})`;
   }
 }
