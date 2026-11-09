@@ -46,7 +46,7 @@ export function FieldApplyRequestApprovalCard({
           {isFirmware ? (
             <>
               {" "}
-              · {item.fromFirmwareVersion ?? "?"} →{" "}
+              {item.fromFirmwareVersion ?? "?"} →{" "}
               {item.firmware?.version ?? "?"}
               {item.isDowngrade && (
                 <span className="ml-1 text-amber-600">(ถอยเวอร์ชัน)</span>
@@ -56,7 +56,7 @@ export function FieldApplyRequestApprovalCard({
             item.config && (
               <>
                 {" "}
-                · {item.config.name} ({item.config.deviceModel}/
+                {item.config.name} ({item.config.deviceModel}/
                 {item.config.protocol})
               </>
             )
@@ -78,7 +78,7 @@ export function FieldApplyRequestApprovalCard({
           {item.override !== null && <Badge tone="warning">มีค่าที่แก้</Badge>}
           {item.override && (
             <span className="text-amber-600">
-              ผูกกับคำขอแก้ค่าเฉพาะเครื่อง (Override) — อนุมัติคำขอนี้แล้ว
+              ผูกกับคำขอแก้ค่าเฉพาะเครื่อง (Override) เมื่ออนุมัติคำขอนี้
               Override จะถูกอนุมัติไปด้วย
             </span>
           )}

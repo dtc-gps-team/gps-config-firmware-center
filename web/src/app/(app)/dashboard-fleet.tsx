@@ -39,7 +39,7 @@ const DOT_STAGGER_MS = 6;
 const DOT_STAGGER_MAX_MS = 500;
 
 function dotText(dot: FleetDot): string {
-  return `${dot.deviceId} · ${STATUS_LABEL[dot.status]}${dot.drift ? " · Config ไม่ตรง" : ""}`;
+  return `${dot.deviceId} (${STATUS_LABEL[dot.status]}${dot.drift ? ", Config ไม่ตรง" : ""})`;
 }
 
 /** ข้อความในแถบอ่านค่าตอนไม่ได้ชี้จุดไหน: จำนวนเครื่อง (+ ส่วนที่กริดไม่ได้วาดถ้าเกินเพดาน) */
@@ -57,7 +57,7 @@ function idleReadout(
     );
   }
   return parts.length > 0
-    ? parts.join(" · ")
+    ? parts.join(", ")
     : `${total.toLocaleString("th-TH")} เครื่อง`;
 }
 

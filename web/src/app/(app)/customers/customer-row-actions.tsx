@@ -48,7 +48,7 @@ export function CustomerRowActions({
       toast.success(
         updated.isActive
           ? `เปิดใช้งาน "${customer.companyName}" แล้ว`
-          : `ปิดใช้งาน "${customer.companyName}" แล้ว (ดูลูกค้าที่ปิดได้ที่ตัวกรองสถานะ)`,
+          : `ปิดใช้งาน "${customer.companyName}" แล้ว เลือกให้เครื่องใหม่ไม่ได้ แต่เครื่องเดิมยังผูกอยู่ (ดูลูกค้าที่ปิดได้ที่ตัวกรองสถานะ)`,
       );
       onChanged();
     } catch (err) {
@@ -91,6 +91,11 @@ export function CustomerRowActions({
         // ปิดใช้งาน = destructive, เปิดใช้งานกลับคืน = outline ปกติ (มติ UI เดิม ตามหน้า User Management)
         variant={customer.isActive ? "destructive" : "outline"}
         disabled={pending}
+        title={
+          customer.isActive
+            ? "ปิดแล้วเลือกให้เครื่องใหม่ไม่ได้ แต่เครื่องเดิมยังผูกอยู่"
+            : "เปิดให้เลือกให้เครื่องใหม่ได้อีกครั้ง"
+        }
         onClick={() => void toggleActive()}
       >
         {customer.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
@@ -132,7 +137,7 @@ export function CustomerRowActions({
         title={`ลบลูกค้า ${customer.companyName}?`}
         description={
           <>
-            ลบจริง กู้คืนไม่ได้ ทำได้เฉพาะลูกค้าที่ไม่มีเครื่องผูกอยู่ · ถ้าลูกค้านี้เคยมีเครื่องแล้ว
+            ลบจริง กู้คืนไม่ได้ ทำได้เฉพาะลูกค้าที่ไม่มีเครื่องผูกอยู่ ถ้าลูกค้านี้เคยมีเครื่องแล้ว
             ให้ใช้ &quot;ปิดใช้งาน&quot; แทน
             {deleteError && (
               <span className="mt-2 block text-destructive">{deleteError}</span>

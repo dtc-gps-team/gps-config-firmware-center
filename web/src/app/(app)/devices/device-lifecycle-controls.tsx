@@ -75,7 +75,7 @@ export function DecommissionedNotice({ device }: { device: Device }) {
           <span>เหตุผล: {device.decommissionReason}</span>
         )}
         <span>
-          กล่องคุยกับระบบไม่ได้ และแก้ไขข้อมูลไม่ได้ · ประวัติทั้งหมดยังอยู่ ·
+          กล่องคุยกับระบบไม่ได้ และแก้ไขข้อมูลไม่ได้ ประวัติทั้งหมดยังอยู่
           ถ้าเครื่องกลับมาใช้งาน ให้เปิดใช้งานกลับ (IMEI / Serial / Blackbox ID
           ยังเป็นของเครื่องนี้ ลงทะเบียนใหม่เป็นเครื่องที่สองไม่ได้)
         </span>
@@ -201,7 +201,7 @@ export function EditDeviceControl({
           <FormDialogHeader
             icon={PencilIcon}
             title={`แก้ไขข้อมูล ${device.deviceId}`}
-            description="Device ID โมเดล และโปรโตคอลแก้ไม่ได้ · IMEI / Serial / Blackbox ID ห้ามซ้ำกับเครื่องอื่นแม้เครื่องนั้นปลดระวางแล้ว"
+            description="Device ID โมเดล และโปรโตคอลแก้ไม่ได้ ส่วน IMEI / Serial / Blackbox ID ห้ามซ้ำกับเครื่องอื่น แม้เครื่องนั้นปลดระวางแล้ว"
           />
           <div className="flex flex-col">
             <FormBody>
@@ -382,10 +382,9 @@ export function DecommissionControl({
         title={`ปลดระวาง ${device.deviceId}?`}
         description={
           <>
-            กล่องจะคุยกับระบบไม่ได้ทันที (API key ถูกล้าง) และแก้ไขข้อมูลเครื่องไม่ได้ ·
-            ประวัติทั้งหมดยังอยู่ · ซ่อนจากรายการเครื่อง · เปิดใช้งานกลับได้ภายหลัง · ถ้ายังมีงานค้าง
-            (คำขอส่งเข้ากล่อง, Rollout, งานของช่าง, คำขอ Override ที่รออนุมัติ) ปลดระวางไม่ได้
-            ต้องทำให้จบก่อน
+            กล่องจะคุยกับระบบไม่ได้ทันทีและแก้ไขข้อมูลเครื่องไม่ได้ เครื่องจะถูกซ่อนจากรายการ
+            แต่ประวัติทั้งหมดยังอยู่และเปิดใช้งานกลับได้ภายหลัง ถ้ายังมีงานค้าง
+            (คำขอส่งเข้ากล่อง, Rollout, งานของช่าง, คำขอ Override ที่รออนุมัติ) ต้องทำให้จบก่อนถึงจะปลดระวางได้
             {online && (
               <span className="mt-2 flex items-start gap-1.5 font-medium text-warning-foreground">
                 <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
@@ -488,7 +487,7 @@ export function ReactivateControl({
         description={
           <>
             เครื่องจะกลับเป็น &quot;ลงทะเบียนแล้ว&quot; (ต้องยืนยันติดตั้งใหม่) และได้ API key ใหม่
-            ที่ดูซ้ำไม่ได้ ต้องนำไปติดตั้งที่กล่องเอง · SIM ห้ามซ้ำกับเครื่องที่ใช้งานอยู่
+            ที่ดูซ้ำไม่ได้ ต้องนำไปติดตั้งที่กล่องเอง SIM ห้ามซ้ำกับเครื่องที่ใช้งานอยู่
             ถ้า SIM เดิมถูกเครื่องอื่นใช้ไปแล้ว ให้ใส่ SIM ใหม่
             {error && (
               <span className="mt-2 block text-destructive">{error}</span>
