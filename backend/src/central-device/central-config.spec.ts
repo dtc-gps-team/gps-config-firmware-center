@@ -1,4 +1,5 @@
 import {
+  FAILED_ERROR_CODE_MESSAGES,
   buildCentralSettings,
   classifyCentralCommand,
   isRetryableCentralOutcome,
@@ -191,9 +192,19 @@ describe('classifyCentralCommand', () => {
     );
   });
 
+  // ข้อความที่ผู้ใช้เห็น (ไปต่อท้ายสรุปผลส่งซ้ำของ Rollout) ต้องไม่มี em dash หรือ middle dot · ตรวจทุกรหัสในตาราง
+  // ไม่ใช่เฉพาะรหัสที่ fixture ของเทสอื่นบังเอิญใช้ (รีวิว B บน #460)
+  it('ข้อความของทุกรหัสที่รู้จักไม่มี em dash หรือ middle dot', () => {
+    const offenders = Object.entries(FAILED_ERROR_CODE_MESSAGES).filter(
+      ([, m]) => /[—·]/.test(m),
+    );
+    expect(offenders).toEqual([]);
+    expect(Object.keys(FAILED_ERROR_CODE_MESSAGES).length).toBeGreaterThan(10);
+  });
+
   // docs/27 §7.2 — ข้อความอ่านง่ายตาม error_code ที่รู้จัก
   it.each([
-    ['DEVICE_DISCONNECTED', 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที — ส่งไม่ผ่าน'],
+    ['DEVICE_DISCONNECTED', 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที ส่งไม่ผ่าน'],
     ['DEVICE_NO_RESPONSE', 'กล่องไม่ตอบกลับภายในเวลาที่กำหนด'],
     [
       'ROLLED_BACK',

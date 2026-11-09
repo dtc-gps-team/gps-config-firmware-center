@@ -227,6 +227,8 @@ describe('Campaign auto-retry (integration — real postgres, fake central)', ()
     const tb = await targetOf(rollout.id, b);
     expect(tb.status).toBe('failed');
     expect(tb.resultDetail).toContain('ส่ง 3 ครั้งไม่สำเร็จ');
+    // ข้อความที่ผู้ใช้เห็น ไม่ใช้ em dash หรือ middle dot
+    expect(tb.resultDetail).not.toMatch(/[—·]/);
     expect(await rolloutOf(rollout.id)).toMatchObject({
       status: 'completed',
       successCount: 2,
