@@ -41,6 +41,10 @@ vi.mock("@/hooks/use-config", () => ({
 vi.mock("@/hooks/use-firmware", () => ({
   useFirmware: () => ({ data: null }),
 }));
+// แถวลองส่งใหม่อัตโนมัติมีเทสของตัวเอง (rollout-auto-retry-control.test.tsx)
+vi.mock("./rollout-auto-retry-control", () => ({
+  RolloutAutoRetryControl: () => null,
+}));
 // แผงอนุมัติ/ปล่อย/Incident มีเทสของตัวเองแล้ว ไม่เกี่ยวกับการ์ดผลต่อเครื่อง
 vi.mock("./campaign-rollout-approval-panel", () => ({
   CampaignRolloutApprovalPanel: () => null,

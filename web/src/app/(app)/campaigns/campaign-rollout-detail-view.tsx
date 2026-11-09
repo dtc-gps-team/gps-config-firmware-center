@@ -49,6 +49,7 @@ import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel"
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
 import { RolloutProgressCard } from "./rollout-progress-card";
+import { RolloutAutoRetryControl } from "./rollout-auto-retry-control";
 import { RolloutTargetRow } from "./rollout-target-row";
 
 /**
@@ -247,6 +248,10 @@ export function CampaignRolloutDetailView({
                   {data.failureCount}
                 </span>
               </InfoRow>
+              <RolloutAutoRetryControl
+                campaignId={campaignId}
+                rolloutStatus={data.status}
+              />
               {data.approvedAt && (
                 <InfoRow label="อนุมัติเมื่อ" icon={CalendarCheckIcon}>
                   {formatDateTime(data.approvedAt)}
