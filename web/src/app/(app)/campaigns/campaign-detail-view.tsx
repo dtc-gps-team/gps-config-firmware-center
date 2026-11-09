@@ -175,6 +175,10 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
               items={[
                 { label: "สมาชิก", value: `${members.length} เครื่อง` },
                 { label: "Rollout", value: `${rollouts.length} รอบ` },
+                {
+                  label: "ลองส่งใหม่อัตโนมัติ",
+                  value: data.autoRetry ? "เปิด" : "ปิด",
+                },
                 { label: "สร้างเมื่อ", value: formatDateTime(data.createdAt) },
               ]}
             />

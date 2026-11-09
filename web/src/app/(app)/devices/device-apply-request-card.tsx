@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
+import { ApplyAttemptHistory } from "@/components/apply-attempt-history";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDeviceApplyRequest } from "@/hooks/use-device-apply-request";
+import { useNow } from "@/hooks/use-now";
 import { formatDateTime } from "@/lib/format-date";
 import {
-  ATTEMPT_STATUS_LABEL,
   FIELD_APPLY_STATUS_LABEL,
   FIELD_APPLY_STATUS_TONE,
   badgeAttempt,
@@ -19,64 +18,6 @@ import {
 } from "@/lib/field-apply-retry-display";
 import { canReadFieldApplyRequests } from "@/lib/permissions";
 import { StatusPill } from "@/lib/status-pill";
-import type { FieldApplyAttempt } from "@/lib/field-apply-request-api";
-
-/** เวลาปัจจุบันที่ขยับทุกวินาทีเฉพาะตอน `active` (นับถอยหลัง) — ไม่ tick ตอนไม่จำเป็น */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    // ปรับเวลาทันทีที่เริ่มนับ (ค่าเริ่มต้นของ state มาจากตอน mount อาจเก่า) แล้วขยับทุกวินาที
-    const first = window.setTimeout(() => setNow(Date.now()), 0);
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => {
-      window.clearTimeout(first);
-      window.clearInterval(id);
-    };
-  }, [active]);
-  return now;
-}
-
-function AttemptHistory({ attempts }: { attempts: FieldApplyAttempt[] }) {
-  return (
-    <div className="flex flex-col gap-2" data-testid="apply-attempt-history">
-      <p className="text-sm font-medium">ประวัติการส่ง</p>
-      <ul className="flex flex-col divide-y rounded-lg border">
-        {attempts.map((a) => {
-          const bad = a.status === "failed" || a.status === "skipped";
-          const reason = a.detail ?? a.errorCode;
-          return (
-            <li
-              key={a.attemptNo}
-              className="flex items-start gap-3 px-3 py-2 text-sm"
-            >
-              <span className="w-14 shrink-0 font-medium">รอบ {a.attemptNo}</span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span
-                  className={
-                    a.status === "succeeded"
-                      ? "text-success"
-                      : bad
-                        ? "text-warning-foreground"
-                        : undefined
-                  }
-                >
-                  {ATTEMPT_STATUS_LABEL[a.status] ?? a.status}
-                </span>
-                {bad && reason && (
-                  <span className="text-xs text-muted-foreground">{reason}</span>
-                )}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {formatDateTime(a.startedAt)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
 
 /**
  * การ์ด "การส่งเข้ากล่อง" บนหน้ารายละเอียดอุปกรณ์ — คำขอส่ง Config/Firmware จากหน้างานล่าสุดของเครื่องนี้ ·
@@ -161,7 +102,7 @@ export function DeviceApplyRequestCard({ deviceId }: { deviceId: string }) {
           </div>
         )}
 
-        {showAttemptHistory(attempts) && <AttemptHistory attempts={attempts} />}
+        {showAttemptHistory(attempts) && <ApplyAttemptHistory attempts={attempts} />}
       </CardContent>
     </Card>
   );
