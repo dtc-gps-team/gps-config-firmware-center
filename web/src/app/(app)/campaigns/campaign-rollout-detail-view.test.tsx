@@ -32,11 +32,18 @@ vi.mock("@/hooks/use-campaign-rollout-targets", () => ({
     refetch: targetsQuery.refetch,
   }),
 }));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
+}));
 vi.mock("@/hooks/use-config", () => ({
   useConfig: () => ({ data: null }),
 }));
 vi.mock("@/hooks/use-firmware", () => ({
   useFirmware: () => ({ data: null }),
+}));
+// แถวลองส่งใหม่อัตโนมัติมีเทสของตัวเอง (rollout-auto-retry-control.test.tsx)
+vi.mock("./rollout-auto-retry-control", () => ({
+  RolloutAutoRetryControl: () => null,
 }));
 // แผงอนุมัติ/ปล่อย/Incident มีเทสของตัวเองแล้ว ไม่เกี่ยวกับการ์ดผลต่อเครื่อง
 vi.mock("./campaign-rollout-approval-panel", () => ({
@@ -82,6 +89,9 @@ function target(
     deviceId,
     status,
     resultDetail,
+    attemptCount: 1,
+    nextRetryAt: null,
+    lastAttempt: null,
     createdAt: "2026-10-20T00:00:00.000Z",
     updatedAt: "2026-10-20T00:00:05.000Z",
   };
