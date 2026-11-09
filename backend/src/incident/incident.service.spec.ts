@@ -897,15 +897,56 @@ describe('IncidentService', () => {
       });
     });
 
-    it('field report ที่ investigating (promote ไปแล้ว) -> ยัง ConflictException ตามเดิม', async () => {
+    it('field report ที่ investigating (promote ไปแล้ว): promote ซ้ำไม่ได้ -> ConflictException', async () => {
       incidentFindUnique.mockResolvedValue({
         ...openReport,
         status: 'investigating',
       });
 
       await expect(
-        service.decide('inc-1', { outcome: 'resolve', note: 'x' }, operation),
+        service.decide('inc-1', { outcome: 'promote', note: 'x' }, operation),
       ).rejects.toThrow(ConflictException);
+      expect(incidentUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['resolve', 'resolved'],
+      ['dismiss', 'dismissed'],
+    ] as const)(
+      'field report ที่ investigating: %s ปิดได้ -> %s และเช็คสถานะ open/investigating ในคำสั่งเขียน (issue #269)',
+      async (outcome, status) => {
+        incidentFindUnique.mockResolvedValue({
+          ...openReport,
+          status: 'investigating',
+        });
+
+        const result = await service.decide(
+          'inc-1',
+          { outcome, note: 'ปิดแล้ว' },
+          operation,
+        );
+
+        expect(result.status).toBe(status);
+        expect(incidentUpdateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'inc-1', status: { in: ['open', 'investigating'] } },
+          }),
+        );
+      },
+    );
+
+    it('promote เขียนด้วยเงื่อนไข status open เท่านั้น (กันส่งต่อซ้ำตอนมี 2 คนกดพร้อมกัน)', async () => {
+      incidentFindUnique.mockResolvedValue(openReport);
+
+      await service.decide(
+        'inc-1',
+        { outcome: 'promote', note: 'x' },
+        operation,
+      );
+
+      expect(incidentUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'inc-1', status: 'open' } }),
+      );
     });
 
     it('ตัดสินใจไปแล้ว (ไม่ใช่ open) -> ConflictException', async () => {
@@ -939,7 +980,7 @@ describe('IncidentService', () => {
 
       expect(result.status).toBe('resolved');
       expect(incidentUpdateMany).toHaveBeenCalledWith({
-        where: { id: 'inc-1', status: 'open' },
+        where: { id: 'inc-1', status: { in: ['open', 'investigating'] } },
         data: {
           status: 'resolved',
           reviewedBy: operation.id,

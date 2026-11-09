@@ -3381,6 +3381,8 @@ paths:
         ระบบนี้ใช้ `Approve` ตัวเดียวกันเสมอไม่ว่าผลจะเป็นอนุมัติหรือปฏิเสธ
         mirror `approveDeviceConfigOverride`) ใช้ได้กับ Incident 2 กลุ่ม:
         (1) `source: field-report` ที่ยังเป็น `status: open` ได้ทั้ง 3 outcome
+        และที่เป็น `status: investigating` (ส่งต่อเป็น Campaign แล้ว) ปิดได้เฉพาะ
+        `resolve`/`dismiss` (`promote` ซ้ำได้ 409 · issue #269, v3.93)
         (2) Incident ที่ระบบสร้างเอง (`rollout-failure`, `config-sync-writer`
         ฯลฯ) ที่เป็น `status: open` หรือ `investigating` ปิดด้วยมือได้เฉพาะ
         `resolve`/`dismiss` (`promote` ได้ 400 — Rollout มีทาง Rollback ของ

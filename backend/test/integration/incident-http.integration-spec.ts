@@ -586,6 +586,68 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
         });
       });
 
+      describe('Field Report ที่ส่งต่อเป็น Campaign แล้ว (investigating) · issue #269', () => {
+        async function makePromoted(reporterId: string): Promise<string> {
+          const incident = await prisma.incident.create({
+            data: {
+              title: 'ส่งต่อแล้ว',
+              severity: 'high',
+              status: 'investigating',
+              source: 'field-report',
+              reportedBy: reporterId,
+            },
+          });
+          return incident.id;
+        }
+
+        it.each([
+          ['resolve', 'resolved'],
+          ['dismiss', 'dismissed'],
+        ] as const)(
+          '%s ปิดได้ -> 200 สถานะ %s และผู้รายงานได้รับแจ้งเตือน',
+          async (outcome, status) => {
+            const token = await opToken();
+            const { id: reporterId } = await otToken();
+            const incidentId = await makePromoted(reporterId);
+
+            const res = await request(app.getHttpServer())
+              .post(`/api/v1/incidents/${incidentId}/decide`)
+              .set('Authorization', `Bearer ${token}`)
+              .send({ outcome, note: 'Rollout แก้ครบแล้ว' })
+              .expect(200);
+
+            expect((res.body as { status: string }).status).toBe(status);
+            const row = await prisma.incident.findUniqueOrThrow({
+              where: { id: incidentId },
+            });
+            expect(row.status).toBe(status);
+            expect(row.reviewNote).toBe('Rollout แก้ครบแล้ว');
+            expect(
+              await prisma.notification.count({
+                where: { userId: reporterId },
+              }),
+            ).toBe(1);
+          },
+        );
+
+        it('promote ซ้ำไม่ได้ -> 409 สถานะไม่เปลี่ยน', async () => {
+          const token = await opToken();
+          const { id: reporterId } = await otToken();
+          const incidentId = await makePromoted(reporterId);
+
+          await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/decide`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ outcome: 'promote', note: 'x' })
+            .expect(409);
+
+          const row = await prisma.incident.findUniqueOrThrow({
+            where: { id: incidentId },
+          });
+          expect(row.status).toBe('investigating');
+        });
+      });
+
       it('outcome ไม่อยู่ใน enum -> 400', async () => {
         const token = await opToken();
         const { id: reporterId } = await otToken();

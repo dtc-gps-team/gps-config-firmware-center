@@ -762,9 +762,12 @@ export class IncidentService implements OnModuleInit {
 
     const reviewedAt = new Date();
     const result = await this.prisma.incident.updateMany({
-      where: isFieldReport
-        ? { id, status: 'open' }
-        : { id, status: { in: ['open', 'investigating'] } },
+      // promote ได้เฉพาะ Incident ที่ยัง open (ส่งต่อซ้ำไม่ได้) · resolve/dismiss ปิดได้ทั้ง open และ investigating
+      // (Field Report ที่ส่งต่อเป็น Campaign แล้วต้องมีทางปิด · issue #269) · เช็คในคำสั่งเดียวกับการเขียนกัน race
+      where:
+        dto.outcome === 'promote'
+          ? { id, status: 'open' }
+          : { id, status: { in: ['open', 'investigating'] } },
       data: {
         status,
         reviewedBy: actor.id,
@@ -836,7 +839,10 @@ export class IncidentService implements OnModuleInit {
       throw new NotFoundException(`ไม่พบ Incident id ${id}`);
     }
     if (existing.source === INCIDENT_SOURCE.fieldReport) {
-      if (existing.status !== 'open') {
+      // investigating = ส่งต่อเป็น Campaign ไปแล้ว: ปิดได้ด้วย resolve/dismiss เท่านั้น ส่งต่อซ้ำไม่ได้ (issue #269)
+      const closableAfterPromote =
+        existing.status === 'investigating' && outcome !== 'promote';
+      if (existing.status !== 'open' && !closableAfterPromote) {
         throw new ConflictException(
           `Incident นี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
         );
