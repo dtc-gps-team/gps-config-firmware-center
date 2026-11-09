@@ -218,6 +218,78 @@ describe("IncidentActions: Incident ที่ระบบสร้างเอ�
   });
 });
 
+describe("IncidentActions: Field Report ที่ส่งต่อเป็น Campaign แล้ว (investigating)", () => {
+  const promoted = () =>
+    incident({
+      source: "field-report",
+      status: "investigating",
+      relatedConfigId: null,
+      metadata: null,
+      deviceId: "DEV-0101",
+      reportedBy: "user-st",
+    });
+
+  beforeEach(() => {
+    auth.role = "Operation";
+    decideIncident.mockReset();
+  });
+
+  it("Operation เห็นปุ่ม 'ปิดรายงานปัญหา' (ไม่ใช่ 'ตัดสินใจ' หรือ 'ปิด Incident')", () => {
+    renderActions(promoted());
+
+    expect(
+      screen.getByRole("button", { name: "ปิดรายงานปัญหา" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "ตัดสินใจ" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "ปิด Incident" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ตัวเลือกมีแค่ แก้แล้ว กับ ไม่ต้องดำเนินการ ไม่มีส่งต่อเป็น Campaign · ต้องกรอกหมายเหตุก่อนยืนยัน", async () => {
+    const user = userEvent.setup();
+    renderActions(promoted());
+
+    await user.click(screen.getByRole("button", { name: "ปิดรายงานปัญหา" }));
+
+    expect(screen.getByLabelText(/แก้แล้ว/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/ไม่ต้องดำเนินการ/)).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/ส่งต่อเป็น Campaign/),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText(/แก้แล้ว/));
+    expect(screen.getByRole("button", { name: /ยืนยัน/ })).toBeDisabled();
+  });
+
+  it("ยืนยัน: เรียก decide ด้วย resolve พร้อมหมายเหตุ แล้วแจ้ง onDecided", async () => {
+    decideIncident.mockResolvedValue({ incident: promoted(), device: null });
+    const user = userEvent.setup();
+    const { onDecided } = renderActions(promoted());
+
+    await user.click(screen.getByRole("button", { name: "ปิดรายงานปัญหา" }));
+    await user.click(screen.getByLabelText(/แก้แล้ว/));
+    await user.type(screen.getByLabelText("หมายเหตุ"), "Rollout แก้ครบแล้ว");
+    await user.click(screen.getByRole("button", { name: /ยืนยัน/ }));
+
+    await vi.waitFor(() => expect(onDecided).toHaveBeenCalled());
+    expect(decideIncident).toHaveBeenCalledWith("tok", "inc-1", {
+      outcome: "resolve",
+      note: "Rollout แก้ครบแล้ว",
+    });
+  });
+
+  it("role ที่ไม่ใช่ Operation หรือ SuperAdmin: ไม่เห็นปุ่มปิด", () => {
+    auth.role = "Auditor";
+    renderActions(promoted());
+
+    expect(
+      screen.queryByRole("button", { name: "ปิดรายงานปัญหา" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("IncidentActions: Field Report ไม่เปลี่ยนพฤติกรรม", () => {
   beforeEach(() => {
     auth.role = "Operation";

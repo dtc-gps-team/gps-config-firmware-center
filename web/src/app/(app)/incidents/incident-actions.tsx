@@ -81,6 +81,24 @@ export function IncidentActions({
     );
   }
 
+  // Field Report ที่ส่งต่อเป็น Campaign แล้ว (investigating): เดิมไม่มีทางปิด ค้างตลอดไป (issue #269)
+  // backend `decide()` รับ resolve/dismiss กับสถานะนี้อยู่แล้ว ส่วน promote ซ้ำไม่ได้ จึงมีแค่ 2 ตัวเลือก
+  const isPromotedFieldReport =
+    incident.source === FIELD_REPORT_SOURCE &&
+    incident.status === "investigating";
+  if (isPromotedFieldReport && canDecideFieldReport(role)) {
+    return (
+      <div className="flex justify-end">
+        <DecideFieldReportDialog
+          variant="close-field-report"
+          incident={incident}
+          onDecided={onDecided}
+          onStale={onStale}
+        />
+      </div>
+    );
+  }
+
   const isSystemIncident = incident.source !== FIELD_REPORT_SOURCE;
   if (
     isSystemIncident &&
