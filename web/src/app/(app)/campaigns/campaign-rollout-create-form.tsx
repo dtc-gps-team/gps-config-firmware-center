@@ -30,15 +30,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AutoRetryField } from "./auto-retry-field";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import {
   createCampaignRollout,
+  updateCampaign,
   type CampaignPayloadType,
 } from "@/lib/campaign-api";
 import type { Config } from "@/lib/config-api";
 import type { Device } from "@/lib/device-api";
 import type { Firmware } from "@/lib/firmware-api";
+import { useCampaign } from "@/hooks/use-campaign";
 import { useCampaignTargets } from "@/hooks/use-campaign-targets";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
@@ -267,6 +270,7 @@ export function CampaignRolloutCreateForm({
   const { session } = useAuth();
 
   const targetsQuery = useCampaignTargets(campaignId);
+  const campaignQuery = useCampaign(campaignId);
   const devicesQuery = useDevices();
   const configsQuery = useConfigs();
   const firmwareQuery = useFirmwareList();
@@ -280,6 +284,10 @@ export function CampaignRolloutCreateForm({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [step, setStep] = useState(1);
+  // ลองส่งใหม่อัตโนมัติ: ค่าเริ่มต้นตามค่าปัจจุบันของกลุ่ม (เปิดถ้ายังโหลดไม่เสร็จ) ผู้ใช้ติ๊กเปลี่ยนได้
+  const [autoRetryInput, setAutoRetryInput] = useState<boolean | null>(null);
+  const groupAutoRetry = campaignQuery.data?.autoRetry;
+  const autoRetry = autoRetryInput ?? groupAutoRetry ?? true;
 
   const eligibleConfigs = useMemo(
     () =>
@@ -436,6 +444,17 @@ export function CampaignRolloutCreateForm({
         },
       );
       toast.success("เริ่ม Rollout แล้ว รอ Operation อีกคนอนุมัติ");
+      // ค่าเก็บที่กลุ่ม: บันทึกหลังสร้าง Rollout (Rollout ใหม่ต้องรออนุมัติและปล่อยก่อนถึงจะส่งจริง
+      // จึงไม่มีรอบลองส่งเกิดในช่วงคั่น) · ไม่สำเร็จก็ไม่ย้อน Rollout แค่เตือนให้ไปแก้ที่หน้า Rollout
+      if (groupAutoRetry !== undefined && autoRetry !== groupAutoRetry) {
+        try {
+          await updateCampaign(session.accessToken, campaignId, { autoRetry });
+        } catch {
+          toast.warning(
+            "สร้าง Rollout แล้ว แต่บันทึกการตั้งค่าลองส่งใหม่อัตโนมัติไม่สำเร็จ ตรวจและแก้ได้ที่หน้า Rollout",
+          );
+        }
+      }
       router.push(`/campaigns/${campaignId}/rollouts/${created.id}`);
       router.refresh();
     } catch (err) {
@@ -824,6 +843,12 @@ export function CampaignRolloutCreateForm({
                 ids={manuallyExcluded}
                 devices={deviceByDeviceId}
                 dotClass="bg-muted-foreground/40"
+              />
+              <AutoRetryField
+                id="rollout-auto-retry"
+                checked={autoRetry}
+                onChange={setAutoRetryInput}
+                rememberNote
               />
               <p className="text-xs text-muted-foreground">
                 เมื่อเริ่มแล้ว Rollout จะรอ Operation อีกคนอนุมัติ

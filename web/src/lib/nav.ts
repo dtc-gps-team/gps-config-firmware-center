@@ -200,7 +200,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Device Model",
     href: "/device-models",
     group: "system",
-    screenName: "DeviceModel Management (ไม่มีชื่อจอทางการใน RBAC_Matrix.md —"
+    screenName: "DeviceModel Management (ไม่มีชื่อจอทางการใน RBAC_Matrix.md"
       + " เพิ่งเพิ่มหน้านี้ 2026-10-07 ปิด gap ที่เดิมมีแค่ backend"
       + " (issue #209) ไม่มี Web UI ให้ Admin ใช้เลย)",
     icon: LayersIcon,
@@ -213,7 +213,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Customer",
     href: "/customers",
     group: "system",
-    screenName: "Customer Management (ไม่มีชื่อจอทางการใน RBAC_Matrix.md —"
+    screenName: "Customer Management (ไม่มีชื่อจอทางการใน RBAC_Matrix.md"
       + " หน้าจัดการลูกค้า มติ A 2026-11-05 ต่อจาก backend PR #443)",
     icon: Building2Icon,
     // resource `customer`: Admin เท่านั้น (SuperAdmin ข้ามได้ที่ PermissionGuard) —

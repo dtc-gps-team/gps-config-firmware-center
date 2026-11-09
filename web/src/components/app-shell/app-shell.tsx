@@ -112,7 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Brand collapsed={collapsed} />
           </div>
-          <div className="flex-1 overflow-x-hidden overflow-y-auto px-3 py-4">
+          <div className="flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 [scrollbar-color:var(--sidebar-border)_transparent] [scrollbar-width:thin]">
             <NavLinks collapsed={collapsed} scope="desktop" />
           </div>
           <div className="shrink-0 border-t border-sidebar-border p-3">

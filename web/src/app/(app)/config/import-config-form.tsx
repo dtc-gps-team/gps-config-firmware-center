@@ -76,7 +76,7 @@ export function parsePreview(text: string): ParseResult {
   if (hasFields && hasSettings) {
     return {
       ok: false,
-      error: 'ไฟล์มีทั้ง "fields" และ "settings" พร้อมกันไม่ได้ — ใช้อย่างใดอย่างหนึ่ง',
+      error: 'ไฟล์มีทั้ง "fields" และ "settings" พร้อมกันไม่ได้ ให้ใช้อย่างใดอย่างหนึ่ง',
     };
   }
   const rawFields = hasSettings ? obj.settings : obj.fields;
