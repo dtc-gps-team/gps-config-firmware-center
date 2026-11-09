@@ -52,21 +52,23 @@ beforeEach(() => {
 });
 
 describe("RolloutAutoRetryControl", () => {
-  it("แสดงสถานะ เปิด และปุ่มปิด เมื่อ Operation ดู Rollout ที่ยัง active", () => {
+  it("แสดงสถานะ เปิด และสวิตช์ เมื่อ Operation ดู Rollout ที่ยัง active", () => {
     render(<RolloutAutoRetryControl campaignId="c-1" rolloutStatus="active" />);
 
     expect(screen.getByText("ลองส่งใหม่อัตโนมัติ")).toBeInTheDocument();
     expect(screen.getByText("เปิด")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "ปิดการลองส่งใหม่" }),
-    ).toBeInTheDocument();
+      screen.getByRole("switch", { name: "ลองส่งใหม่อัตโนมัติ" }),
+    ).toBeChecked();
   });
 
   it("ปิด: ต้องยืนยันก่อน แล้วเรียก PATCH autoRetry=false และโหลดกลุ่มใหม่", async () => {
     const user = userEvent.setup();
     render(<RolloutAutoRetryControl campaignId="c-1" rolloutStatus="paused" />);
 
-    await user.click(screen.getByRole("button", { name: "ปิดการลองส่งใหม่" }));
+    await user.click(
+      screen.getByRole("switch", { name: "ลองส่งใหม่อัตโนมัติ" }),
+    );
     expect(updateMock).not.toHaveBeenCalled();
     expect(screen.getByText(/ตั้งค่านี้เป็นของทั้งกลุ่ม/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "ยืนยันปิด" }));
@@ -79,13 +81,15 @@ describe("RolloutAutoRetryControl", () => {
     await waitFor(() => expect(campaignState.refetch).toHaveBeenCalled());
   });
 
-  it("ตอนปิดอยู่: ปุ่มเปิดกดแล้วเรียก PATCH autoRetry=true ทันที ไม่ต้องยืนยัน", async () => {
+  it("ตอนปิดอยู่: สวิตช์เปิดกดแล้วเรียก PATCH autoRetry=true ทันที ไม่ต้องยืนยัน", async () => {
     campaignState.data = campaign(false);
     const user = userEvent.setup();
     render(<RolloutAutoRetryControl campaignId="c-1" rolloutStatus="active" />);
     expect(screen.getByText("ปิด")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "เปิดการลองส่งใหม่" }));
+    await user.click(
+      screen.getByRole("switch", { name: "ลองส่งใหม่อัตโนมัติ" }),
+    );
 
     await waitFor(() =>
       expect(updateMock).toHaveBeenCalledWith("tok", "c-1", {
@@ -94,21 +98,21 @@ describe("RolloutAutoRetryControl", () => {
     );
   });
 
-  it("Rollout จบแล้ว: แสดงสถานะอย่างเดียว ไม่มีปุ่ม", () => {
+  it("Rollout จบแล้ว: แสดงสถานะอย่างเดียว ไม่มีสวิตช์", () => {
     render(
       <RolloutAutoRetryControl campaignId="c-1" rolloutStatus="completed" />,
     );
 
     expect(screen.getByText("เปิด")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });
 
-  it("role ที่ไม่ใช่ Operation หรือ SuperAdmin: แสดงสถานะอย่างเดียว ไม่มีปุ่ม", () => {
+  it("role ที่ไม่ใช่ Operation หรือ SuperAdmin: แสดงสถานะอย่างเดียว ไม่มีสวิตช์", () => {
     auth.role = "Auditor";
     render(<RolloutAutoRetryControl campaignId="c-1" rolloutStatus="active" />);
 
     expect(screen.getByText("เปิด")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });
 
   it("บันทึกไม่สำเร็จ: แสดงข้อความผิดพลาดในกล่องยืนยัน ไม่ปิดกล่อง", async () => {
@@ -116,7 +120,9 @@ describe("RolloutAutoRetryControl", () => {
     const user = userEvent.setup();
     render(<RolloutAutoRetryControl campaignId="c-1" rolloutStatus="active" />);
 
-    await user.click(screen.getByRole("button", { name: "ปิดการลองส่งใหม่" }));
+    await user.click(
+      screen.getByRole("switch", { name: "ลองส่งใหม่อัตโนมัติ" }),
+    );
     await user.click(screen.getByRole("button", { name: "ยืนยันปิด" }));
 
     await waitFor(() =>

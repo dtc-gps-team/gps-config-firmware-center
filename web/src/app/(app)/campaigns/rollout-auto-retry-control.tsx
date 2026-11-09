@@ -14,7 +14,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/auth-provider";
 import { InfoRow } from "@/components/info-row";
 import { useCampaign } from "@/hooks/use-campaign";
@@ -85,21 +84,34 @@ export function RolloutAutoRetryControl({
     <>
       <InfoRow label="ลองส่งใหม่อัตโนมัติ" icon={RefreshCwIcon}>
         <span className="flex flex-col items-end gap-1">
-          <span>{campaign.autoRetry ? "เปิด" : "ปิด"}</span>
-          {canToggle && (
-            <Button
-              variant="outline"
-              size="xs"
-              disabled={saving}
-              onClick={() => {
-                setError(null);
-                if (campaign.autoRetry) setConfirming(true);
-                else void setAutoRetry(true);
-              }}
-            >
-              {campaign.autoRetry ? "ปิดการลองส่งใหม่" : "เปิดการลองส่งใหม่"}
-            </Button>
-          )}
+          <span className="inline-flex items-center gap-2">
+            <span>{campaign.autoRetry ? "เปิด" : "ปิด"}</span>
+            {canToggle && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={campaign.autoRetry}
+                aria-label="ลองส่งใหม่อัตโนมัติ"
+                disabled={saving}
+                onClick={() => {
+                  setError(null);
+                  if (campaign.autoRetry) setConfirming(true);
+                  else void setAutoRetry(true);
+                }}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  campaign.autoRetry ? "bg-primary" : "bg-input"
+                }`}
+              >
+                <span
+                  className={`block size-4 rounded-full bg-background shadow transition-transform ${
+                    campaign.autoRetry
+                      ? "translate-x-[1.125rem]"
+                      : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            )}
+          </span>
           {!confirming && error && (
             <span className="text-xs text-destructive">{error}</span>
           )}
