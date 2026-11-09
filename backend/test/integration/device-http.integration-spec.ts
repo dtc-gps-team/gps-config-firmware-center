@@ -79,6 +79,14 @@ describe('DeviceController test-connection (integration — real postgres + guar
     await prisma.configFieldDefinition.deleteMany();
   });
 
+  /** ลูกค้าตัวอย่างหนึ่งราย (ลงทะเบียนเครื่องใหม่ต้องผูกลูกค้าเสมอ) */
+  async function aCustomerId(): Promise<string> {
+    const customer = await prisma.customer.create({
+      data: { companyName: `Cus-${randomUUID()}` },
+    });
+    return customer.id;
+  }
+
   function tokenFor(sub: string, role: string): string {
     return jwtService.sign({ sub, role });
   }
@@ -263,6 +271,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
         })
@@ -286,6 +295,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -312,6 +322,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -337,13 +348,14 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
           ...overrides,
         };
       }
 
-      it.each(['imei', 'serialNumber', 'blackboxId'])(
+      it.each(['imei', 'serialNumber', 'blackboxId', 'customerId'])(
         'ไม่ส่ง %s -> 400 และไม่สร้างเครื่อง',
         async (field) => {
           const token = await adminToken();
@@ -379,6 +391,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
         const payload = await body({
           imei: '  860000000000009  ',
           blackboxId: ' BB-TRIM ',
+          customerId: await aCustomerId(),
         });
 
         await request(app.getHttpServer())
@@ -428,6 +441,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: randomUUID(),
           protocol: 'TCP',
         })
@@ -451,6 +465,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'UDP',
         })
@@ -471,6 +486,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -542,6 +558,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
           hardwareRevisionCode: 'RevA',
@@ -586,6 +603,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -614,6 +632,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           imei: '860000000000001',
           serialNumber: 'SN-INT-0001',
           blackboxId: 'BB-INT-0001',
+          customerId: await aCustomerId(),
           modelId: model.id,
           protocol: 'TCP',
         })

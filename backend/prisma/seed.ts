@@ -399,6 +399,10 @@ async function main() {
     // comment เหนือ grant('ConfigEngineer','config','Read') ด้านบน) ทำให้เปิดหน้า
     // /firmware เองไม่ได้เลย (403 "ไม่มีสิทธิ์ Read บน resource firmware")
     grant('FirmwareEngineer', 'firmware', 'Read'),
+    // ConfigEngineer ต้อง Read ได้ด้วย: RBAC_Matrix.md บันทึก listFirmware/getFirmware ว่า "ทุก Role ที่ login แล้ว"
+    // แต่ seed เดิมไม่เคยให้ ConfigEngineer ทำให้หน้าที่ดึงรายการ Firmware (Dashboard, ฟอร์ม Rollout) ได้ 403
+    // (อ่านอย่างเดียว ไม่ได้ให้สร้าง/แก้ Firmware)
+    grant('ConfigEngineer', 'firmware', 'Read'),
     // QAEngineer ต้อง Read ได้ด้วย — เข้ามาตรวจ/อนุมัติคุณภาพก่อนใช้งานจริง
     // (docs/13 §3.1/§3.2, role ใหม่ทั้งหมด ไม่เคยมีสิทธิ์นี้มาก่อน)
     grant('QAEngineer', 'firmware', 'Read'),

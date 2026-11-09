@@ -47,9 +47,10 @@ export class RegisterDeviceDto {
   @MaxLength(50)
   hardwareRevisionCode?: string;
 
-  @IsOptional()
+  // บังคับ: ทุกเครื่องที่ลงทะเบียนใหม่ต้องผูกลูกค้า (มติ A กับพี่เลี้ยง 5 พ.ย. 2569 · หน้าเว็บบังคับอยู่แล้วใน #450)
+  // เครื่องที่ลงทะเบียนก่อนกติกานี้ยังมี customerId เป็น null ได้ในฐานข้อมูล จึงไม่ใช่ข้อจำกัดของคอลัมน์
   @IsUUID()
-  customerId?: string;
+  customerId!: string;
 
   // Identity group เพิ่มเติม (PDF §4.1) — string อิสระ ไม่มี validation
   // รูปแบบในรอบนี้ (ดู comment เหนือ field เดียวกันใน schema.prisma)
