@@ -848,6 +848,13 @@ export function CampaignRolloutCreateForm({
                 id="rollout-auto-retry"
                 checked={autoRetry}
                 onChange={setAutoRetryInput}
+                disabledNote={
+                  groupAutoRetry === undefined
+                    ? campaignQuery.error
+                      ? "โหลดการตั้งค่าของกลุ่มไม่สำเร็จ จึงยังเปลี่ยนค่านี้ตอนสร้างไม่ได้ ตั้งได้ที่หน้า Rollout หลังสร้างเสร็จ"
+                      : "กำลังโหลดการตั้งค่าของกลุ่ม"
+                    : undefined
+                }
                 rememberNote
               />
               <p className="text-xs text-muted-foreground">
