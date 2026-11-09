@@ -4108,6 +4108,33 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
 
+  /campaigns/auto-retry-settings:
+    get:
+      tags: [campaign]
+      operationId: getCampaignAutoRetrySettings
+      summary: ค่าตั้งการลองส่งใหม่อัตโนมัติของระบบ — v3.94
+      description: >-
+        ทุก Role ที่อ่าน Campaign ได้ (resource `campaign` action `Read`) · คืน `maxAttempts` = จำนวนครั้งสูงสุด
+        รวมครั้งแรก ตามค่า env `FIELD_APPLY_MAX_ATTEMPTS` ของ backend (ค่าเริ่มต้น 3) ให้เว็บเขียนป้าย "รอบ N/M"
+        และข้อความสวิตช์ตามค่าจริง ไม่ฝังเลขไว้ในโค้ด (docs/31 §7.6) · ไม่มีค่าอื่นที่เปลี่ยนตาม request
+      responses:
+        "200":
+          description: ค่าตั้งปัจจุบัน
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [maxAttempts]
+                properties:
+                  maxAttempts:
+                    type: integer
+                    minimum: 1
+                    example: 3
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อ่าน Campaign
+
   /campaigns/{id}:
     get:
       tags: [campaign]

@@ -450,6 +450,35 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     });
   });
 
+  describe('GET /campaigns/auto-retry-settings (docs/31 §7.6)', () => {
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/campaigns/auto-retry-settings')
+        .expect(401);
+    });
+
+    it('ไม่มีสิทธิ์ campaign:Read -> 403', async () => {
+      const user = await makeUser(prisma, { role: 'Auditor' });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/campaigns/auto-retry-settings')
+        .set('Authorization', `Bearer ${tokenFor(user.id, 'Auditor')}`)
+        .expect(403);
+    });
+
+    it('มีสิทธิ์อ่าน -> 200 maxAttempts (ค่าเริ่มต้น 3) และไม่ถูก route :id แย่งจับไปเป็น uuid', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Read);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/campaigns/auto-retry-settings')
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ maxAttempts: 3 });
+    });
+  });
+
   describe('GET /campaigns/rollouts (ข้ามทุกกลุ่ม — Approval Center)', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
       await request(app.getHttpServer())
