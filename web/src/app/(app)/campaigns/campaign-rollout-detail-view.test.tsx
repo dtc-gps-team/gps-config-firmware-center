@@ -171,23 +171,31 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       ...target("D3", "failed", "ส่งไม่ผ่าน"),
       attemptCount: 3,
     };
+    const offline = {
+      ...target("D4", "skipped_offline", "กล่องออฟไลน์"),
+      attemptCount: 3,
+    };
     setup(rollout({ status: "active" }), [
       target("D1", "success"),
       waiting,
       exhausted,
+      offline,
     ]);
 
     expect(screen.getByText(/กำลังลองใหม่ 1 เครื่อง/)).toBeInTheDocument();
-    expect(screen.getByText("ผลต่อเครื่อง (3)")).toBeInTheDocument();
+    expect(screen.getByText("ผลต่อเครื่อง (4)")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "รอส่งรอบใหม่ (1)" }));
     expect(screen.getByText("D2")).toBeInTheDocument();
     expect(screen.queryByText("D1")).not.toBeInTheDocument();
     expect(screen.queryByText("D3")).not.toBeInTheDocument();
-    expect(screen.getByText("ผลต่อเครื่อง (1 จาก 3)")).toBeInTheDocument();
+    expect(screen.getByText("ผลต่อเครื่อง (1 จาก 4)")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "ล้มครบทุกรอบ (1)" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "ส่งครบทุกรอบไม่สำเร็จ (2)" }),
+    );
     expect(screen.getByText("D3")).toBeInTheDocument();
+    expect(screen.getByText("D4")).toBeInTheDocument();
     expect(screen.queryByText("D2")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "ทั้งหมด" }));

@@ -45,23 +45,39 @@ describe("rollout-retry-display: นับและกรองเครื่�
     attemptCount: 1,
     nextRetryAt: null,
   };
+  const skippedExhausted = {
+    status: "skipped_offline" as const,
+    attemptCount: 3,
+    nextRetryAt: null,
+  };
+  const skippedFirst = {
+    status: "skipped_offline" as const,
+    attemptCount: 1,
+    nextRetryAt: null,
+  };
   const ok = { status: "success" as const, attemptCount: 2, nextRetryAt: null };
-  const all = [waiting, exhausted, failedFirst, ok];
+  const all = [waiting, exhausted, failedFirst, skippedExhausted, ok];
 
   it("นับเฉพาะเครื่องที่รอส่งรอบใหม่", () => {
     expect(countRetryingTargets(all)).toBe(1);
   });
 
-  it("ล้มครบทุกรอบ = ล้มและส่งครบเพดาน (ล้มรอบแรกตอนปิดสวิตช์ไม่นับ)", () => {
+  it("ส่งครบทุกรอบไม่สำเร็จ = ล้มหรือออฟไลน์และส่งครบเพดาน (ล้มรอบแรกตอนปิดสวิตช์ไม่นับ)", () => {
     expect(isTargetRetryExhausted(exhausted)).toBe(true);
     expect(isTargetRetryExhausted(failedFirst)).toBe(false);
+    // ออฟไลน์ครบทุกรอบก็นับ ออฟไลน์รอบแรกตอนปิดสวิตช์ไม่นับ
+    expect(isTargetRetryExhausted(skippedExhausted)).toBe(true);
+    expect(isTargetRetryExhausted(skippedFirst)).toBe(false);
     expect(isTargetRetryExhausted(ok)).toBe(false);
   });
 
   it("กรองตามตัวเลือก", () => {
     expect(filterTargetsByRetry(all, "all")).toEqual(all);
     expect(filterTargetsByRetry(all, "retrying")).toEqual([waiting]);
-    expect(filterTargetsByRetry(all, "exhausted")).toEqual([exhausted]);
+    expect(filterTargetsByRetry(all, "exhausted")).toEqual([
+      exhausted,
+      skippedExhausted,
+    ]);
   });
 });
 

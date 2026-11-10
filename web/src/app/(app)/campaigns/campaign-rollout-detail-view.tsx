@@ -131,7 +131,7 @@ export function CampaignRolloutDetailView({
   const retryFilterOptions: { value: TargetRetryFilter; label: string }[] = [
     { value: "all", label: "ทั้งหมด" },
     { value: "retrying", label: `รอส่งรอบใหม่ (${retryingCount})` },
-    { value: "exhausted", label: `ล้มครบทุกรอบ (${exhaustedCount})` },
+    { value: "exhausted", label: `ส่งครบทุกรอบไม่สำเร็จ (${exhaustedCount})` },
   ];
 
   return (

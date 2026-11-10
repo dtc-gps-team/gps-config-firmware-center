@@ -21,12 +21,16 @@ export function targetBadgeAttempt(target: RetryFields): number | null {
   return n > 1 ? Math.min(n, ROLLOUT_MAX_ATTEMPTS) : null;
 }
 
-/** ล้มหลังส่งครบทุกรอบแล้ว (ไม่ใช่ล้มรอบแรกตอนปิดสวิตช์) */
+/**
+ * ส่งครบทุกรอบแล้วก็ยังไม่สำเร็จ: ล้ม หรือถูกข้ามเพราะกล่องออฟไลน์ครบทุกรอบ (ไม่ใช่ล้มรอบแรกตอนปิดสวิตช์) ·
+ * กลุ่มนี้คือเครื่องที่ Operation อยากตามต่อที่สุด
+ */
 export function isTargetRetryExhausted(
   target: RetryFields & Pick<CampaignRolloutTarget, "status">,
 ): boolean {
   return (
-    target.status === "failed" && target.attemptCount >= ROLLOUT_MAX_ATTEMPTS
+    (target.status === "failed" || target.status === "skipped_offline") &&
+    target.attemptCount >= ROLLOUT_MAX_ATTEMPTS
   );
 }
 
