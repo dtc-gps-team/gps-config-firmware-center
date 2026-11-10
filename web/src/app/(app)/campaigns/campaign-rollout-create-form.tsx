@@ -846,7 +846,8 @@ export function CampaignRolloutCreateForm({
               />
               <AutoRetryField
                 id="rollout-auto-retry"
-                checked={autoRetry}
+                // ยังไม่รู้ค่าจริงของกลุ่ม (กำลังโหลด/โหลดไม่สำเร็จ) ไม่แสดงเป็นติ๊ก จะได้ไม่เข้าใจว่าเปิดอยู่
+                checked={groupAutoRetry === undefined ? false : autoRetry}
                 onChange={setAutoRetryInput}
                 disabledNote={
                   groupAutoRetry === undefined

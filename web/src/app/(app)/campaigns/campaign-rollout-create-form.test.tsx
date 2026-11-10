@@ -309,6 +309,9 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
       screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(
+      screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ }),
+    ).not.toBeChecked();
+    expect(
       screen.getByText(/โหลดการตั้งค่าของกลุ่มไม่สำเร็จ/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
