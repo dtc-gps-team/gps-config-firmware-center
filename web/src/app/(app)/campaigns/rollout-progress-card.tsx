@@ -32,12 +32,15 @@ export function RolloutProgressCard({
   payloadType,
   summary,
   awaiting,
+  retrying = 0,
   embedded = false,
 }: {
   status: CampaignRolloutStatus;
   payloadType: string;
   summary: RolloutTargetSummary;
   awaiting: boolean;
+  /** จำนวนเครื่องที่กำลังรอส่งรอบใหม่ (นับรวมอยู่ใน "รอผล" แล้ว) */
+  retrying?: number;
   /** วางในการ์ดอื่นอยู่แล้ว: ไม่วาดกรอบและพื้นซ้อน */
   embedded?: boolean;
 }) {
@@ -108,6 +111,7 @@ export function RolloutProgressCard({
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2 rounded-full bg-muted-foreground/40" />
           รอผล {summary.pending}
+          {retrying > 0 && ` (กำลังลองใหม่ ${retrying} เครื่อง)`}
         </span>
       </div>
     </Card>
