@@ -71,6 +71,16 @@ describe("rollout-retry-display: นับและกรองเครื่�
     expect(isTargetRetryExhausted(ok)).toBe(false);
   });
 
+  it("เพดานรอบตามค่าที่ส่งมา: ส่ง 3 รอบแต่เพดาน 5 ยังไม่ถือว่าครบทุกรอบ", () => {
+    expect(isTargetRetryExhausted(exhausted, 5)).toBe(false);
+    expect(isTargetRetryExhausted({ ...exhausted, attemptCount: 5 }, 5)).toBe(
+      true,
+    );
+    expect(filterTargetsByRetry(all, "exhausted", 5)).toEqual([]);
+    expect(targetBadgeAttempt(t({ attemptCount: 4 }), 5)).toBe(4);
+    expect(targetBadgeAttempt(t({ attemptCount: 9 }), 5)).toBe(5);
+  });
+
   it("กรองตามตัวเลือก", () => {
     expect(filterTargetsByRetry(all, "all")).toEqual(all);
     expect(filterTargetsByRetry(all, "retrying")).toEqual([waiting]);

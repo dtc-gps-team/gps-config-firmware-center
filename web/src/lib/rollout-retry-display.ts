@@ -1,7 +1,9 @@
-import type { CampaignRolloutTarget } from "@/lib/campaign-api";
+import {
+  DEFAULT_AUTO_RETRY_MAX_ATTEMPTS,
+  type CampaignRolloutTarget,
+} from "@/lib/campaign-api";
 
-/** จำนวนรอบสูงสุดของการลองส่งใหม่ (docs/31: ส่งครั้งแรก + ลองใหม่อีก 2 ครั้ง) */
-export const ROLLOUT_MAX_ATTEMPTS = 3;
+/** ฟังก์ชันด้านล่างรับ `maxAttempts` จาก API (`useAutoRetryMaxAttempts`) · ไม่ส่งมาใช้ค่าเริ่มต้นของ backend */
 
 type RetryFields = Pick<CampaignRolloutTarget, "attemptCount" | "nextRetryAt">;
 
@@ -14,11 +16,14 @@ export function isTargetWaitingRetry(target: RetryFields): boolean {
  * เลขรอบบนป้าย "รอบ 2/3": รอรอบใหม่ = รอบที่กำลังจะส่ง (attemptCount + 1) · ไม่งั้นรอบที่ส่งไปแล้ว ·
  * null = ไม่แสดง (ยังเป็นรอบแรก) — กติกาเดียวกับหน้าอุปกรณ์ (`badgeAttempt`)
  */
-export function targetBadgeAttempt(target: RetryFields): number | null {
+export function targetBadgeAttempt(
+  target: RetryFields,
+  maxAttempts: number = DEFAULT_AUTO_RETRY_MAX_ATTEMPTS,
+): number | null {
   const n = isTargetWaitingRetry(target)
     ? target.attemptCount + 1
     : target.attemptCount;
-  return n > 1 ? Math.min(n, ROLLOUT_MAX_ATTEMPTS) : null;
+  return n > 1 ? Math.min(n, maxAttempts) : null;
 }
 
 /**
@@ -27,10 +32,11 @@ export function targetBadgeAttempt(target: RetryFields): number | null {
  */
 export function isTargetRetryExhausted(
   target: RetryFields & Pick<CampaignRolloutTarget, "status">,
+  maxAttempts: number = DEFAULT_AUTO_RETRY_MAX_ATTEMPTS,
 ): boolean {
   return (
     (target.status === "failed" || target.status === "skipped_offline") &&
-    target.attemptCount >= ROLLOUT_MAX_ATTEMPTS
+    target.attemptCount >= maxAttempts
   );
 }
 
@@ -43,9 +49,15 @@ export type TargetRetryFilter = "all" | "retrying" | "exhausted";
 
 export function filterTargetsByRetry<
   T extends RetryFields & Pick<CampaignRolloutTarget, "status">,
->(targets: T[], filter: TargetRetryFilter): T[] {
+>(
+  targets: T[],
+  filter: TargetRetryFilter,
+  maxAttempts: number = DEFAULT_AUTO_RETRY_MAX_ATTEMPTS,
+): T[] {
   if (filter === "retrying") return targets.filter(isTargetWaitingRetry);
-  if (filter === "exhausted") return targets.filter(isTargetRetryExhausted);
+  if (filter === "exhausted") {
+    return targets.filter((t) => isTargetRetryExhausted(t, maxAttempts));
+  }
   return targets;
 }
 

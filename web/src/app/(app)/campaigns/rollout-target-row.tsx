@@ -13,7 +13,6 @@ import type { CampaignRolloutTarget } from "@/lib/campaign-api";
 import { retryCountdownText } from "@/lib/field-apply-retry-display";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import {
-  ROLLOUT_MAX_ATTEMPTS,
   isTargetWaitingRetry,
   targetBadgeAttempt,
   targetHasHistory,
@@ -32,15 +31,18 @@ export function RolloutTargetRow({
   campaignId,
   rolloutId,
   target,
+  maxAttempts,
 }: {
   campaignId: string;
   rolloutId: string;
   target: CampaignRolloutTarget;
+  /** จำนวนครั้งสูงสุดจาก API (ป้าย "รอบ N/M") */
+  maxAttempts: number;
 }) {
   const [open, setOpen] = useState(false);
   const waiting = isTargetWaitingRetry(target);
   const now = useNow(waiting);
-  const badge = targetBadgeAttempt(target);
+  const badge = targetBadgeAttempt(target, maxAttempts);
   const hasHistory = targetHasHistory(target);
   const attempts = useCampaignRolloutTargetAttempts(
     campaignId,
@@ -70,7 +72,7 @@ export function RolloutTargetRow({
               </StatusPill>
               {badge !== null && (
                 <StatusPill tone="info">
-                  รอบ {badge}/{ROLLOUT_MAX_ATTEMPTS}
+                  รอบ {badge}/{maxAttempts}
                 </StatusPill>
               )}
             </div>

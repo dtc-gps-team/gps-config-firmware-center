@@ -55,11 +55,16 @@ function makeTarget(
   };
 }
 
-function renderRow(target: CampaignRolloutTarget) {
+function renderRow(target: CampaignRolloutTarget, maxAttempts = 3) {
   return render(
     <Table>
       <TableBody>
-        <RolloutTargetRow campaignId="c-1" rolloutId="r-1" target={target} />
+        <RolloutTargetRow
+          campaignId="c-1"
+          rolloutId="r-1"
+          target={target}
+          maxAttempts={maxAttempts}
+        />
       </TableBody>
     </Table>,
   );
@@ -86,6 +91,13 @@ describe("RolloutTargetRow ลองส่งใหม่อัตโนมั�
 
     expect(screen.getByText("รอบ 2/3")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/จะลองส่งใหม่ในอีก/);
+  });
+
+  it("ป้ายรอบตามค่าสูงสุดที่ส่งมาจาก API ไม่ใช่เลข 3 ตายตัว", () => {
+    const soon = new Date(Date.now() + 45_000).toISOString();
+    renderRow(makeTarget({ attemptCount: 1, nextRetryAt: soon }), 5);
+
+    expect(screen.getByText("รอบ 2/5")).toBeInTheDocument();
   });
 
   it("ถึงเวลาแล้วแต่ยังไม่ได้ผล: ขึ้นว่าส่งรอบใหม่แล้ว รอกล่องตอบ ไม่ค้างที่ 0:00", () => {
