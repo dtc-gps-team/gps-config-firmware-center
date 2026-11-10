@@ -12,7 +12,7 @@ import { FIELD_APPLY_RETRY_EVENT, RolloutEvents } from './rollout-events';
 export interface FieldApplyRetrySettings {
   /** รวมทุกครั้ง (ครั้งแรก + ลองซ้ำ) — `FIELD_APPLY_MAX_ATTEMPTS` */
   maxAttempts: number;
-  /** รอก่อนรอบที่ 2 (รอบถัดไปคูณ 2) — `FIELD_APPLY_RETRY_DELAY_SEC` */
+  /** รอก่อนส่งรอบใหม่ เท่ากันทุกรอบ (มติ B 10 พ.ย. 2569 เดิมคูณ 2) — `FIELD_APPLY_RETRY_DELAY_SEC` */
   retryDelaySec: number;
   /** อายุ lease ระหว่างกำลังส่ง ต้องมากกว่าเวลาส่งหนึ่งครั้ง — `FIELD_APPLY_CLAIM_LEASE_SEC` */
   claimLeaseSec: number;
@@ -25,7 +25,7 @@ export const FIELD_APPLY_RETRY_SETTINGS = Symbol('FIELD_APPLY_RETRY_SETTINGS');
 
 export const DEFAULT_FIELD_APPLY_RETRY_SETTINGS: FieldApplyRetrySettings = {
   maxAttempts: 3,
-  retryDelaySec: 30,
+  retryDelaySec: 20,
   claimLeaseSec: 60,
   maxDuePerPoll: 20,
 };
@@ -114,9 +114,15 @@ export class FieldApplyRetryService {
     this.settings = settings ?? DEFAULT_FIELD_APPLY_RETRY_SETTINGS;
   }
 
-  /** เวลารอก่อนรอบถัดไปหลังรอบที่ `attemptNo` ไม่สำเร็จ: 30 → 60 วินาที (§3.2) */
+  /**
+   * เวลารอก่อนรอบถัดไปหลังรอบที่ `attemptNo` ไม่สำเร็จ: เท่ากันทุกรอบ (ค่าเริ่มต้น 20 วินาที · §3.2) ·
+   * มติ B 10 พ.ย. 2569 เปลี่ยนจาก 30 → 60 วินาที (คูณ 2) ให้ช่างรู้ผลเร็วขึ้น เพราะ Server กลางลดเวลารอกล่อง
+   * พร้อมหลังรีบูตเหลือ 15 วินาที (`FIRMWARE_SETTLE_SEC`) รอบใหม่ไม่ต้องรอนานแล้ว · `attemptNo` เก็บไว้ในลายเซ็น
+   * เผื่อกลับไปใช้แบบเพิ่มขึ้นทีละรอบ
+   */
   retryDelayMs(attemptNo: number): number {
-    return this.settings.retryDelaySec * 1000 * 2 ** Math.max(0, attemptNo - 1);
+    void attemptNo;
+    return this.settings.retryDelaySec * 1000;
   }
 
   /** Rollout ของคำขอส่งจากหน้างานไหม (เช็คชื่อ Campaign ระบบแบบเดียวกับ `recordTargetResult()`) */
