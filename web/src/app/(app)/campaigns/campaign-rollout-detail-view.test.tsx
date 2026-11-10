@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { CampaignRolloutDetailView } from "./campaign-rollout-detail-view";
 import type {
@@ -161,6 +161,59 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
     expect(targetsQuery.refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("มีเครื่องรอส่งรอบใหม่: การ์ดบอกจำนวนที่กำลังลองใหม่ และกรองตารางได้", () => {
+    const waiting = {
+      ...target("D2", "pending"),
+      attemptCount: 1,
+      nextRetryAt: "2026-10-20T00:00:30.000Z",
+    };
+    const exhausted = {
+      ...target("D3", "failed", "ส่งไม่ผ่าน"),
+      attemptCount: 3,
+    };
+    const offline = {
+      ...target("D4", "skipped_offline", "กล่องออฟไลน์"),
+      attemptCount: 3,
+    };
+    setup(rollout({ status: "active" }), [
+      target("D1", "success"),
+      waiting,
+      exhausted,
+      offline,
+    ]);
+
+    expect(screen.getByText(/กำลังลองใหม่ 1 เครื่อง/)).toBeInTheDocument();
+    expect(screen.getByText("ผลต่อเครื่อง (4)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "รอส่งรอบใหม่ (1)" }));
+    expect(screen.getByText("D2")).toBeInTheDocument();
+    expect(screen.queryByText("D1")).not.toBeInTheDocument();
+    expect(screen.queryByText("D3")).not.toBeInTheDocument();
+    expect(screen.getByText("ผลต่อเครื่อง (1 จาก 4)")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "ส่งครบทุกรอบไม่สำเร็จ (2)" }),
+    );
+    expect(screen.getByText("D3")).toBeInTheDocument();
+    expect(screen.getByText("D4")).toBeInTheDocument();
+    expect(screen.queryByText("D2")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "ทั้งหมด" }));
+    expect(screen.getByText("D1")).toBeInTheDocument();
+  });
+
+  it("ไม่มีเครื่องที่ลองส่งใหม่เลย: ไม่แสดงตัวกรองและไม่มีข้อความกำลังลองใหม่", () => {
+    setup(rollout({ status: "active" }), [
+      target("D1", "success"),
+      target("D2", "pending"),
+    ]);
+
+    expect(
+      screen.queryByRole("group", { name: "กรองผลต่อเครื่อง" }),
+    ).toBeNull();
+    expect(screen.queryByText(/กำลังลองใหม่/)).not.toBeInTheDocument();
+  });
+
   it("ได้ผลครบแล้ว: ไม่รีเฟรชอัตโนมัติและไม่แสดงข้อความรอ", () => {
     setup(rollout({ status: "completed" }), [
       target("D1", "success"),
@@ -198,7 +251,9 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
     expect(bar).toHaveAttribute("aria-valuenow", "75");
     expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.getByText("3 / 4 เครื่อง")).toBeInTheDocument();
-    expect(screen.getByText("กำลังส่ง Config ให้ 4 เครื่อง")).toBeInTheDocument();
+    expect(
+      screen.getByText("กำลังส่ง Config ให้ 4 เครื่อง"),
+    ).toBeInTheDocument();
   });
 
   it("ได้ผลครบ: 100% และหัวข้อเป็นเสร็จสิ้น", () => {
@@ -208,7 +263,9 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
     ]);
 
     expect(screen.getByText("100%")).toBeInTheDocument();
-    expect(screen.getByText("ส่ง Config ให้ 2 เครื่องเสร็จสิ้น")).toBeInTheDocument();
+    expect(
+      screen.getByText("ส่ง Config ให้ 2 เครื่องเสร็จสิ้น"),
+    ).toBeInTheDocument();
   });
 
   it("Rollout หยุดชั่วคราว (Auto Pause): หัวข้อบอกว่าหยุดชั่วคราว", () => {
@@ -217,7 +274,9 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       target("D2", "pending"),
     ]);
 
-    expect(screen.getByText(/หยุดชั่วคราว การส่ง Config ให้ 2 เครื่อง/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/หยุดชั่วคราว การส่ง Config ให้ 2 เครื่อง/),
+    ).toBeInTheDocument();
   });
 
   it("ก่อนปล่อย (รออนุมัติ/อนุมัติแล้ว): ไม่แสดงแถบความคืบหน้า", () => {

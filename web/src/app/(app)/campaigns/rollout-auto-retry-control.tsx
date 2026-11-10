@@ -123,7 +123,8 @@ export function RolloutAutoRetryControl({
             <AlertDialogTitle>ปิดการลองส่งใหม่อัตโนมัติ?</AlertDialogTitle>
             <AlertDialogDescription>
               ถ้าปิด ระบบจะไม่ส่งซ้ำอีก
-              เครื่องที่กำลังรอส่งซ้ำจะนับเป็นล้มเหลวทันที
+              เครื่องที่กำลังรอส่งซ้ำจะจบด้วยผลของรอบล่าสุดภายในไม่กี่วินาที
+              ถ้ามีเครื่องล้มถึงเกณฑ์ Rollout อาจหยุดอัตโนมัติ
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && <p className="text-sm text-destructive">{error}</p>}

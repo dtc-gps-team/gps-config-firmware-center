@@ -95,10 +95,14 @@ const hookState = vi.hoisted(() => ({
   devices: [] as unknown[],
   configs: [] as unknown[],
   campaign: { autoRetry: true } as { autoRetry: boolean } | null,
+  campaignError: null as string | null,
 }));
 
 vi.mock("@/hooks/use-campaign", () => ({
-  useCampaign: () => queryState(hookState.campaign),
+  useCampaign: () => ({
+    ...queryState(hookState.campaign),
+    error: hookState.campaignError,
+  }),
 }));
 vi.mock("@/hooks/use-campaign-targets", () => ({
   useCampaignTargets: () => queryState(hookState.targets),
@@ -142,6 +146,7 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     updateCampaign.mockReset();
     updateCampaign.mockResolvedValue({});
     hookState.campaign = { autoRetry: true };
+    hookState.campaignError = null;
     push.mockReset();
     hookState.targets = members;
     hookState.devices = devices;
@@ -290,6 +295,29 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     expect(createCampaignRollout.mock.invocationCallOrder[0]).toBeLessThan(
       updateCampaign.mock.invocationCallOrder[0],
     );
+  });
+
+  it("โหลดกลุ่มไม่สำเร็จ: ช่องลองส่งใหม่ถูกล็อกพร้อมคำอธิบาย และเริ่ม Rollout แล้วไม่เรียก updateCampaign", async () => {
+    hookState.campaign = null;
+    hookState.campaignError = "boom";
+    createCampaignRollout.mockResolvedValue({ id: "roll-1" });
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await goToReview(user);
+
+    expect(
+      screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getByRole("checkbox", { name: /ลองส่งใหม่อัตโนมัติ/ }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByText(/โหลดการตั้งค่าของกลุ่มไม่สำเร็จ/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    expect(updateCampaign).not.toHaveBeenCalled();
   });
 
   it("ติ๊กปิดแล้วเริ่ม: บันทึก autoRetry=false · บันทึกไม่สำเร็จก็ไม่ย้อน Rollout แค่เตือน", async () => {
