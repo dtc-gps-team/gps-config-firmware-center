@@ -846,8 +846,16 @@ export function CampaignRolloutCreateForm({
               />
               <AutoRetryField
                 id="rollout-auto-retry"
-                checked={autoRetry}
+                // ยังไม่รู้ค่าจริงของกลุ่ม (กำลังโหลด/โหลดไม่สำเร็จ) ไม่แสดงเป็นติ๊ก จะได้ไม่เข้าใจว่าเปิดอยู่
+                checked={groupAutoRetry === undefined ? false : autoRetry}
                 onChange={setAutoRetryInput}
+                disabledNote={
+                  groupAutoRetry === undefined
+                    ? campaignQuery.error
+                      ? "โหลดการตั้งค่าของกลุ่มไม่สำเร็จ จึงยังเปลี่ยนค่านี้ตอนสร้างไม่ได้ ตั้งได้ที่หน้า Rollout หลังสร้างเสร็จ"
+                      : "กำลังโหลดการตั้งค่าของกลุ่ม"
+                    : undefined
+                }
                 rememberNote
               />
               <p className="text-xs text-muted-foreground">
