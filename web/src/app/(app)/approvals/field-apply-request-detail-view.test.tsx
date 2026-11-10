@@ -40,6 +40,21 @@ vi.mock("@/hooks/use-device-config-override", () => ({
     };
   },
 }));
+vi.mock("./config-field-value-list", () => ({
+  ConfigFieldValueList: ({
+    configId,
+    fieldNames,
+  }: {
+    configId: string;
+    fieldNames: string[];
+  }) => (
+    <div data-testid="values" data-config={configId}>
+      {fieldNames.map((n) => (
+        <span key={n}>{n}</span>
+      ))}
+    </div>
+  ),
+}));
 vi.mock("./override-field-diff-list", () => ({
   OverrideFieldDiffList: ({ fields }: { fields: Record<string, unknown> }) => (
     <div data-testid="diff">{JSON.stringify(fields)}</div>
@@ -97,6 +112,7 @@ describe("FieldApplyRequestDetailView", () => {
 
     expect(screen.getByText("ST Tester")).toBeInTheDocument();
     expect(screen.getByText("gps.send_interval_sec")).toBeInTheDocument();
+    expect(screen.getByTestId("values")).toHaveAttribute("data-config", "cfg-1");
     expect(screen.getByRole("link", { name: "BOX-0001 v1.0.0" })).toHaveAttribute(
       "href",
       "/config/cfg-1",

@@ -33,6 +33,7 @@ import { canDecideFieldApplyRequest } from "@/lib/permissions";
 import { EntityTypeTag, StatusPill } from "@/lib/status-pill";
 import { fieldApplySodBlockedReason } from "./field-apply-request-approval-card";
 import { FieldApplyRequestApprovalActions } from "./field-apply-request-approval-actions";
+import { ConfigFieldValueList } from "./config-field-value-list";
 import { OverrideFieldDiffList } from "./override-field-diff-list";
 
 /** สถานะที่ยังไม่จบ มีเส้นตาย `expiresAt` ให้แสดง */
@@ -262,6 +263,13 @@ function ConfigSection({ item }: { item: FieldApplyRequest }) {
         </p>
         {item.fieldNames.length === 0 ? (
           <p className="text-sm text-muted-foreground">ไม่มีพารามิเตอร์</p>
+        ) : item.configId ? (
+          <ConfigFieldValueList
+            configId={item.configId}
+            fieldNames={item.fieldNames}
+            overriddenFields={item.override?.fieldNames}
+            className="text-sm"
+          />
         ) : (
           <div className="flex flex-wrap gap-1">
             {item.fieldNames.map((name) => (
@@ -273,6 +281,12 @@ function ConfigSection({ item }: { item: FieldApplyRequest }) {
               </span>
             ))}
           </div>
+        )}
+        {item.configId && item.fieldNames.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            ค่าที่แสดงเป็นค่าปัจจุบันของ Config ถ้า Config ถูกแก้หลังช่างส่งคำขอ
+            ระบบจะไม่ให้กดส่งค่าที่ไม่ได้อนุมัติ
+          </p>
         )}
       </div>
     </Card>
