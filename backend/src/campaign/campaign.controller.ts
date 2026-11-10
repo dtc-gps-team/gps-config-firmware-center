@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -25,6 +26,10 @@ import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { ActingUser, CampaignService } from './campaign.service';
+import {
+  FIELD_APPLY_RETRY_SETTINGS,
+  type FieldApplyRetrySettings,
+} from './field-apply-retry.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { QueryCampaignRolloutDto } from './dto/query-campaign-rollout.dto';
 import {
@@ -50,6 +55,8 @@ export class CampaignController {
   constructor(
     private readonly campaignService: CampaignService,
     private readonly campaignRolloutService: CampaignRolloutService,
+    @Inject(FIELD_APPLY_RETRY_SETTINGS)
+    private readonly retrySettings: FieldApplyRetrySettings,
   ) {}
 
   @Get()
@@ -77,6 +84,15 @@ export class CampaignController {
     @Query() query: QueryCampaignRolloutDto,
   ): Promise<CampaignRollout[]> {
     return this.campaignRolloutService.findAllAcrossCampaigns(query.status);
+  }
+
+  // จำนวนครั้งสูงสุดของการลองส่งใหม่อัตโนมัติ (รวมครั้งแรก) ตามค่า `FIELD_APPLY_MAX_ATTEMPTS` ของ backend
+  // ให้เว็บเขียนป้าย "รอบ N/M" และข้อความสวิตช์ตามค่าจริง ไม่ฝังเลข 3 (docs/31 §7.6 W1) ·
+  // static path ต้องมาก่อน `:id` เหมือน `rollouts` ด้านบน
+  @Get('auto-retry-settings')
+  @RequirePermission('campaign', ActionType.Read)
+  getAutoRetrySettings(): { maxAttempts: number } {
+    return { maxAttempts: this.retrySettings.maxAttempts };
   }
 
   @Get(':id')

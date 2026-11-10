@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CampaignController } from './campaign.controller';
 import { CampaignService } from './campaign.service';
+import { FIELD_APPLY_RETRY_SETTINGS } from './field-apply-retry.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 
 const JWT_SECRET = 'test-secret';
@@ -95,6 +96,15 @@ describe('CampaignController', () => {
       providers: [
         { provide: CampaignService, useValue: service },
         { provide: CampaignRolloutService, useValue: rolloutService },
+        {
+          provide: FIELD_APPLY_RETRY_SETTINGS,
+          useValue: {
+            maxAttempts: 5,
+            retryDelaySec: 30,
+            claimLeaseSec: 60,
+            maxDuePerPoll: 20,
+          },
+        },
         // pattern เดียวกับ config.controller.spec.ts — provide JwtService ตรงๆ
         // ให้ JwtAuthGuard inject ได้, และ PrismaService stub ให้ PermissionGuard
         // inject ได้ (ไม่มี method ไหนถูกเรียกจริงในเทสนี้ เพราะเรียก controller
@@ -137,6 +147,10 @@ describe('CampaignController', () => {
       role: 'Operation',
       ipAddress: null,
     });
+  });
+
+  it('GET /campaigns/auto-retry-settings -> คืน maxAttempts ตามค่าตั้งของ backend', () => {
+    expect(controller.getAutoRetrySettings()).toEqual({ maxAttempts: 5 });
   });
 
   it('GET /campaigns/:id -> service.findOne', async () => {
