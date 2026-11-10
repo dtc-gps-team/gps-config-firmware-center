@@ -181,7 +181,7 @@ describe('Field apply auto-retry (integration — real postgres, fake central)',
     });
   }
 
-  it('ล้มรอบ 1 (DEVICE_DISCONNECTED) -> ตั้งรอบใหม่ 30 วินาที ไม่บันทึกผล · ถึงเวลา -> ส่งของเดิมรอบ 2 · สำเร็จ', async () => {
+  it('ล้มรอบ 1 (DEVICE_DISCONNECTED) -> ตั้งรอบใหม่ 20 วินาที ไม่บันทึกผล · ถึงเวลา -> ส่งของเดิมรอบ 2 · สำเร็จ', async () => {
     const { rolloutId } = await seedFieldApply();
     const sentAt = Date.now();
     central.getCommandOutcome.mockResolvedValueOnce(
@@ -198,8 +198,8 @@ describe('Field apply auto-retry (integration — real postgres, fake central)',
       attemptCount: 1,
     });
     const wait = (target.nextRetryAt as Date).getTime() - sentAt;
-    expect(wait).toBeGreaterThanOrEqual(29_000);
-    expect(wait).toBeLessThan(40_000);
+    expect(wait).toBeGreaterThanOrEqual(19_000);
+    expect(wait).toBeLessThan(30_000);
     expect(retryEvents).toEqual([
       expect.objectContaining({
         rolloutId,
@@ -257,7 +257,7 @@ describe('Field apply auto-retry (integration — real postgres, fake central)',
     ).toEqual([1, 2]);
   });
 
-  it('ล้มครบ 3 รอบ -> failed ครั้งเดียว พร้อมสรุปทุกรอบ · รอรอบ 2 นาน 60 วินาที', async () => {
+  it('ล้มครบ 3 รอบ -> failed ครั้งเดียว พร้อมสรุปทุกรอบ · รอหลังรอบ 2 เท่ากับรอบ 1 (20 วินาที ไม่คูณ 2)', async () => {
     const { rolloutId } = await seedFieldApply();
     central.getCommandOutcome.mockResolvedValue(failed('ROLLED_BACK'));
 
@@ -268,7 +268,9 @@ describe('Field apply auto-retry (integration — real postgres, fake central)',
     await poll.poll(); // รอบ 2 ล้ม
     const wait =
       ((await targetOf(rolloutId)).nextRetryAt as Date).getTime() - before;
-    expect(wait).toBeGreaterThanOrEqual(59_000);
+    // มติ B 10 พ.ย. 2569: รอเท่ากันทุกรอบ (เดิมคูณ 2 เป็น 60 วินาที)
+    expect(wait).toBeGreaterThanOrEqual(19_000);
+    expect(wait).toBeLessThan(30_000);
     await makeDue(rolloutId);
     await poll.poll(); // ส่งรอบ 3
     const r = await poll.poll(); // รอบ 3 ล้ม -> จบ
