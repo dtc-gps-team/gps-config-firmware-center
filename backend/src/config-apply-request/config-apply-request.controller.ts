@@ -97,6 +97,7 @@ export class DeviceApplyOptionsController {
 /**
  * ฝั่งคิวอนุมัติ (docs/25 §3.4, Q1):
  *   GET  /config-apply-requests?status=       Operation/Auditor/Admin/SuperAdmin
+ *   GET  /config-apply-requests/:id           สิทธิ์เดียวกับคิว (หน้ารายละเอียดบนเว็บ)
  *   POST /config-apply-requests/:id/approve   Operation (SoD เช็คที่ service)
  *   POST /config-apply-requests/:id/reject    Operation (action เดียวกับ approve)
  *   POST /config-apply-requests/:id/cancel    ช่างที่ถือ Task (action Create เดียวกับตอนขอ)
@@ -116,6 +117,15 @@ export class ConfigApplyRequestController {
     @Query() query: QueryConfigApplyRequestDto,
   ): Promise<ConfigApplyRequestView[]> {
     return this.service.list(query.status);
+  }
+
+  /** หน้ารายละเอียดคำขอบนเว็บ — สิทธิ์เดียวกับคิว (action `Read`) */
+  @Get(':id')
+  @RequirePermission('config-apply-request', ActionType.Read)
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ConfigApplyRequestView> {
+    return this.service.findOne(id);
   }
 
   @Post(':id/approve')

@@ -1938,6 +1938,52 @@ describe('ConfigApplyRequestService', () => {
         expect.objectContaining({ where: { status: 'pending' } }),
       );
     });
+
+    it('findOne: คืนรูปเดียวกับแถวในคิว รวมชื่อ field ของ Override ไม่มีค่าจริง', async () => {
+      requests.findUnique.mockResolvedValue({
+        ...pending,
+        status: 'rejected',
+        task: { id: TASK_ID, title: task.title },
+        config: {
+          id: CONFIG_ID,
+          name: config.name,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: config.fields,
+        },
+        requester: { id: tech.id, fullName: 'ST Tester' },
+        configAssigner: null,
+        decider: null,
+        override: {
+          id: 'ov-1',
+          reason: 'หน้างานขอ',
+          fields: { 'gps.send_interval_sec': 10 },
+        },
+      });
+
+      const row = await service.findOne(REQUEST_ID);
+
+      expect(row.fieldNames).toEqual([
+        'APN',
+        'SERVER_PORT',
+        'gps.send_interval_sec',
+      ]);
+      expect(row.config).not.toHaveProperty('fields');
+      expect(row.override).toEqual({
+        id: 'ov-1',
+        reason: 'หน้างานขอ',
+        fieldNames: ['gps.send_interval_sec'],
+      });
+      expect(row.status).toBe('rejected');
+    });
+
+    it('findOne: ไม่พบคำขอ = 404', async () => {
+      requests.findUnique.mockResolvedValue(null);
+
+      await expect(service.findOne(REQUEST_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
   });
 
   describe('applyOptions (docs/28 §5.2)', () => {
