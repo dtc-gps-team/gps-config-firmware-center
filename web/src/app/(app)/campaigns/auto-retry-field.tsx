@@ -2,6 +2,7 @@
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { useAutoRetryMaxAttempts } from "@/hooks/use-auto-retry-max-attempts";
 
 /**
  * ตัวเลือก "ลองส่งใหม่อัตโนมัติ" ของกลุ่ม (docs/31 §6) — ใช้ทั้งตอนสร้างและตอนแก้ไขกลุ่ม ·
@@ -24,6 +25,8 @@ export function AutoRetryField({
   /** มีค่า = ล็อกช่องไว้ แล้วแสดงข้อความนี้แทนคำอธิบาย (เช่น โหลดการตั้งค่าของกลุ่มไม่สำเร็จ) */
   disabledNote?: string;
 }) {
+  // ส่งซ้ำได้อีกกี่ครั้ง = จำนวนครั้งสูงสุด (รวมครั้งแรก) ลบ 1
+  const retries = useAutoRetryMaxAttempts() - 1;
   return (
     <div className="flex items-start gap-3">
       <Checkbox
@@ -39,8 +42,8 @@ export function AutoRetryField({
           <p className="text-xs text-destructive">{disabledNote}</p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            {checked
-              ? "ถ้าส่งไม่สำเร็จ ระบบจะส่งซ้ำให้เองสูงสุด 2 ครั้ง"
+            {checked && retries > 0
+              ? `ถ้าส่งไม่สำเร็จ ระบบจะส่งซ้ำให้เองสูงสุด ${retries} ครั้ง`
               : "ถ้าส่งไม่สำเร็จ จะไม่ส่งซ้ำ"}
             {rememberNote && " ค่านี้จะถูกจำไว้ใช้กับ Rollout ครั้งถัดไป"}
             {liveEffect && " มีผลทันทีกับ Rollout ที่กำลังรันอยู่"}

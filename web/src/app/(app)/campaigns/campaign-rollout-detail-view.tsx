@@ -34,6 +34,7 @@ import { useCampaignRolloutTargets } from "@/hooks/use-campaign-rollout-targets"
 import { useConfig } from "@/hooks/use-config";
 import { useFirmware } from "@/hooks/use-firmware";
 import { usePollInterval } from "@/hooks/use-poll-interval";
+import { useAutoRetryMaxAttempts } from "@/hooks/use-auto-retry-max-attempts";
 import {
   isAwaitingTargetResults,
   rolloutTargetStatusLabel,
@@ -80,6 +81,7 @@ export function CampaignRolloutDetailView({
     rolloutId,
   );
   const targetsQuery = useCampaignRolloutTargets(campaignId, rolloutId);
+  const maxAttempts = useAutoRetryMaxAttempts();
   const [retryFilter, setRetryFilter] = useState<TargetRetryFilter>("all");
   // resolve ชื่อ Config/Firmware เอง (backend ไม่ embed) — pattern เดียวกับ
   // campaign-detail-view.tsx เดิม
@@ -123,8 +125,10 @@ export function CampaignRolloutDetailView({
   const targets = targetsQuery.data ?? [];
   const summary = summarizeRolloutTargets(targets);
   const retryingCount = countRetryingTargets(targets);
-  const exhaustedCount = targets.filter(isTargetRetryExhausted).length;
-  const shownTargets = filterTargetsByRetry(targets, retryFilter);
+  const exhaustedCount = targets.filter((t) =>
+    isTargetRetryExhausted(t, maxAttempts),
+  ).length;
+  const shownTargets = filterTargetsByRetry(targets, retryFilter, maxAttempts);
   // ตัวกรองแสดงเฉพาะเมื่อมีเครื่องที่ลองส่งใหม่ (หรือกำลังกรองอยู่ จะได้กลับมาเลือก "ทั้งหมด" ได้เสมอ)
   const showRetryFilter =
     retryingCount > 0 || exhaustedCount > 0 || retryFilter !== "all";
@@ -265,6 +269,7 @@ export function CampaignRolloutDetailView({
                         campaignId={campaignId}
                         rolloutId={rolloutId}
                         target={target}
+                        maxAttempts={maxAttempts}
                       />
                     ))}
                   </TableBody>

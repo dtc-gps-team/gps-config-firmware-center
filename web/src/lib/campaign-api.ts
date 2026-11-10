@@ -67,7 +67,7 @@ export type Campaign = {
   id: string;
   name: string;
   description: string | null;
-  /** ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ สูงสุด 3 ครั้ง (openapi v3.90, docs/31 §6) ·
+  /** ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ ตามจำนวนครั้งสูงสุดของ backend (ค่าเริ่มต้น 3 · openapi v3.90, docs/31 §6) ·
    * กลุ่มที่มีอยู่ก่อน v3.90 เป็น false */
   autoRetry: boolean;
   createdBy: string;
@@ -171,6 +171,22 @@ export type CampaignRolloutTargetAttempt = {
 
 export function listCampaigns(token: string): Promise<Campaign[]> {
   return apiJson<Campaign[]>("/campaigns", { token });
+}
+
+/** ค่าเริ่มต้นของ `FIELD_APPLY_MAX_ATTEMPTS` ฝั่ง backend — ใช้เมื่อยังโหลดค่าจริงไม่ได้ */
+export const DEFAULT_AUTO_RETRY_MAX_ATTEMPTS = 3;
+
+export type CampaignAutoRetrySettings = {
+  /** จำนวนครั้งสูงสุดรวมครั้งแรก (openapi v3.94) */
+  maxAttempts: number;
+};
+
+export function getCampaignAutoRetrySettings(
+  token: string,
+): Promise<CampaignAutoRetrySettings> {
+  return apiJson<CampaignAutoRetrySettings>("/campaigns/auto-retry-settings", {
+    token,
+  });
 }
 
 export function getCampaign(token: string, id: string): Promise<Campaign> {
