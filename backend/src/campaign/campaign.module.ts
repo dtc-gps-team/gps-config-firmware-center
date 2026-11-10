@@ -75,7 +75,7 @@ import {
     CentralRolloutPollService,
     CentralRolloutPollJob,
     // ลองส่งเข้ากล่องใหม่อัตโนมัติของคำขอส่งจากหน้างาน (docs/31) · ค่าตั้งจาก env
-    // ค่าที่ไม่ใช่จำนวนเต็มบวกใช้ค่าเริ่มต้น (3 ครั้ง, รอ 30 วินาที, lease 60 วินาที)
+    // ค่าที่ไม่ใช่จำนวนเต็มบวกใช้ค่าเริ่มต้น (3 ครั้ง, รอ 20 วินาทีเท่ากันทุกรอบ, lease 60 วินาที)
     FieldApplyRetryService,
     {
       provide: FIELD_APPLY_RETRY_SETTINGS,
