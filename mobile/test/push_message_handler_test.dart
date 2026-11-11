@@ -267,6 +267,60 @@ void main() {
     });
   });
 
+  // หัวข้อ push ต้องตรงกับรายการในแท็บแจ้งเตือน (labelOf): คำขอส่งที่เป็น Firmware
+  // ต้องขึ้น "Firmware" ไม่ใช่ "Config" และรอบลองใหม่บอกเลขรอบ (ทดสอบกล่องจริง 10/11/2026)
+  group('resolvePushTitle', () {
+    test('คำขอส่ง Firmware: เปลี่ยน Config เป็น Firmware', () {
+      expect(
+        resolvePushTitle({
+          'type': 'config_apply_succeeded',
+          'payload': jsonEncode({'requestId': 'r1', 'kind': 'firmware'}),
+        }),
+        'กล่องรับ Firmware ที่คุณขอส่งแล้ว',
+      );
+      expect(
+        resolvePushTitle({
+          'type': 'config_apply_approved',
+          'payload': jsonEncode({'requestId': 'r1', 'kind': 'firmware'}),
+        }),
+        contains('คำขอส่ง Firmware อนุมัติแล้ว'),
+      );
+    });
+
+    test('คำขอส่ง Config คงคำว่า Config', () {
+      expect(
+        resolvePushTitle({
+          'type': 'config_apply_succeeded',
+          'payload': jsonEncode({'requestId': 'r1', 'kind': 'config'}),
+        }),
+        'กล่องรับ Config ที่คุณขอส่งแล้ว',
+      );
+    });
+
+    test('ลองส่งใหม่: บอกเลขรอบ และใช้ Firmware ตาม kind', () {
+      expect(
+        resolvePushTitle({
+          'type': 'config_apply_retrying',
+          'payload': jsonEncode({
+            'kind': 'firmware',
+            'attemptNo': 1,
+            'maxAttempts': 3,
+          }),
+        }),
+        'ส่ง Firmware รอบ 1/3 ไม่สำเร็จ',
+      );
+    });
+
+    test('ชนิดที่ไม่รู้จัก / payload เสีย -> ไม่ throw', () {
+      expect(resolvePushTitle({'type': 'something_new'}), 'การแจ้งเตือนใหม่');
+      expect(resolvePushTitle({}), 'การแจ้งเตือนใหม่');
+      expect(
+        resolvePushTitle({'type': 'task_assigned', 'payload': 'not-json{'}),
+        'มอบหมายงานใหม่',
+      );
+    });
+  });
+
   group('pending push route (tap before the session is ready)', () {
     late ProviderContainer container;
     late GoRouter router;
