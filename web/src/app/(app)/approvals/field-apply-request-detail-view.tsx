@@ -29,7 +29,10 @@ import {
 } from "@/lib/field-apply-retry-display";
 import { formatDateTime } from "@/lib/format-date";
 import { getTokenSubject } from "@/lib/jwt";
-import { canDecideFieldApplyRequest } from "@/lib/permissions";
+import {
+  canDecideFieldApplyRequest,
+  canReadDeviceConfigOverride,
+} from "@/lib/permissions";
 import { EntityTypeTag, StatusPill } from "@/lib/status-pill";
 import { fieldApplySodBlockedReason } from "./field-apply-request-approval-card";
 import { FieldApplyRequestApprovalActions } from "./field-apply-request-approval-actions";
@@ -194,6 +197,7 @@ function Content({
         <OverrideSection
           overrideId={item.override.id}
           reason={item.override.reason}
+          fieldNames={item.override.fieldNames}
           configId={item.configId}
         />
       )}
@@ -294,17 +298,23 @@ function ConfigSection({ item }: { item: FieldApplyRequest }) {
 }
 
 /** ค่าที่ช่างขอแก้เฉพาะเครื่อง (Override) แบบค่าเดิม → ค่าที่ขอ อ่านจาก
- * `GET /device-config-overrides/{id}` (คิวคืนแค่ชื่อ field ไม่มีค่า) */
+ * `GET /device-config-overrides/{id}` (คิวคืนแค่ชื่อ field ไม่มีค่า) · endpoint นั้น
+ * เปิดให้ Operation เท่านั้น (SuperAdmin ผ่านด้วย bypass) role อื่นที่เปิดหน้านี้ได้
+ * (Auditor, Admin) ไม่ยิง เห็นข้อความบอกว่าไม่มีสิทธิ์ดูค่า พร้อมชื่อ field แทน
+ * ข้อความแดงว่าโหลดไม่สำเร็จ (รีวิว B บน PR #469) */
 function OverrideSection({
   overrideId,
   reason,
+  fieldNames,
   configId,
 }: {
   overrideId: string;
   reason: string;
+  fieldNames: string[];
   configId: string | null;
 }) {
-  const { data, isLoading, error } = useDeviceConfigOverride(overrideId);
+  const { session } = useAuth();
+  const canReadValues = canReadDeviceConfigOverride(session?.role);
 
   return (
     <Card className="gap-3 p-4">
@@ -315,20 +325,51 @@ function OverrideSection({
           อนุมัติคำขอนี้ Override จะถูกอนุมัติไปด้วย
         </p>
       </div>
-      {isLoading && !data ? (
-        <p className="text-sm text-muted-foreground">กำลังโหลดค่าที่ขอแก้</p>
-      ) : error || !data ? (
-        <p className="text-sm text-destructive">
-          {error ?? "โหลดค่าที่ขอแก้ไม่สำเร็จ"}
-        </p>
+      {canReadValues ? (
+        <OverrideValues overrideId={overrideId} configId={configId} />
       ) : (
-        <OverrideFieldDiffList
-          configId={configId ?? data.configId}
-          fields={data.fields}
-          className="text-sm"
-        />
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-muted-foreground">
+            บัญชีนี้ไม่มีสิทธิ์ดูค่าที่ขอแก้ แสดงเฉพาะชื่อ field
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {fieldNames.map((name) => (
+              <span
+                key={name}
+                className="rounded-md border px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </Card>
+  );
+}
+
+/** แยกเป็น component เพื่อให้ยิง `GET /device-config-overrides/{id}` เฉพาะ role ที่มีสิทธิ์ */
+function OverrideValues({
+  overrideId,
+  configId,
+}: {
+  overrideId: string;
+  configId: string | null;
+}) {
+  const { data, isLoading, error } = useDeviceConfigOverride(overrideId);
+
+  return isLoading && !data ? (
+    <p className="text-sm text-muted-foreground">กำลังโหลดค่าที่ขอแก้</p>
+  ) : error || !data ? (
+    <p className="text-sm text-destructive">
+      {error ?? "โหลดค่าที่ขอแก้ไม่สำเร็จ"}
+    </p>
+  ) : (
+    <OverrideFieldDiffList
+      configId={configId ?? data.configId}
+      fields={data.fields}
+      className="text-sm"
+    />
   );
 }
 

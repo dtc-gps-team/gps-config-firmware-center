@@ -21,8 +21,11 @@ function valueText(value: unknown): string {
  * ตอนขอ (ตอนกดส่ง backend เช็คว่า Config ยังเป็นเวอร์ชันที่อนุมัติไว้) · field ที่
  * Override แก้ (`overriddenFields`) ไม่แสดงค่าของ Config แต่ชี้ไปส่วน Override แทน
  *
- * ก่อน definitions โหลดเสร็จ treat ทุก field เป็น sensitive ไว้ก่อน กัน plaintext
- * หลุดช่วงสั้นๆ (mirror override-field-diff-list.tsx)
+ * ซ่อนทุกค่าไว้ก่อนจนกว่าจะได้ definitions จริง (fail-closed แบบเดียวกับ
+ * config-approval-detail-view.tsx และ approval-card.tsx) ทั้งช่วงที่ยังโหลด และ
+ * ตอนโหลดไม่สำเร็จ เช่น Auditor/Admin ที่ไม่มีสิทธิ์ `config-definition:Read` จะได้
+ * 403 ถ้าเช็คแค่ `isLoading` ชุด field ลับจะว่าง ค่าลับโชว์เป็นตัวอักษรจริง
+ * (รีวิว B บน PR #469)
  */
 export function ConfigFieldValueList({
   configId,
@@ -45,8 +48,9 @@ export function ConfigFieldValueList({
     }
     return set;
   }, [definitions.data]);
+  const definitionsReady = !definitions.isLoading && definitions.data !== null;
   const isMasked = (name: string) =>
-    definitions.isLoading || sensitiveFieldNames.has(name);
+    !definitionsReady || sensitiveFieldNames.has(name);
   const overridden = new Set(overriddenFields);
   const names = [...fieldNames].sort((a, b) => a.localeCompare(b));
 

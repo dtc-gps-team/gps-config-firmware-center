@@ -71,6 +71,20 @@ describe("ConfigFieldValueList", () => {
     expect(screen.getByText("ซ่อนค่า")).toBeInTheDocument();
   });
 
+  it("โหลด definitions ไม่สำเร็จ (เช่น Auditor ได้ 403): ค่ายังถูกซ่อน", () => {
+    state.definitions = { data: null, isLoading: false, error: "forbidden" };
+    render(
+      <ConfigFieldValueList
+        configId="cfg-1"
+        fieldNames={["gps.send_interval_sec", "COMMAND_PASSWORD"]}
+      />,
+    );
+
+    expect(screen.queryByText("30")).not.toBeInTheDocument();
+    expect(screen.queryByText("s3cr3t")).not.toBeInTheDocument();
+    expect(screen.getAllByText("ซ่อนค่า")).toHaveLength(2);
+  });
+
   it("field ที่ Override แก้: ไม่แสดงค่าของ Config ชี้ไปส่วน Override", () => {
     render(
       <ConfigFieldValueList

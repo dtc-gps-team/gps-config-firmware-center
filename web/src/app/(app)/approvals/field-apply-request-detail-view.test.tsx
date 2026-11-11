@@ -8,11 +8,12 @@ import type {
 } from "@/lib/field-apply-request-api";
 
 vi.mock("@/components/auth/auth-provider", () => ({
-  useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
+  useAuth: () => ({ session: { accessToken: "tok", role: state.role } }),
 }));
 vi.mock("@/lib/jwt", () => ({ getTokenSubject: () => "user-op-1" }));
 
 const state = vi.hoisted(() => ({
+  role: "Operation",
   request: {
     data: null as unknown,
     progress: null as unknown,
@@ -103,6 +104,7 @@ function makeItem(
 beforeEach(() => {
   state.request = { data: null, progress: null, isLoading: false, error: null };
   state.overrideCalls = [];
+  state.role = "Operation";
 });
 
 describe("FieldApplyRequestDetailView", () => {
@@ -137,6 +139,28 @@ describe("FieldApplyRequestDetailView", () => {
     expect(screen.getByTestId("diff")).toHaveTextContent(
       '{"gps.send_interval_sec":10}',
     );
+  });
+
+  it("มี Override แต่ role ไม่มีสิทธิ์ดูค่า (Auditor): ไม่ยิง แสดงข้อความกลางๆ และชื่อ field", () => {
+    state.role = "Auditor";
+    state.request.data = makeItem({
+      overrideId: "ov-9",
+      override: {
+        id: "ov-9",
+        reason: "ลูกค้าขอส่งถี่ขึ้น",
+        fieldNames: ["gps.report_mode"],
+      },
+    });
+    render(<FieldApplyRequestDetailView id="req-1" />);
+
+    expect(state.overrideCalls).toHaveLength(0);
+    expect(screen.queryByTestId("diff")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("บัญชีนี้ไม่มีสิทธิ์ดูค่าที่ขอแก้ แสดงเฉพาะชื่อ field"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("gps.report_mode")).toBeInTheDocument();
+    expect(screen.queryByText("โหลดค่าที่ขอแก้ไม่สำเร็จ")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "อนุมัติ" })).not.toBeInTheDocument();
   });
 
   it("ถูกปฏิเสธแล้ว: ไม่มีปุ่ม แสดงผู้ปฏิเสธและเหตุผล", () => {
