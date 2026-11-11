@@ -988,34 +988,48 @@ export class ConfigApplyRequestService implements OnModuleInit {
       orderBy: { requestedAt: 'desc' },
       include: LIST_INCLUDE,
     });
-    const views: ConfigApplyRequestView[] = [];
-    for (const row of rows) {
-      const override = row.override
-        ? {
-            id: row.override.id,
-            reason: row.override.reason,
-            fieldNames: Object.keys(
-              (row.override.fields as Record<string, unknown>) ?? {},
-            ),
-          }
-        : null;
-      if (!row.config || !row.configId) {
-        // คำขอ Firmware (docs/27 §5.2) — ไม่มีค่า field ให้แสดง
-        views.push({ ...row, config: null, fieldNames: [], override });
-        continue;
-      }
-      // ชื่อ field ที่คำขอนี้ส่ง = Config + Override ของคำขอนี้เอง (มติ B 2026-11-03 —
-      // Override ใช้ครั้งเดียวและผูกกับคำขอที่พามัน ไม่ใช่แถวล่าสุดของกล่อง ซึ่งหลัง
-      // ส่งแล้วถูกใช้ไปแล้ว ประวัติคำขอเก่าจะได้ไม่เปลี่ยนตาม)
-      const fields = {
-        ...asFieldMap(row.config.fields),
-        ...asFieldMap(row.override?.fields ?? null),
-      };
-      const { fields: _baseFields, ...config } = row.config;
-      void _baseFields;
-      views.push({ ...row, config, fieldNames: Object.keys(fields), override });
+    return rows.map((row) => this.toView(row));
+  }
+
+  /**
+   * `GET /config-apply-requests/{id}` — คำขอ 1 รายการสำหรับหน้ารายละเอียดบนเว็บ ·
+   * รูปเดียวกับแถวในคิว (`toView`) ไม่มีค่าจริงของ field เหมือนกัน (ค่าที่ช่างขอ
+   * Override เว็บดูผ่าน `GET /device-config-overrides/{id}`) · ทุกสถานะ ไม่ใช่แค่
+   * `pending` · ไม่พบ = 404
+   */
+  async findOne(id: string): Promise<ConfigApplyRequestView> {
+    const row = await this.prisma.configApplyRequest.findUnique({
+      where: { id },
+      include: LIST_INCLUDE,
+    });
+    if (!row) throw new NotFoundException('ไม่พบคำขอส่งเข้ากล่องนี้');
+    return this.toView(row);
+  }
+
+  private toView(row: RequestWithRelations): ConfigApplyRequestView {
+    const override = row.override
+      ? {
+          id: row.override.id,
+          reason: row.override.reason,
+          fieldNames: Object.keys(
+            (row.override.fields as Record<string, unknown>) ?? {},
+          ),
+        }
+      : null;
+    if (!row.config || !row.configId) {
+      // คำขอ Firmware (docs/27 §5.2) — ไม่มีค่า field ให้แสดง
+      return { ...row, config: null, fieldNames: [], override };
     }
-    return views;
+    // ชื่อ field ที่คำขอนี้ส่ง = Config + Override ของคำขอนี้เอง (มติ B 2026-11-03 —
+    // Override ใช้ครั้งเดียวและผูกกับคำขอที่พามัน ไม่ใช่แถวล่าสุดของกล่อง ซึ่งหลัง
+    // ส่งแล้วถูกใช้ไปแล้ว ประวัติคำขอเก่าจะได้ไม่เปลี่ยนตาม)
+    const fields = {
+      ...asFieldMap(row.config.fields),
+      ...asFieldMap(row.override?.fields ?? null),
+    };
+    const { fields: _baseFields, ...config } = row.config;
+    void _baseFields;
+    return { ...row, config, fieldNames: Object.keys(fields), override };
   }
 
   /**

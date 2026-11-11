@@ -293,6 +293,19 @@ export function canDecideDeviceConfigOverride(
 }
 
 /**
+ * ดูค่าที่ขอแก้ของคำขอ Config Override (`GET /device-config-overrides/{id}`)
+ * resource `device-config-override` action `Read` มีให้ Operation เท่านั้น
+ * (seed.ts; SuperAdmin ผ่านด้วย bypass ที่ PermissionGuard) role อื่นที่เปิดหน้า
+ * รายละเอียดคำขอส่งเข้ากล่องได้ (Auditor, Admin) จะได้ 403 จึงไม่ต้องยิง
+ * (รีวิว B บน PR #469)
+ */
+export function canReadDeviceConfigOverride(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation" || role === "SuperAdmin";
+}
+
+/**
  * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิว Firmware Override รายเครื่อง — RBAC_Matrix.md
  * ตาราง 4.1 `POST /device-firmware-overrides/{id}/approve` / `.../reject`:
  * resource `device-firmware-override` action `Approve` — Operation เท่านั้น

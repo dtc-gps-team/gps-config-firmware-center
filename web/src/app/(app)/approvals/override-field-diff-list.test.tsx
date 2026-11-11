@@ -5,7 +5,7 @@ import { OverrideFieldDiffList } from "./override-field-diff-list";
 
 const state = vi.hoisted(() => ({
   config: null as { fields: Record<string, unknown> } | null,
-  definitions: [] as { fieldName: string; sensitive: boolean }[],
+  definitions: [] as { fieldName: string; sensitive: boolean }[] | null,
 }));
 
 vi.mock("@/hooks/use-config-definitions", () => ({
@@ -38,6 +38,17 @@ describe("OverrideFieldDiffList", () => {
   it("field sensitive ซ่อนทั้งค่าเดิมและค่าที่ขอ ไม่มี plaintext บนหน้า", () => {
     state.config = { fields: { pw: "old-secret" } };
     state.definitions = [{ fieldName: "pw", sensitive: true }];
+
+    render(<OverrideFieldDiffList configId="c1" fields={{ pw: "new-secret" }} />);
+
+    expect(screen.queryByText("old-secret")).not.toBeInTheDocument();
+    expect(screen.queryByText("new-secret")).not.toBeInTheDocument();
+    expect(screen.getAllByText("••••••••")).toHaveLength(2);
+  });
+
+  it("โหลด definitions ไม่สำเร็จ (เช่น role ที่ได้ 403): ค่ายังถูกซ่อน", () => {
+    state.config = { fields: { pw: "old-secret" } };
+    state.definitions = null;
 
     render(<OverrideFieldDiffList configId="c1" fields={{ pw: "new-secret" }} />);
 

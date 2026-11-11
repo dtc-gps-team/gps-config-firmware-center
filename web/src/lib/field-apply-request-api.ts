@@ -84,6 +84,18 @@ export function listFieldApplyRequests(
   });
 }
 
+/** `GET /config-apply-requests/{id}` — คำขอ 1 รายการ (ทุกสถานะ) รูปเดียวกับแถวในคิว
+ * ใช้กับหน้ารายละเอียดคำขอ · สิทธิ์เดียวกับคิว */
+export function getFieldApplyRequest(
+  token: string,
+  id: string,
+): Promise<FieldApplyRequest> {
+  return apiJson<FieldApplyRequest>(
+    `/config-apply-requests/${encodeURIComponent(id)}`,
+    { token },
+  );
+}
+
 /** `POST /config-apply-requests/{id}/approve` — เปลี่ยนเป็น `approved` เท่านั้น
  * ยังไม่ส่งเข้ากล่อง (รอช่างที่ถือ Task กดส่ง) · ถ้าผูก Override ไว้ อนุมัติ
  * Override นั้นด้วยในทรานแซกชันเดียวกัน (docs/30 P1) */

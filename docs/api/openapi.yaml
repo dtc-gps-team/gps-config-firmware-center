@@ -1580,6 +1580,39 @@ paths:
         "403":
           description: ไม่มีสิทธิ์ดูคิวคำขอ
 
+  /config-apply-requests/{id}:
+    get:
+      tags: [config-apply-request]
+      operationId: getConfigApplyRequest
+      summary: คำขอส่งเข้ากล่อง 1 รายการ สำหรับหน้ารายละเอียดบนเว็บ (v3.95)
+      description: >-
+        สิทธิ์เดียวกับ `GET /config-apply-requests` (resource `config-apply-request`
+        action `Read`: Operation, Auditor, Admin, SuperAdmin) · รูปเดียวกับแถวในคิว
+        ใช้ได้ทุกสถานะ **ไม่มีค่าจริงของ field** (ค่าที่ช่างขอ Override ดูผ่าน
+        `GET /device-config-overrides/{id}`)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: คำขอที่พบ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequestQueueItem"
+        "400":
+          description: id ไม่ใช่ UUID
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคำขอ
+        "404":
+          description: ไม่พบคำขอ
+
   /config-apply-requests/{id}/approve:
     post:
       tags: [config-apply-request]

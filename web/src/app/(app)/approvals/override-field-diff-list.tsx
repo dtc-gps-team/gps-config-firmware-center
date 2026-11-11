@@ -26,8 +26,10 @@ function valueText(value: unknown): string {
  * = ค่าของพารามิเตอร์นั้นใน Config ต้นทาง (`configId`) · ยังโหลด Config ไม่เสร็จ
  * หรือโหลดไม่ได้ จะแสดงเฉพาะค่าที่ขอเหมือนเดิม ไม่บล็อกการอนุมัติ
  *
- * ก่อน definitions โหลดเสร็จ treat ทุก field เป็น sensitive ไว้ก่อน กัน plaintext
- * หลุดช่วงสั้นๆ (mirror config-approval-detail-view.tsx)
+ * ซ่อนทุกค่าไว้ก่อนจนกว่าจะได้ definitions จริง ทั้งช่วงที่ยังโหลด และตอนโหลด
+ * ไม่สำเร็จ (fail-closed แบบเดียวกับ config-approval-detail-view.tsx) role ที่ไม่มี
+ * สิทธิ์ `config-definition:Read` จะได้ 403 ถ้าเช็คแค่ `isLoading` ค่าลับจะโชว์
+ * เป็นตัวอักษรจริง (รีวิว B บน PR #469)
  */
 export function OverrideFieldDiffList({
   configId,
@@ -48,8 +50,9 @@ export function OverrideFieldDiffList({
     }
     return set;
   }, [definitions.data]);
+  const definitionsReady = !definitions.isLoading && definitions.data !== null;
   const isMasked = (name: string) =>
-    definitions.isLoading || sensitiveFieldNames.has(name);
+    !definitionsReady || sensitiveFieldNames.has(name);
 
   const entries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
 

@@ -5,11 +5,26 @@ import { Badge } from "@/components/ui/badge";
 import { ApprovalQueueCard } from "./approval-queue-card";
 import { FieldApplyRequestApprovalActions } from "./field-apply-request-approval-actions";
 
+/** เหตุผลที่ผู้ใช้คนนี้อนุมัติ/ปฏิเสธคำขอไม่ได้ (SoD) ใช้ร่วมกันระหว่างการ์ดกับหน้า
+ * รายละเอียด · ไม่รู้ตัวตนผู้ใช้ = ไม่เทียบ ปล่อยให้ backend ตัดสินตอนกด */
+export function fieldApplySodBlockedReason(
+  item: FieldApplyRequest,
+  myUserId?: string | null,
+): string | null {
+  if (!myUserId) return null;
+  if (myUserId === item.requestedBy) {
+    return "คุณเป็นผู้ส่งคำขอนี้เอง อนุมัติ/ปฏิเสธไม่ได้ (Separation of Duty)";
+  }
+  if (item.kind !== "firmware" && myUserId === item.configAssignedBy) {
+    return "คุณเป็นผู้ผูก Config เข้างานนี้ อนุมัติการส่งนี้เองไม่ได้ (Separation of Duty)";
+  }
+  return null;
+}
+
 /**
  * คำขอส่ง Config/Firmware เข้ากล่องจากหน้างาน 1 รายการในคิว Approval Center
- * (docs/25 §3.3–§3.4 · docs/27 B2 · docs/30 P1) — list endpoint ไม่คืนค่าจริง
- * ของ field (แค่ `fieldNames`) ข้อมูลครบพอแสดงในการ์ดเดียว จึงไม่มีหน้า
- * รายละเอียดแยก (`detailHref` ไม่ส่ง)
+ * (docs/25 §3.3–§3.4 · docs/27 B2 · docs/30 P1) — กดดูรายละเอียดได้ที่
+ * `/approvals/field-apply/{id}` (ค่าที่แก้ของ Override, ความคืบหน้าการส่ง)
  */
 export function FieldApplyRequestApprovalCard({
   item,
@@ -27,16 +42,12 @@ export function FieldApplyRequestApprovalCard({
   onDecided: (action: "approve" | "reject") => void;
 }) {
   const isFirmware = item.kind === "firmware";
-  const sodBlockedReason =
-    myUserId && myUserId === item.requestedBy
-      ? "คุณเป็นผู้ส่งคำขอนี้เอง อนุมัติ/ปฏิเสธไม่ได้ (Separation of Duty)"
-      : myUserId && !isFirmware && myUserId === item.configAssignedBy
-        ? "คุณเป็นผู้ผูก Config เข้างานนี้ อนุมัติการส่งนี้เองไม่ได้ (Separation of Duty)"
-        : null;
+  const sodBlockedReason = fieldApplySodBlockedReason(item, myUserId);
 
   return (
     <ApprovalQueueCard
       tag={isFirmware ? "Firmware" : "Config"}
+      detailHref={`/approvals/field-apply/${item.id}`}
       title={
         item.task.title || <span className="font-mono">{item.deviceId}</span>
       }

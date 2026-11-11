@@ -34,7 +34,8 @@ export function CommandPalette({
 }) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+      // Chrome autofill ยิง keydown ที่ไม่มี `key` (undefined) จึงต้อง `?.`
+      if (event.key?.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         onOpenChange(!open);
       }
