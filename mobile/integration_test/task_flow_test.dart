@@ -36,6 +36,17 @@ Future<void> _login(WidgetTester tester, String username) async {
   await tester.pumpAndSettle(const Duration(seconds: 4));
 }
 
+/// งาน `pending` ของ `st.test` ใน `backend/scripts/seed-ci-fixtures.ts`
+const _pendingFixtureTitle = 'ติดตั้งอุปกรณ์ DEV-0003';
+
+/// การ์ดงานบนหน้าแรก (`home_recent_<task id>`) ไม่รวมตัวโหลด `home_recent_loading`
+Finder _homeTaskCards() => find.byWidgetPredicate((w) {
+  final key = w.key;
+  return key is ValueKey<String> &&
+      key.value.startsWith('home_recent_') &&
+      key.value != 'home_recent_loading';
+});
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -49,17 +60,24 @@ void main() {
     // === ST: sees own tasks, can open + change status ===
     await _login(tester, 'st.test');
 
-    // หน้าแรกของ ST/OT รวมรายการงานจากหน้า "งานของฉัน" เดิมไว้แล้ว (docs/22
-    // §7.2): ส่วน "ต้องทำ" + "ประวัติงานล่าสุด" บนหน้าเดียว · fixtures มีงาน
-    // `pending` อย่างน้อยหนึ่งงาน จึงมีการ์ดในส่วนต้องทำเสมอ
-    expect(find.byKey(const Key('home_open_section')), findsOneWidget);
-    expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
+    // หน้าแรกของ ST/OT แบบ r4 (#430): ส่วนภาพรวม `home_overview` มีการ์ดงานล่าสุด
+    // key `home_recent_<task id>` · หาการ์ดของงาน `pending` จากชื่องานใน fixtures
+    // (seed-ci-fixtures.ts) ไม่ใช้ใบแรก เพราะ fixtures สร้างด้วย createMany
+    // `updatedAt` เท่ากันทุกงาน ลำดับบนหน้าแรกจึงขึ้นกับ id (สุ่ม) และงาน
+    // `completed` เปลี่ยนสถานะไม่ได้
+    expect(find.byKey(const Key('home_overview')), findsOneWidget);
+    final pendingTask = find.ancestor(
+      of: find.text(_pendingFixtureTitle),
+      matching: _homeTaskCards(),
+    );
+    expect(pendingTask, findsOneWidget);
     await binding.takeScreenshot('01-home-st');
 
-    await tester.tap(find.byKey(const Key('my_task_card_0')));
+    await tester.tap(pendingTask);
     await tester.pumpAndSettle(const Duration(seconds: 3));
     expect(find.text('รายละเอียดงาน'), findsOneWidget);
-    expect(find.byKey(const Key('task_status_save')), findsOneWidget);
+    // ปุ่มบันทึกอยู่แถบล่าง ขึ้นเมื่อเลือกสถานะใหม่แล้วเท่านั้น (`_dirty`)
+    expect(find.byKey(const Key('task_status_save')), findsNothing);
     // ST/OT may only set in_progress / completed — not pending, not cancelled.
     expect(find.byKey(const Key('status_choice_in_progress')), findsOneWidget);
     expect(find.byKey(const Key('status_choice_completed')), findsOneWidget);
@@ -67,8 +85,13 @@ void main() {
     expect(find.byKey(const Key('status_choice_cancelled')), findsNothing);
     await binding.takeScreenshot('02-task-detail-st');
 
-    await tester.tap(find.byKey(const Key('status_choice_in_progress')));
+    final inProgress = find.byKey(const Key('status_choice_in_progress'));
+    await tester.ensureVisible(inProgress);
     await tester.pumpAndSettle();
+    await tester.tap(inProgress);
+    await tester.pumpAndSettle();
+    // pending -> in_progress ไม่มี dialog ยืนยัน (มีเฉพาะตอนปิดงาน)
+    expect(find.byKey(const Key('task_status_save')), findsOneWidget);
     await tester.tap(find.byKey(const Key('task_status_save')));
     await tester.pumpAndSettle(const Duration(seconds: 4));
     await binding.takeScreenshot('03-task-detail-updated-st');
@@ -88,7 +111,7 @@ void main() {
     expect(find.byKey(const Key('app_tab_bar')), findsOneWidget);
     expect(find.byKey(const Key('tab_home')), findsNothing);
     expect(find.byKey(const Key('tab_devices')), findsOneWidget);
-    expect(find.byKey(const Key('home_open_section')), findsNothing);
+    expect(find.byKey(const Key('home_overview')), findsNothing);
     await binding.takeScreenshot('04-operation-no-task-tab');
   });
 }
