@@ -47,6 +47,8 @@ import { RefreshControl } from "@/components/refresh-control";
 import { ChangeFlash } from "@/components/motion/change-flash";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { PageHeader } from "@/components/page-header";
+import { RoleGuard } from "@/components/auth/role-guard";
+import { canReadCampaign } from "@/lib/permissions";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
@@ -69,7 +71,22 @@ import {
 /** ระหว่างรอผลรายเครื่อง รีเฟรชทุก 5 วินาที (ผลจากกล่องมาทีหลังกดปล่อยหลายวินาที) */
 const RESULT_POLL_INTERVAL_MS = 5_000;
 
-export function CampaignRolloutDetailView({
+/** กันทั้งหน้าด้วย `RoleGuard` แบบเดียวกับหน้า Campaign (FirmwareEngineer/
+ * QAEngineer ไม่มีสิทธิ์ `campaign:Read`) · เดิมไม่มีตัวกัน role เหล่านี้กดลิงก์
+ * จากการ์ด "ผลกระทบ" ในหน้า Incident เข้ามาแล้วเจอข้อความ 403 ดิบจาก backend ·
+ * ใส่ตัวกันไว้ชั้นนอก hook ข้างในจึงไม่ยิง API เลยถ้าไม่มีสิทธิ์ */
+export function CampaignRolloutDetailView(props: {
+  campaignId: string;
+  rolloutId: string;
+}) {
+  return (
+    <RoleGuard allow={canReadCampaign}>
+      <RolloutDetailContent {...props} />
+    </RoleGuard>
+  );
+}
+
+function RolloutDetailContent({
   campaignId,
   rolloutId,
 }: {

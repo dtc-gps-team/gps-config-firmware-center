@@ -20,11 +20,14 @@ const targetsQuery = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
+const auth = vi.hoisted(() => ({ role: "Operation" }));
+const useCampaignRolloutSpy = vi.hoisted(() => vi.fn());
+
 vi.mock("@/hooks/use-campaign-rollout", () => ({
-  useCampaignRollout: () => ({
-    ...rolloutQuery.value,
-    refetch: rolloutQuery.refetch,
-  }),
+  useCampaignRollout: () => {
+    useCampaignRolloutSpy();
+    return { ...rolloutQuery.value, refetch: rolloutQuery.refetch };
+  },
 }));
 vi.mock("@/hooks/use-campaign-rollout-targets", () => ({
   useCampaignRolloutTargets: () => ({
@@ -33,7 +36,10 @@ vi.mock("@/hooks/use-campaign-rollout-targets", () => ({
   }),
 }));
 vi.mock("@/components/auth/auth-provider", () => ({
-  useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
+  useAuth: () => ({
+    isReady: true,
+    session: { accessToken: "tok", role: auth.role },
+  }),
 }));
 vi.mock("@/hooks/use-config", () => ({
   useConfig: () => ({ data: null }),
@@ -283,5 +289,32 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
     setup(rollout({ status: "approved" }), [target("D1", "pending")]);
 
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+});
+
+describe("CampaignRolloutDetailView: สิทธิ์เข้าหน้า", () => {
+  afterEach(() => {
+    auth.role = "Operation";
+    useCampaignRolloutSpy.mockReset();
+  });
+
+  it.each(["FirmwareEngineer", "QAEngineer"])(
+    "%s ไม่มีสิทธิ์อ่าน Campaign: เห็นหน้าไม่มีสิทธิ์ และไม่ยิง API ของ Rollout",
+    (role) => {
+      auth.role = role;
+      setup(rollout(), []);
+
+      expect(screen.getByText("คุณไม่มีสิทธิ์เข้าถึงหน้านี้")).toBeInTheDocument();
+      expect(useCampaignRolloutSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("Operation เข้าได้ตามปกติ", () => {
+    setup(rollout(), []);
+
+    expect(
+      screen.queryByText("คุณไม่มีสิทธิ์เข้าถึงหน้านี้"),
+    ).not.toBeInTheDocument();
+    expect(useCampaignRolloutSpy).toHaveBeenCalled();
   });
 });
