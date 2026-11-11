@@ -118,19 +118,34 @@ Map<String, dynamic> _decodePayload(Object? raw) {
   return const {};
 }
 
-/// Thai title for a push, reusing the notification-list labels. Unknown types
-/// (backend only sends `task_assigned` today) get a generic title rather than
-/// throwing via `NotificationType.fromWire`.
-String _titleFor(Object? type) {
-  if (type is String) {
-    try {
-      return NotificationTypeStyle.label(NotificationType.fromWire(type));
-    } catch (_) {
-      // unknown type — generic title below
-    }
+/// Thai title for a push — the same text as the notification list
+/// ([NotificationTypeStyle.labelOf]), so a Firmware apply request says
+/// "Firmware" (payload `kind`) and a retry says its round ("รอบ 1/3"). The list
+/// already did this; the push used the type alone and always said "Config"
+/// (found on a real-box test 10/11/2026). Unknown types / a broken payload get
+/// a generic title or the type's label rather than throwing.
+String resolvePushTitle(Map<String, dynamic> data) {
+  final type = data['type'];
+  if (type is! String) return _genericPushTitle;
+  final NotificationType parsed;
+  try {
+    parsed = NotificationType.fromWire(type);
+  } catch (_) {
+    return _genericPushTitle;
   }
-  return 'การแจ้งเตือนใหม่';
+  return NotificationTypeStyle.labelOf(
+    AppNotification(
+      id: '',
+      userId: '',
+      type: parsed,
+      payload: _decodePayload(data['payload']),
+      read: false,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+    ),
+  );
 }
+
+const _genericPushTitle = 'การแจ้งเตือนใหม่';
 
 /// Builds and shows a local notification for an FCM `data` payload. Stores the
 /// raw `data` (JSON) as the notification `payload` so a later tap resolves the
@@ -154,7 +169,7 @@ Future<void> showPushLocalNotification(
     // Notification id — the backend payload has no stable id yet, so use a
     // time-derived value; distinct pushes replace nothing.
     id: DateTime.now().millisecondsSinceEpoch ~/ 1000 & 0x7fffffff,
-    title: _titleFor(data['type']),
+    title: resolvePushTitle(data),
     body: resolvePushBody(data),
     notificationDetails: details,
     payload: jsonEncode(data),
