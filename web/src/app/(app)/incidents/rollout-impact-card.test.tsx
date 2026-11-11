@@ -1,8 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import { RolloutImpactCard } from "./rollout-impact-card";
 import type { Incident } from "@/lib/incident-api";
+
+const state = vi.hoisted(() => ({ role: "Operation" }));
+
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ isReady: true, session: { role: state.role } }),
+}));
+
+beforeEach(() => {
+  state.role = "Operation";
+});
 
 function incident(overrides: Partial<Incident> = {}): Incident {
   return {
@@ -73,6 +83,21 @@ describe("RolloutImpactCard", () => {
       screen.getByRole("link", { name: /ดู Rollout ต้นทาง/ }),
     ).toHaveAttribute("href", "/campaigns/c-1/rollouts/r-9");
   });
+
+  it.each(["FirmwareEngineer", "QAEngineer"])(
+    "%s ไม่มีสิทธิ์อ่าน Campaign: ไม่แสดงลิงก์ไปหน้า Rollout แต่ยังเห็นผลกระทบ",
+    (role) => {
+      state.role = role;
+      render(<RolloutImpactCard incident={incident()} />);
+
+      expect(
+        screen.queryByRole("link", { name: /ดู Rollout ต้นทาง/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText("ล้มเหลว 25 จาก 100 เครื่อง (25%)"),
+      ).toBeInTheDocument();
+    },
+  );
 
   it("เครื่องที่ล้มเหลวไม่เกินที่เก็บไว้: ไม่มี 'และอีก'", () => {
     render(

@@ -5,7 +5,9 @@ import { ExternalLinkIcon, ServerCrashIcon } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { useAuth } from "@/components/auth/auth-provider";
 import type { Incident } from "@/lib/incident-api";
+import { canReadCampaign } from "@/lib/permissions";
 import {
   failedDeviceSample,
   incidentImpact,
@@ -23,7 +25,12 @@ export function RolloutImpactCard({ incident }: { incident: Incident }) {
   const impact = incidentImpact(incident);
   const sample = failedDeviceSample(incident);
   const errors = incidentSampleErrors(incident);
-  const href = incidentRolloutHref(incident);
+  const { session } = useAuth();
+  // FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ campaign:Read ไม่แสดงลิงก์ไปหน้า
+  // Rollout ที่เปิดแล้วเจอแค่หน้า "ไม่มีสิทธิ์"
+  const href = canReadCampaign(session?.role)
+    ? incidentRolloutHref(incident)
+    : null;
 
   if (!impact && !sample && errors.length === 0 && !href) return null;
 

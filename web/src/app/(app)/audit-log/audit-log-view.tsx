@@ -43,18 +43,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { RefreshControl } from "@/components/refresh-control";
+import { AUDIT_MODULE_OPTIONS } from "@/lib/audit-display";
 import { AuditLogDetailSheet } from "./audit-log-detail-sheet";
-
-/** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
- * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
- * service.ts) · task/notification (โมดูล B) ยังไม่มี audit log */
-const AUDIT_MODULE_OPTIONS = [
-  { value: "config", label: "Config" },
-  { value: "config-deletion", label: "Config Deletion" },
-  { value: "campaign", label: "Campaign" },
-  { value: "firmware", label: "Firmware" },
-  { value: "device", label: "Device" },
-];
 
 /** แถวต่อหน้า — ตรงกับ default `pageSize` ของ backend (`GET /audit-logs`) */
 const PAGE_SIZE = 20;
