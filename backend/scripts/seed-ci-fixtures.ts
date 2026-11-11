@@ -48,9 +48,15 @@ async function main(): Promise<void> {
 
   const now = Date.now();
 
-  // Task — เรียง createdAt desc ใน GET /tasks ⇒ index 0 = ตัวล่าสุด (createdAt
-  // มากสุด) ต้องเป็น pending เพื่อให้ ST กดเปลี่ยนเป็น in_progress ได้ใน
-  // task_flow_test.dart · กำหนด createdAt ห่างกันชัดเจนกันลำดับสลับ
+  // Task — หน้าแรกของ ST เรียงตาม updatedAt desc แล้วตาม id (#430) ·
+  // task_flow_test.dart หางาน pending จากชื่อ (`ติดตั้งอุปกรณ์ DEV-0003`) ไม่ใช้
+  // ลำดับ · กำหนด createdAt/updatedAt ให้ห่างกันชัดเจน (createMany ใส่ updatedAt
+  // เท่ากันทุกแถว ทำให้ลำดับขึ้นกับ id ที่สุ่ม) — งาน pending ใหม่สุดจึงอยู่บน
+  // หน้าแรกเสมอแม้จะเพิ่มงานใน fixtures เกิน HomeTokens.previewLimit
+  const taskAt = (hoursAgo: number) => {
+    const at = new Date(now - hoursAgo * HOUR);
+    return { createdAt: at, updatedAt: at };
+  };
   await prisma.task.createMany({
     data: [
       {
@@ -59,7 +65,7 @@ async function main(): Promise<void> {
         assignedTo: st.id,
         deviceId: 'DEV-0001',
         status: 'completed',
-        createdAt: new Date(now - 3 * HOUR),
+        ...taskAt(3),
       },
       {
         title: 'เปลี่ยนซิมการ์ด DEV-0002',
@@ -67,17 +73,21 @@ async function main(): Promise<void> {
         assignedTo: st.id,
         deviceId: 'DEV-0002',
         status: 'in_progress',
-        createdAt: new Date(now - 2 * HOUR),
-      },
-      {
-        title: 'ติดตั้งอุปกรณ์ DEV-0003',
-        description: 'ติดตั้งเครื่องใหม่ที่รถลูกค้า แล้วยืนยันการทำงาน',
-        assignedTo: st.id,
-        deviceId: 'DEV-0003',
-        status: 'pending',
-        createdAt: new Date(now - 1 * HOUR),
+        ...taskAt(2),
       },
     ],
+  });
+  // งาน pending สร้างแยกเพื่อเอา id จริงไปใส่ใน notification task_assigned
+  // (กดแจ้งเตือนแล้วเปิดหน้ารายละเอียดงานนี้ได้จริง — notification_flow_test.dart)
+  const pendingTask = await prisma.task.create({
+    data: {
+      title: 'ติดตั้งอุปกรณ์ DEV-0003',
+      description: 'ติดตั้งเครื่องใหม่ที่รถลูกค้า แล้วยืนยันการทำงาน',
+      assignedTo: st.id,
+      deviceId: 'DEV-0003',
+      status: 'pending',
+      ...taskAt(1),
+    },
   });
 
   // Notification — เรียง createdAt desc ใน GET /notifications ⇒ index 0 = ตัว
@@ -113,7 +123,7 @@ async function main(): Promise<void> {
         userId: st.id,
         type: 'task_assigned',
         payload: {
-          taskId: 'demo-task-latest',
+          taskId: pendingTask.id,
           title: 'ติดตั้งอุปกรณ์ DEV-0003',
         },
         read: false,

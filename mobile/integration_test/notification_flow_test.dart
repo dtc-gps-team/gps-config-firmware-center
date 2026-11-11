@@ -15,6 +15,11 @@ import 'package:mobile/main.dart' as app;
 /// ```
 /// Needs a seeded `st.test` / `password123` user with a few notifications
 /// (some unread).
+///
+/// ชื่องาน pending ใน `backend/scripts/seed-ci-fixtures.ts` ที่ notification
+/// `task_assigned` ชี้ไป
+const _pendingFixtureTitle = 'ติดตั้งอุปกรณ์ DEV-0003';
+
 Future<void> _ensureLoggedOut(WidgetTester tester) async {
   if (find.byKey(const Key('app_tab_bar')).evaluate().isNotEmpty) {
     await _logout(tester);
@@ -62,18 +67,25 @@ void main() {
     final dotsBefore = find.byKey(const Key('unread_dot')).evaluate().length;
     await tester.tap(find.byKey(const Key('notification_tile_0')));
     await tester.pumpAndSettle(const Duration(seconds: 3));
-    // tile_0 ใน fixtures เป็น task_assigned กดแล้วเปิด Task Detail ทับ (deep link)
-    // ต้องกลับมาหน้ารายการก่อนนับ ไม่งั้นหน้ารายการ offstage นับได้ 0 เสมอ
-    if (find.byKey(const Key('notification_tile_0')).evaluate().isEmpty) {
-      await tester.tap(find.byTooltip('ย้อนกลับ'));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
-    }
+    // tile_0 ใน fixtures เป็น task_assigned ชี้ไปงาน pending จริง
+    // (seed-ci-fixtures.ts) กดแล้วต้องเปิด Task Detail ของงานนั้น (deep link)
+    final header = find.byKey(const Key('app_ink_header'));
+    expect(
+      find.descendant(of: header, matching: find.text('รายละเอียดงาน')),
+      findsOneWidget,
+    );
+    expect(find.text(_pendingFixtureTitle), findsWidgets);
+    await binding.takeScreenshot('03-notification-deep-link-task');
+
+    // กลับมาหน้ารายการก่อนนับ ไม่งั้นหน้ารายการ offstage นับได้ 0 เสมอ
+    await tester.tap(find.byKey(const Key('app_ink_header_back')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(find.byKey(const Key('notification_tile_0')), findsOneWidget);
     expect(
       find.byKey(const Key('unread_dot')).evaluate().length,
       lessThan(dotsBefore),
     );
-    await binding.takeScreenshot('03-notification-after-read');
+    await binding.takeScreenshot('04-notification-after-read');
   });
 }
 
