@@ -46,7 +46,14 @@ void main() {
     // --- notification list from GET /notifications ---
     await tester.tap(find.byKey(const Key('tab_notifications')));
     await tester.pumpAndSettle(const Duration(seconds: 3));
-    expect(find.text('รายการแจ้งเตือน'), findsOneWidget);
+    // หัวหน้าแบบ r4 ชื่อ "แจ้งเตือน" (#430) ซ้ำกับป้ายแท็บ จึงหาเฉพาะในหัวหน้า
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('app_ink_header')),
+        matching: find.text('แจ้งเตือน'),
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('notification_tile_0')), findsOneWidget);
     await binding.takeScreenshot('02-notification-list');
 
@@ -55,6 +62,13 @@ void main() {
     final dotsBefore = find.byKey(const Key('unread_dot')).evaluate().length;
     await tester.tap(find.byKey(const Key('notification_tile_0')));
     await tester.pumpAndSettle(const Duration(seconds: 3));
+    // tile_0 ใน fixtures เป็น task_assigned กดแล้วเปิด Task Detail ทับ (deep link)
+    // ต้องกลับมาหน้ารายการก่อนนับ ไม่งั้นหน้ารายการ offstage นับได้ 0 เสมอ
+    if (find.byKey(const Key('notification_tile_0')).evaluate().isEmpty) {
+      await tester.tap(find.byTooltip('ย้อนกลับ'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+    }
+    expect(find.byKey(const Key('notification_tile_0')), findsOneWidget);
     expect(
       find.byKey(const Key('unread_dot')).evaluate().length,
       lessThan(dotsBefore),
