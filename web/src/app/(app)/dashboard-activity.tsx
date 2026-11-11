@@ -4,11 +4,18 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import {
   BoxIcon,
+  Building2Icon,
+  ClipboardListIcon,
   CpuIcon,
   HistoryIcon,
+  LayersIcon,
+  LibraryIcon,
   MegaphoneIcon,
+  SendIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
+  TriangleAlertIcon,
+  UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +32,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/components/auth/auth-provider";
 import { canAccessAuditLog } from "@/lib/permissions";
+import { auditActivityText } from "@/lib/audit-display";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { listItem, staggerContainer } from "@/lib/motion";
 
@@ -34,28 +42,15 @@ const MODULE_ICON: Record<string, LucideIcon> = {
   campaign: MegaphoneIcon,
   firmware: CpuIcon,
   device: BoxIcon,
+  "config-definition": LibraryIcon,
+  "config-apply-request": SendIcon,
+  "device-model": LayersIcon,
+  incident: TriangleAlertIcon,
+  task: ClipboardListIcon,
+  customer: Building2Icon,
+  user: UsersIcon,
 };
 
-const MODULE_LABEL: Record<string, string> = {
-  config: "Config",
-  "config-deletion": "คำขอลบ Config",
-  campaign: "Campaign",
-  firmware: "Firmware",
-  device: "อุปกรณ์",
-};
-
-/** action string จาก backend (ดู audit-api.ts) → คำกริยาภาษาไทย · action ที่
- * ไม่อยู่ใน map (ยังไม่เจอจริง หรือเพิ่มใหม่ทีหลัง) โชว์ค่าดิบแทน ไม่ error */
-const ACTION_LABEL: Record<string, string> = {
-  create: "สร้าง",
-  update: "แก้ไข",
-  approve: "อนุมัติ",
-  reject: "ปฏิเสธ",
-  delete: "ลบ",
-  decide: "ส่งผลทดสอบของ",
-  "apply-config": "นำไปใช้กับ",
-  keep: "คงสถานะ",
-};
 
 /**
  * กิจกรรมล่าสุดบน Dashboard — ต่อ `GET /audit-logs` จริงแล้ว (เดิมเป็น
@@ -112,8 +107,7 @@ export function DashboardActivity() {
           >
             {rows.map((row) => {
               const Icon = MODULE_ICON[row.auditModule] ?? HistoryIcon;
-              const moduleLabel = MODULE_LABEL[row.auditModule] ?? row.auditModule;
-              const actionLabel = ACTION_LABEL[row.action] ?? row.action;
+              const activity = auditActivityText(row.action, row.auditModule);
               return (
                 <motion.li
                   key={row.id}
@@ -123,7 +117,7 @@ export function DashboardActivity() {
                   <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
                     <span className="font-medium">{row.actorName}</span>{" "}
-                    {actionLabel} {moduleLabel}
+                    {activity}
                   </span>
                   <RelativeTime
                     iso={row.createdAt}
