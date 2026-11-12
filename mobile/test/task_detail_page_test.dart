@@ -10,6 +10,7 @@ import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
@@ -19,6 +20,7 @@ import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/apply_request_history_page.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
+import 'package:mobile/features/task/task_timeline_section.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
@@ -139,6 +141,8 @@ Future<void> _pump(
   TaskEventRepository? eventRepo,
   GoRouter? router,
   bool disableAnimations = false,
+  // ปุ่มเพิ่มบันทึกปิดในแอปจริง (ค่าเริ่มต้น) — เทสเดิมของปุ่มสั่งเปิด
+  bool taskNotes = true,
 }) async {
   // หัว r4 (AppInkHeader) สูงกว่าหัวเดิม เนื้อหาเลยตกใต้จอ 800x600 ของเทส
   // ใช้จอสูงเป็นค่าเริ่มต้น — ยกเว้นเทสที่ตั้งขนาดจอเอง (เช่น 411dp)
@@ -173,6 +177,7 @@ Future<void> _pump(
         configApplyRequestRepositoryProvider.overrideWithValue(
           applyRepo ?? FakeConfigApplyRequestRepository(),
         ),
+        taskNotesEnabledProvider.overrideWithValue(taskNotes),
       ],
       child: router == null
           ? MaterialApp(
@@ -1516,6 +1521,27 @@ void main() {
 
       expect(find.text('สร้างงาน'), findsOneWidget);
     });
+
+    testWidgets(
+      'ปิดปุ่มเพิ่มบันทึก (ค่าเริ่มต้นของแอป) -> ไม่เห็นปุ่ม แต่ประวัติงานยังอยู่',
+      (tester) async {
+        expect(AppConfig.taskNotesEnabled, isFalse);
+        final events = _FakeTaskEventRepository(events: [timeline.first]);
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.pending),
+          ),
+          eventRepo: events,
+          taskNotes: AppConfig.taskNotesEnabled,
+        );
+        await scrollToTimeline(tester);
+
+        expect(find.byKey(const Key('task_add_note_button')), findsNothing);
+        expect(find.text('ประวัติงาน'), findsOneWidget);
+        expect(find.text('สร้างงาน'), findsOneWidget);
+      },
+    );
 
     for (final (label, role, status, visible) in [
       ('ST งานที่ยังไม่ยกเลิก', UserRole.st, TaskStatus.pending, true),

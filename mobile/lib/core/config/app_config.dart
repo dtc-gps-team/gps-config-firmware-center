@@ -52,4 +52,13 @@ class AppConfig {
     'PUSH_NOTIFICATIONS_ENABLED',
     defaultValue: true,
   );
+
+  /// ปุ่ม "เพิ่มบันทึก" บนประวัติงาน (issue #296) — ปิดไว้ก่อน ยังไม่เปิดให้ผู้ใช้
+  /// ใช้ (B 12 พ.ย. 2569) · ประวัติงานยังแสดงตามปกติ · เปิดด้วย
+  /// `--dart-define=TASK_NOTES_ENABLED=true` (backend `POST /tasks/{id}/notes`
+  /// ยังอยู่และตรวจสิทธิ์เหมือนเดิม)
+  static const bool taskNotesEnabled = bool.fromEnvironment(
+    'TASK_NOTES_ENABLED',
+    defaultValue: false,
+  );
 }

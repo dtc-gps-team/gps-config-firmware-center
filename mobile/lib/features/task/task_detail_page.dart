@@ -592,6 +592,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
               .toList(growable: false)
         : const <ConfigApplyRequest>[];
     final canAddNote =
+        ref.watch(taskNotesEnabledProvider) &&
         (canEditStatus || role == UserRole.operation) &&
         task.status != TaskStatus.cancelled;
 
