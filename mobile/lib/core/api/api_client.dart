@@ -388,6 +388,29 @@ class ApiClient {
     );
   }
 
+  /// `GET /tasks/{taskId}/config-apply-requests/history` (v3.96) — หน้าประวัติคำขอ
+  /// แบ่งหน้าแบบ cursor ([before] = `nextCursor` ของหน้าก่อน) กรองกลุ่มผล/ชนิดได้
+  Future<ConfigApplyRequestHistoryPage> listTaskConfigApplyRequestHistory(
+    String taskId, {
+    String? before,
+    ApplyHistoryResult? result,
+    FieldApplyKind? kind,
+    int limit = 20,
+  }) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>(
+        '/tasks/$taskId/config-apply-requests/history',
+        queryParameters: {
+          'limit': limit,
+          'before': ?before,
+          'result': ?result?.wireName,
+          'kind': ?kind?.wireName,
+        },
+      ),
+      ConfigApplyRequestHistoryPage.fromJson,
+    );
+  }
+
   Future<ConfigApplyRequestProgress> getConfigApplyRequestProgress(
     String taskId,
     String requestId,

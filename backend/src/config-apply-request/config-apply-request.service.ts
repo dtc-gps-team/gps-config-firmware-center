@@ -52,6 +52,11 @@ import {
   OPEN_CONFIG_APPLY_REQUEST_STATUSES,
 } from './config-apply-request-status';
 import { CreateConfigApplyRequestDto } from './dto/create-config-apply-request.dto';
+import {
+  QueryTaskApplyHistoryDto,
+  TASK_APPLY_HISTORY_DEFAULT_LIMIT,
+  type TaskApplyHistoryResult,
+} from './dto/query-task-apply-history.dto';
 import { RejectConfigApplyRequestDto } from './dto/reject-config-apply-request.dto';
 import {
   FIELD_APPLY_RESULT_EVENT,
@@ -145,6 +150,46 @@ const TASK_REQUEST_INCLUDE = {
 export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
   include: typeof TASK_REQUEST_INCLUDE;
 }>;
+
+/** รายการของงาน + จำนวนรอบที่ส่งไปแล้ว (v3.96) — Rollout ของคำขอจากหน้างานมีกล่อง
+ * เดียว จึงอ่าน target แรกก็พอ (ไม่รับ id ของ target จาก client) */
+const TASK_REQUEST_LIST_INCLUDE = {
+  ...TASK_REQUEST_INCLUDE,
+  rollout: { select: { targets: { select: { attemptCount: true }, take: 1 } } },
+} satisfies Prisma.ConfigApplyRequestInclude;
+
+type TaskRequestListRow = Prisma.ConfigApplyRequestGetPayload<{
+  include: typeof TASK_REQUEST_LIST_INCLUDE;
+}>;
+
+export type TaskRequestListItem = TaskRequestView & {
+  /** รอบที่ส่งไปแล้ว — 0 = ยังไม่ได้กดส่งเข้ากล่อง */
+  attemptCount: number;
+  /** จำนวนรอบสูงสุดตามการตั้งค่าลองส่งใหม่ (docs/31) */
+  maxAttempts: number;
+};
+
+export interface TaskRequestHistoryPage {
+  items: TaskRequestListItem[];
+  /** cursor ของหน้าถัดไป (`before`) — null = หมดแล้ว */
+  nextCursor: string | null;
+}
+
+/** กลุ่มผล -> สถานะย่อยของคำขอ */
+const HISTORY_RESULT_STATUSES: Record<
+  TaskApplyHistoryResult,
+  ConfigApplyRequestStatus[]
+> = {
+  succeeded: ['succeeded'],
+  unsuccessful: [
+    'failed',
+    'skipped_offline',
+    'rejected',
+    'cancelled',
+    'expired',
+  ],
+  open: OPEN_CONFIG_APPLY_REQUEST_STATUSES,
+};
 
 /** 1 รอบการส่งของคำขอ (docs/31 §3.6) จาก `CampaignRolloutTargetAttempt` */
 export interface ConfigApplyAttempt {
@@ -725,13 +770,66 @@ export class ConfigApplyRequestService implements OnModuleInit {
   async listForTask(
     taskId: string,
     actor: ActingUser,
-  ): Promise<TaskRequestView[]> {
+  ): Promise<TaskRequestListItem[]> {
     await this.taskService.findOne(taskId, actor);
-    return this.prisma.configApplyRequest.findMany({
+    const rows = await this.prisma.configApplyRequest.findMany({
       where: { taskId },
       orderBy: { requestedAt: 'desc' },
-      include: TASK_REQUEST_INCLUDE,
+      include: TASK_REQUEST_LIST_INCLUDE,
     });
+    return rows.map((row) => this.toListItem(row));
+  }
+
+  /** `GET /tasks/{taskId}/config-apply-requests/history` (v3.96) — หน้าประวัติคำขอ
+   * บนมือถือ: แบ่งหน้าแบบ cursor + กรองกลุ่มผล/ชนิด · กฎการเห็นงานเดียวกับ
+   * `listForTask` · cursor ใช้กรองภายในงานนี้เท่านั้น (where taskId เสมอ) */
+  async historyForTask(
+    taskId: string,
+    query: QueryTaskApplyHistoryDto,
+    actor: ActingUser,
+  ): Promise<TaskRequestHistoryPage> {
+    await this.taskService.findOne(taskId, actor);
+    const limit = query.limit ?? TASK_APPLY_HISTORY_DEFAULT_LIMIT;
+    const cursor = parseHistoryCursor(query.before);
+    const rows = await this.prisma.configApplyRequest.findMany({
+      where: {
+        taskId,
+        ...(query.kind ? { kind: query.kind } : {}),
+        ...(query.result
+          ? { status: { in: HISTORY_RESULT_STATUSES[query.result] } }
+          : {}),
+        ...(cursor
+          ? {
+              OR: [
+                { requestedAt: { lt: cursor.at } },
+                { requestedAt: cursor.at, id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      // id เป็นตัวตัดสินเมื่อเวลาเท่ากัน ลำดับจึงคงที่ระหว่างหน้า
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      include: TASK_REQUEST_LIST_INCLUDE,
+    });
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      items: page.map((row) => this.toListItem(row)),
+      nextCursor:
+        rows.length > limit && last
+          ? `${last.requestedAt.toISOString()}_${last.id}`
+          : null,
+    };
+  }
+
+  private toListItem(row: TaskRequestListRow): TaskRequestListItem {
+    const { rollout, ...rest } = row;
+    return {
+      ...rest,
+      attemptCount: rollout?.targets[0]?.attemptCount ?? 0,
+      maxAttempts: this.maxAttempts,
+    };
   }
 
   /** Read-only, task-scoped progress view. Central failures degrade to unavailable. */
@@ -1974,4 +2072,13 @@ function requireFirmwareId(request: ConfigApplyRequest): string {
     );
   }
   return request.firmwareId;
+}
+
+/** cursor `<ISO>_<uuid>` -> เวลา + id (รูปแบบผ่านการตรวจใน DTO แล้ว) */
+function parseHistoryCursor(
+  raw: string | undefined,
+): { at: Date; id: string } | null {
+  if (!raw) return null;
+  const sep = raw.indexOf('Z_');
+  return { at: new Date(raw.slice(0, sep + 1)), id: raw.slice(sep + 2) };
 }

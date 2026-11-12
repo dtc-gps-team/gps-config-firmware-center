@@ -27,6 +27,14 @@ abstract class ConfigApplyRequestRepository {
 
   Future<ConfigApplyRequest> cancel(String requestId);
 
+  /// หน้าประวัติคำขอของงาน แบ่งหน้า + กรอง (v3.96)
+  Future<ConfigApplyRequestHistoryPage> history(
+    String taskId, {
+    String? before,
+    ApplyHistoryResult? result,
+    FieldApplyKind? kind,
+  });
+
   /// ช่างกดส่งคำขอที่อนุมัติแล้วเข้ากล่อง (docs/27)
   Future<ConfigApplyRequest> release(String requestId);
 
@@ -70,6 +78,19 @@ class ApiConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   @override
   Future<ConfigApplyRequest> cancel(String requestId) =>
       _api.cancelConfigApplyRequest(requestId);
+
+  @override
+  Future<ConfigApplyRequestHistoryPage> history(
+    String taskId, {
+    String? before,
+    ApplyHistoryResult? result,
+    FieldApplyKind? kind,
+  }) => _api.listTaskConfigApplyRequestHistory(
+    taskId,
+    before: before,
+    result: result,
+    kind: kind,
+  );
 
   @override
   Future<ConfigApplyRequest> release(String requestId) =>

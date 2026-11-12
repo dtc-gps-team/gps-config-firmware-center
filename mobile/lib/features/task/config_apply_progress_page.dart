@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
@@ -55,6 +56,13 @@ class _ConfigApplyProgressPageState
   bool _invalidated = false;
   bool _reducedMotion = false;
 
+  /// คำขอที่หน้านี้ติดตามอยู่ — เริ่มจากคำขอที่เปิดมา แล้วเปลี่ยนเป็นคำขอใหม่เมื่อ
+  /// กด "ส่งใหม่อีกครั้ง" (ติดตามต่อในหน้าเดิม ไม่พาไปหน้าเลือกใหม่)
+  late String _requestId = widget.requestId;
+
+  /// กำลังยื่นคำขอใหม่หรือกดส่งเข้ากล่อง — กันกดซ้ำ
+  bool _busy = false;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +74,12 @@ class _ConfigApplyProgressPageState
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _tick?.cancel();
+    _poll?.cancel();
     unawaited(_load());
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && !_done) setState(() {});
@@ -110,11 +124,13 @@ class _ConfigApplyProgressPageState
   Future<void> _load() async {
     if (_loading || !mounted) return;
     _loading = true;
+    final requestId = _requestId;
     try {
       final progress = await ref
           .read(configApplyRequestRepositoryProvider)
-          .progress(widget.taskId, widget.requestId);
-      if (!mounted) return;
+          .progress(widget.taskId, requestId);
+      // ระหว่างรอผล กดส่งใหม่ไปแล้ว = ผลของคำขอเก่า ไม่ใช้
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _progress = progress;
         _error = null;
@@ -137,6 +153,103 @@ class _ConfigApplyProgressPageState
     }
   }
 
+  /// เปลี่ยนไปติดตามคำขอใหม่ในหน้าเดิม — เริ่มถาม/นับใหม่ และวาดใหม่ตั้งแต่ต้น
+  void _follow(String requestId) {
+    setState(() {
+      _requestId = requestId;
+      _progress = null;
+      _error = null;
+      _invalidated = false;
+    });
+    _finish.reset();
+    _syncMotion();
+    _startPolling();
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _refreshTask() {
+    ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+    ref.invalidate(taskDetailProvider(widget.taskId));
+  }
+
+  /// ส่งใหม่ด้วยของชิ้นเดิม (B 12 พ.ย. 2569): Firmware = ขออนุมัติใหม่ (ยังต้องรอ
+  /// Operation ตามหลักแยกหน้าที่) · Config ที่อนุมัติแล้วไม่มีค่าแก้ = ส่งตรงแล้วส่ง
+  /// เข้ากล่องทันที · ส่งของเดิมซ้ำไม่ได้ (มีค่าแก้เฉพาะเครื่องซึ่งใช้ได้ครั้งเดียว,
+  /// Operation ไม่อนุมัติ, ยกเลิก, หมดอายุ) = ไปหน้าเลือกเหมือนเดิม
+  Future<void> _resend(String deviceId, {required bool firmware}) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(configApplyRequestRepositoryProvider);
+      final requests = await repo.listForTask(widget.taskId);
+      final source = requests.where((r) => r.id == _requestId).firstOrNull;
+      if (source == null || !_canResendSame(source)) {
+        if (mounted) _openApplyForm(deviceId, firmware: firmware);
+        return;
+      }
+      String message;
+      ConfigApplyRequest created;
+      if (source.kind == FieldApplyKind.firmware) {
+        created = await repo.create(
+          widget.taskId,
+          firmwareId: source.firmwareId,
+        );
+        message = 'ส่งคำขอใหม่แล้ว — รอ Operation อนุมัติ';
+      } else {
+        created = await repo.create(
+          widget.taskId,
+          configId: source.configId,
+          direct: true,
+        );
+        try {
+          created = await repo.release(created.id);
+          message = 'กำลังส่ง Config เข้ากล่องอีกครั้ง';
+        } on ApiException catch (e) {
+          message = 'ยังส่งเข้ากล่องไม่ได้: ${e.message}';
+        }
+      }
+      if (!mounted) return;
+      _refreshTask();
+      _follow(created.id);
+      _toast(message);
+    } on ApiException catch (e) {
+      if (mounted) _toast(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// ช่างกดส่งคำขอที่ Operation อนุมัติแล้วเข้ากล่อง (docs/27) จากหน้านี้
+  Future<void> _release() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(configApplyRequestRepositoryProvider).release(_requestId);
+      if (!mounted) return;
+      _refreshTask();
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) _toast(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _openApplyForm(String deviceId, {required bool firmware}) {
+    GoRouter.maybeOf(context)?.go(
+      AppRoutes.deviceApply(
+        deviceId,
+        taskId: widget.taskId,
+        firmware: firmware,
+      ),
+    );
+  }
+
   void _close() {
     final router = GoRouter.maybeOf(context);
     if (router == null) return;
@@ -156,8 +269,21 @@ class _ConfigApplyProgressPageState
     final current = steps.where((s) => s.state == _StepState.now).firstOrNull;
     final isFirmware = progress?.kind == FieldApplyKind.firmware;
     final elapsed = _elapsedSeconds(progress, outcome);
-    final retry = outcome == _Outcome.rolledBack || outcome == _Outcome.failed;
+    // เปิดคำขอเก่าจากหน้าประวัติ (มีคำขอใหม่กว่าแล้ว) = ไม่ให้ส่งของเก่าซ้ำ ·
+    // ยังโหลดรายการไม่เสร็จ = ถือว่าเป็นตัวล่าสุด (เปิดมาจากการกดส่งเกือบทุกครั้ง)
+    final latestId = ref
+        .watch(taskConfigApplyRequestsProvider(widget.taskId))
+        .valueOrNull
+        ?.firstOrNull
+        ?.id;
+    final isLatest = latestId == null || latestId == _requestId;
+    final retry =
+        isLatest &&
+        (outcome == _Outcome.rolledBack || outcome == _Outcome.failed);
     final deviceId = task?.deviceId;
+    final awaitingRelease =
+        progress?.status == ConfigApplyRequestStatus.approved &&
+        progress?.releasedAt == null;
     final attemptBadge = _badgeAttempt(progress, outcome);
     final attempts = progress?.retry?.attempts ?? const <ConfigApplyAttempt>[];
 
@@ -207,18 +333,20 @@ class _ConfigApplyProgressPageState
                             color: AppColors.foreground,
                           ),
                         ),
-                        Text(
-                          '${outcome == _Outcome.running ? 'ผ่านไป' : 'ใช้เวลา'} '
-                          '${_mmss(elapsed)}',
-                          key: const Key('apply_progress_elapsed'),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: AppTypography.sm,
-                            height: AppTypography.smHeight,
-                            color: AppColors.mutedForeground,
-                            fontFeatures: [FontFeature.tabularFigures()],
+                        // ยังไม่ได้ส่งเข้ากล่อง (รออนุมัติ) = ยังไม่มีเวลาให้นับ
+                        if (progress?.releasedAt != null)
+                          Text(
+                            '${outcome == _Outcome.running ? 'ผ่านไป' : 'ใช้เวลา'} '
+                            '${_mmss(elapsed)}',
+                            key: const Key('apply_progress_elapsed'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: AppTypography.sm,
+                              height: AppTypography.smHeight,
+                              color: AppColors.mutedForeground,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
-                        ),
                         if (attemptBadge != null) ...[
                           const SizedBox(height: 8),
                           KeyedSubtree(
@@ -286,7 +414,12 @@ class _ConfigApplyProgressPageState
                   ),
                   if (_showHistory(attempts)) ...[
                     const SizedBox(height: 10),
-                    _AttemptHistory(attempts: attempts),
+                    _AttemptHistory(
+                      // คำขอใหม่ = สร้างการ์ดใหม่ (สถานะพับ/กางเริ่มใหม่)
+                      key: ValueKey('history_$_requestId'),
+                      attempts: attempts,
+                      collapsed: outcome == _Outcome.succeeded,
+                    ),
                   ],
                   if (outcome != _Outcome.running && progress != null) ...[
                     const SizedBox(height: 10),
@@ -308,18 +441,20 @@ class _ConfigApplyProgressPageState
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
             ),
-            onPressed: retry && deviceId != null
-                ? () => GoRouter.maybeOf(context)?.go(
-                    AppRoutes.deviceApply(
-                      deviceId,
-                      taskId: widget.taskId,
-                      firmware: isFirmware,
-                    ),
-                  )
+            onPressed: _busy
+                ? null
+                : retry && deviceId != null
+                ? () => _resend(deviceId, firmware: isFirmware)
+                : awaitingRelease
+                ? _release
                 : _close,
             child: Text(
               retry && deviceId != null
                   ? 'ส่งใหม่อีกครั้ง'
+                  : awaitingRelease
+                  ? 'ส่งเข้ากล่อง'
+                  : progress?.status == ConfigApplyRequestStatus.pending
+                  ? 'กลับไปหน้างาน'
                   : outcome == _Outcome.running
                   ? 'ส่งต่อเบื้องหลัง กลับไปหน้างาน'
                   : 'กลับไปหน้างาน',
@@ -382,21 +517,42 @@ String _stepLabel(ConfigApplyProgressStepKey key, {required bool firmware}) =>
 bool _hasCentralSteps(ConfigApplyRequestProgress? p) =>
     p?.central?.available == true && p!.central!.steps.isNotEmpty;
 
+/// ผลรวม — จบเมื่อสถานะคำขอจบจริงเท่านั้น: กล่องย้อนกลับ/ล้มในรอบหนึ่งขณะคำขอยัง
+/// sending = backend ยังไม่ปิดรอบ (อาจลองรอบใหม่) จึงยังไม่จบ · สำเร็จรู้ได้จาก
+/// ขั้นตอนของกล่องก่อน backend ปิดคำขอ (ไม่มีรอบต่อจากความสำเร็จ)
 _Outcome _outcome(ConfigApplyRequestProgress? p) {
   if (p == null) return _Outcome.running;
-  final last = _hasCentralSteps(p) ? p.central!.steps.last.key : null;
-  if (last == ConfigApplyProgressStepKey.rolledBack) return _Outcome.rolledBack;
+  final last = _lastCentralKey(p);
   if (p.status == ConfigApplyRequestStatus.succeeded ||
       last == ConfigApplyProgressStepKey.succeeded) {
     return _Outcome.succeeded;
   }
-  if (last == ConfigApplyProgressStepKey.failed ||
-      last == ConfigApplyProgressStepKey.expired ||
-      !p.status.isInFlight) {
-    return _Outcome.failed;
-  }
-  return _Outcome.running;
+  if (p.status.isInFlight) return _Outcome.running;
+  if (last == ConfigApplyProgressStepKey.rolledBack) return _Outcome.rolledBack;
+  return _Outcome.failed;
 }
+
+ConfigApplyProgressStepKey? _lastCentralKey(ConfigApplyRequestProgress? p) =>
+    _hasCentralSteps(p) ? p!.central!.steps.last.key : null;
+
+/// รอบนี้กล่องย้อนกลับ/ล้มแล้ว แต่คำขอยังไม่จบ (ช่วงที่ backend กำลังปิดรอบ)
+bool _attemptEnded(ConfigApplyRequestProgress? p, _Outcome outcome) {
+  final last = _lastCentralKey(p);
+  return outcome == _Outcome.running &&
+      last != null &&
+      _terminalKeys.contains(last) &&
+      last != ConfigApplyProgressStepKey.succeeded;
+}
+
+/// ส่งของชิ้นเดิมซ้ำได้เลย — ล้มตอนส่ง (ไม่ใช่ถูกปฏิเสธ/ยกเลิก/หมดอายุ) และไม่มี
+/// ค่าแก้เฉพาะเครื่อง (Override ใช้ได้ครั้งเดียว ถูกใช้ไปกับคำขอเดิมแล้ว)
+bool _canResendSame(ConfigApplyRequest r) =>
+    (r.status == ConfigApplyRequestStatus.failed ||
+        r.status == ConfigApplyRequestStatus.skippedOffline) &&
+    r.override == null &&
+    (r.kind == FieldApplyKind.firmware
+        ? r.firmwareId != null
+        : r.configId != null);
 
 /// กำลังรอส่งรอบใหม่ (docs/31) — backend ให้ `nextRetryAt` เฉพาะช่วงนี้
 bool _waitingRetry(ConfigApplyRequestProgress? p, _Outcome outcome) =>
@@ -439,7 +595,9 @@ List<_Step> _stepsFor(ConfigApplyRequestProgress? p, _Outcome outcome) {
     // ไม่มีขั้นตอนจริงจากกล่อง — 3 ขั้นตามสถานะคำขอของเรา · รอรอบใหม่ = รอบนี้ยัง
     // ไม่ได้ส่ง · รอบใหม่กำลังส่ง = ยังไม่ถึงกล่อง (docs/31)
     final latest = p?.retry?.attempts.lastOrNull;
-    final waiting = _waitingRetry(p, outcome);
+    // ยังไม่ได้ส่งเข้ากล่อง (รอ Operation อนุมัติ / รอช่างกดส่ง) = ยังไม่ถึงขั้นไหน
+    final waiting =
+        _waitingRetry(p, outcome) || (running && p?.releasedAt == null);
     final sending =
         running && latest?.status == ConfigApplyAttemptStatus.sending;
     return [
@@ -534,15 +692,34 @@ String _headline(
     case _Outcome.rolledBack:
       return 'กล่องย้อนกลับเวอร์ชันเดิม';
     case _Outcome.failed:
-      return 'ส่งไม่สำเร็จ';
+      return switch (p.status) {
+        ConfigApplyRequestStatus.rejected => 'Operation ไม่อนุมัติ',
+        ConfigApplyRequestStatus.cancelled => 'ยกเลิกคำขอแล้ว',
+        ConfigApplyRequestStatus.expired => 'คำขอหมดอายุ',
+        _ => 'ส่งไม่สำเร็จ',
+      };
     case _Outcome.running:
       break;
+  }
+  if (p.status == ConfigApplyRequestStatus.pending) {
+    return 'รอ Operation อนุมัติ';
+  }
+  if (p.status == ConfigApplyRequestStatus.approved && p.releasedAt == null) {
+    return 'อนุมัติแล้ว กดส่งเข้ากล่องได้เลย';
   }
   final nextAt = p.retry?.nextRetryAt;
   if (nextAt != null) {
     final left = (nextAt.difference(DateTime.now()).inMilliseconds / 1000)
         .ceil();
     return left > 0 ? 'จะลองใหม่ในอีก ${_mmss(left)}' : 'กำลังเริ่มรอบใหม่';
+  }
+  if (_attemptEnded(p, outcome)) {
+    final retry = p.retry;
+    final more = retry != null && retry.attemptNo < retry.maxAttempts;
+    if (!more) return 'กำลังสรุปผล';
+    return _lastCentralKey(p) == ConfigApplyProgressStepKey.rolledBack
+        ? 'กล่องย้อนกลับ กำลังเตรียมลองใหม่'
+        : 'รอบนี้ไม่สำเร็จ กำลังเตรียมลองใหม่';
   }
   if (p.central?.deviceOnline == false) return 'รอกล่องออนไลน์';
   return switch (current?.key) {
@@ -852,9 +1029,40 @@ String _attemptStatusLabel(ConfigApplyAttemptStatus status) => switch (status) {
 };
 
 /// ประวัติการส่งรายรอบ (docs/31 §3.7) — เวลาเริ่ม + สาเหตุที่ล้ม
-class _AttemptHistory extends StatelessWidget {
-  const _AttemptHistory({required this.attempts});
+/// ประวัติรายรอบ — สำเร็จแล้ว = พับเป็นบรรทัดสรุป (แตะเพื่อดู) ไม่ให้หน้ายาวเกินที่
+/// ช่างต้องการ · ยังไม่จบหรือไม่สำเร็จ = กางไว้ เพราะเป็นสิ่งที่ช่างต้องดู
+class _AttemptHistory extends StatefulWidget {
+  const _AttemptHistory({
+    super.key,
+    required this.attempts,
+    required this.collapsed,
+  });
   final List<ConfigApplyAttempt> attempts;
+  final bool collapsed;
+
+  @override
+  State<_AttemptHistory> createState() => _AttemptHistoryState();
+}
+
+class _AttemptHistoryState extends State<_AttemptHistory> {
+  late bool _open = !widget.collapsed;
+
+  @override
+  void didUpdateWidget(covariant _AttemptHistory old) {
+    super.didUpdateWidget(old);
+    // เพิ่งจบแบบสำเร็จระหว่างเปิดดู = พับลงเป็นสรุป (ช่างยังแตะกางได้)
+    if (widget.collapsed && !old.collapsed) _open = false;
+  }
+
+  String get _summary {
+    final attempts = widget.attempts;
+    final ok = attempts
+        .where((a) => a.status == ConfigApplyAttemptStatus.succeeded)
+        .lastOrNull;
+    return ok == null
+        ? 'ส่ง ${attempts.length} รอบ'
+        : 'ส่ง ${attempts.length} รอบ สำเร็จรอบที่ ${ok.attemptNo}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -863,15 +1071,45 @@ class _AttemptHistory extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'ประวัติการส่ง',
-            style: TextStyle(
-              fontSize: AppTypography.sm,
-              fontWeight: FontWeight.w700,
-              color: AppColors.foreground,
+          Semantics(
+            button: true,
+            expanded: _open,
+            child: InkWell(
+              key: const Key('apply_progress_history_toggle'),
+              onTap: () => setState(() => _open = !_open),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: Row(
+                children: [
+                  const Text(
+                    'ประวัติการส่ง',
+                    style: TextStyle(
+                      fontSize: AppTypography.sm,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.foreground,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _summary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: AppTypography.sm,
+                        color: AppColors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _open ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.mutedForeground,
+                  ),
+                ],
+              ),
             ),
           ),
-          for (final a in attempts) _AttemptRow(attempt: a),
+          if (_open)
+            for (final a in widget.attempts) _AttemptRow(attempt: a),
         ],
       ),
     );
@@ -985,6 +1223,15 @@ class _ProgressScene extends StatelessWidget {
         builder: (context, ring, _) => AnimatedBuilder(
           animation: Listenable.merge([loop, finish]),
           builder: (context, _) => CustomPaint(
+            foregroundPainter: _ScenePainter(
+              ring: ring,
+              phase: 0,
+              finish: finish.value,
+              outcome: outcome,
+              packets: false,
+              pulses: false,
+              foreground: true,
+            ),
             painter: _ScenePainter(
               ring: ring,
               phase: reducedMotion ? 0 : loop.value,
@@ -1094,6 +1341,7 @@ class _ScenePainter extends CustomPainter {
     required this.outcome,
     required this.packets,
     required this.pulses,
+    this.foreground = false,
   });
   final double ring;
   final double phase;
@@ -1101,6 +1349,10 @@ class _ScenePainter extends CustomPainter {
   final _Outcome outcome;
   final bool packets;
   final bool pulses;
+
+  /// ชั้นหน้า (`foregroundPainter`) = ติ๊กถูก + พลุ ซึ่งต้องอยู่ "เหนือ" วงกลมกลาง ·
+  /// เดิมวาดทุกอย่างเป็น `painter` (ใต้ลูก) วงกลมพื้นทึบจึงบังติ๊กถูกจนมองไม่เห็น
+  final bool foreground;
 
   static const _burstColors = [
     AppColors.primary,
@@ -1114,6 +1366,10 @@ class _ScenePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     const radius = 84.0;
+    if (foreground) {
+      if (outcome == _Outcome.succeeded) _paintSuccess(canvas, c);
+      return;
+    }
 
     // วงกระเพื่อม 2 วงสลับจังหวะ
     if (pulses) {
@@ -1174,9 +1430,9 @@ class _ScenePainter extends CustomPainter {
         );
       }
     }
+  }
 
-    if (outcome != _Outcome.succeeded) return;
-
+  void _paintSuccess(Canvas canvas, Offset c) {
     // ติ๊กถูกวาดเส้นตาม finish
     final path = Path()
       ..moveTo(c.dx - 22, c.dy + 1)
@@ -1230,5 +1486,6 @@ class _ScenePainter extends CustomPainter {
       old.finish != finish ||
       old.outcome != outcome ||
       old.packets != packets ||
-      old.pulses != pulses;
+      old.pulses != pulses ||
+      old.foreground != foreground;
 }

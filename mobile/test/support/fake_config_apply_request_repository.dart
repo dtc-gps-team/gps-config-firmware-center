@@ -21,6 +21,9 @@ ConfigApplyRequest fakeApplyRequest({
   DateTime? completedAt,
   DateTime? expiresAt,
   ApplyRequestOverride? override,
+  DateTime? requestedAt,
+  int attemptCount = 0,
+  int? maxAttempts,
 }) => ConfigApplyRequest(
   id: id,
   taskId: taskId,
@@ -32,7 +35,7 @@ ConfigApplyRequest fakeApplyRequest({
   fromFirmwareVersion: fromFirmwareVersion,
   isDowngrade: isDowngrade,
   status: status,
-  requestedAt: DateTime.utc(2026, 10, 22, 3),
+  requestedAt: requestedAt ?? DateTime.utc(2026, 10, 22, 3),
   expiresAt: expiresAt ?? DateTime.utc(2026, 10, 23, 3),
   rejectReason: rejectReason,
   resultDetail: resultDetail,
@@ -40,6 +43,8 @@ ConfigApplyRequest fakeApplyRequest({
   releasedAt: releasedAt,
   completedAt: completedAt,
   override: override,
+  attemptCount: attemptCount,
+  maxAttempts: maxAttempts,
 );
 
 /// ใช้แทน [ConfigApplyRequestRepository] ในเทสหน้า Task Detail — เก็บคำขอไว้ใน
@@ -139,6 +144,12 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
         : fakeApplyRequest(
             id: 'car-new-$createCalls',
             taskId: taskId,
+            // ขอ Firmware = คำขอชนิด Firmware ของรุ่นนั้น (`fw-<version>`)
+            kind: firmwareId != null
+                ? FieldApplyKind.firmware
+                : FieldApplyKind.config,
+            firmwareVersion: firmwareId?.replaceFirst('fw-', ''),
+            configId: configId ?? 'cfg-1',
             // ส่งตรง = อนุมัติแล้วทันที (v3.75)
             status: direct
                 ? ConfigApplyRequestStatus.approved
@@ -164,6 +175,54 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     return cancelled;
   }
 
+  /// ขนาดหน้าของ [history] (backend ใช้ 20) · ตั้งให้เล็กในเทสเพื่อดูการโหลดต่อ
+  int historyPageSize = 20;
+  int historyCalls = 0;
+  Object? historyError;
+  final List<
+    ({String? before, ApplyHistoryResult? result, FieldApplyKind? kind})
+  >
+  historyQueries = [];
+
+  /// เลียนแบบ backend: กรองกลุ่มผล/ชนิด แบ่งหน้าตามลำดับใน [requests] (ใหม่สุด
+  /// ก่อน) · cursor ของ fake = id ของรายการสุดท้ายในหน้า
+  @override
+  Future<ConfigApplyRequestHistoryPage> history(
+    String taskId, {
+    String? before,
+    ApplyHistoryResult? result,
+    FieldApplyKind? kind,
+  }) async {
+    historyCalls++;
+    historyQueries.add((before: before, result: result, kind: kind));
+    final error = historyError;
+    if (error != null) throw error;
+    bool inResult(ConfigApplyRequest r) => switch (result) {
+      null => true,
+      ApplyHistoryResult.succeeded =>
+        r.status == ConfigApplyRequestStatus.succeeded,
+      ApplyHistoryResult.open => r.status.isInFlight,
+      ApplyHistoryResult.unsuccessful =>
+        r.status != ConfigApplyRequestStatus.succeeded && !r.status.isInFlight,
+    };
+    final matched = [
+      for (final r in requests)
+        if (r.taskId == taskId &&
+            inResult(r) &&
+            (kind == null || r.kind == kind))
+          r,
+    ];
+    final start = before == null
+        ? 0
+        : matched.indexWhere((r) => r.id == before) + 1;
+    final page = matched.skip(start).take(historyPageSize).toList();
+    final more = start + page.length < matched.length;
+    return ConfigApplyRequestHistoryPage(
+      items: page,
+      nextCursor: more && page.isNotEmpty ? page.last.id : null,
+    );
+  }
+
   @override
   Future<ConfigApplyRequest> release(String requestId) async {
     releaseCalls++;
@@ -171,8 +230,13 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     final error = releaseError;
     if (error != null) throw error;
     final index = requests.indexWhere((r) => r.id == requestId);
+    final before = index >= 0 ? requests[index] : null;
     final sending = fakeApplyRequest(
       id: requestId,
+      // คงชนิดและของที่ขอส่งไว้ (Firmware ส่งแล้วยังเป็น Firmware)
+      kind: before?.kind ?? FieldApplyKind.config,
+      configId: before?.configId ?? 'cfg-1',
+      firmwareVersion: before?.firmwareVersion,
       status: ConfigApplyRequestStatus.sending,
       decidedAt: DateTime.utc(2026, 10, 22, 4),
       releasedAt: DateTime.utc(2026, 10, 22, 5),

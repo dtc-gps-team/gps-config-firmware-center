@@ -2170,7 +2170,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ประวัติคำขอ'), findsWidgets);
-      expect(find.textContaining('Firmware v1.3.0'), findsOneWidget);
+      expect(find.text('Firmware 1.3.0'), findsOneWidget);
       expect(
         find.text(
           configApplyRequestStatusLabel(ConfigApplyRequestStatus.succeeded),
