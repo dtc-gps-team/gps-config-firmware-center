@@ -18,10 +18,10 @@ String _formatDate(DateTime dt) {
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
 }
 
-/// เปิด/ปิดปุ่ม "เพิ่มบันทึก" ([AppConfig.taskNotesEnabled]) — เป็น provider ให้เทส
-/// สั่งเปิดได้โดยไม่ต้อง build ด้วย dart-define
-final taskNotesEnabledProvider = Provider<bool>(
-  (ref) => AppConfig.taskNotesEnabled,
+/// เปิด/ปิดการ์ดประวัติงานทั้งการ์ด ([AppConfig.taskTimelineEnabled]) — เป็น
+/// provider ให้เทสสั่งเปิดได้โดยไม่ต้อง build ด้วย dart-define
+final taskTimelineEnabledProvider = Provider<bool>(
+  (ref) => AppConfig.taskTimelineEnabled,
 );
 
 /// Same limit as the backend `CreateTaskNoteDto`.

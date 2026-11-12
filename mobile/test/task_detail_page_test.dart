@@ -141,8 +141,8 @@ Future<void> _pump(
   TaskEventRepository? eventRepo,
   GoRouter? router,
   bool disableAnimations = false,
-  // ปุ่มเพิ่มบันทึกปิดในแอปจริง (ค่าเริ่มต้น) — เทสเดิมของปุ่มสั่งเปิด
-  bool taskNotes = true,
+  // การ์ดประวัติงานปิดในแอปจริง (ค่าเริ่มต้น) — เทสเดิมของการ์ดสั่งเปิด
+  bool taskTimeline = true,
 }) async {
   // หัว r4 (AppInkHeader) สูงกว่าหัวเดิม เนื้อหาเลยตกใต้จอ 800x600 ของเทส
   // ใช้จอสูงเป็นค่าเริ่มต้น — ยกเว้นเทสที่ตั้งขนาดจอเอง (เช่น 411dp)
@@ -177,7 +177,7 @@ Future<void> _pump(
         configApplyRequestRepositoryProvider.overrideWithValue(
           applyRepo ?? FakeConfigApplyRequestRepository(),
         ),
-        taskNotesEnabledProvider.overrideWithValue(taskNotes),
+        taskTimelineEnabledProvider.overrideWithValue(taskTimeline),
       ],
       child: router == null
           ? MaterialApp(
@@ -1523,9 +1523,9 @@ void main() {
     });
 
     testWidgets(
-      'ปิดปุ่มเพิ่มบันทึก (ค่าเริ่มต้นของแอป) -> ไม่เห็นปุ่ม แต่ประวัติงานยังอยู่',
+      'ปิดการ์ดประวัติงาน (ค่าเริ่มต้นของแอป) -> ไม่เห็นการ์ด ปุ่มเพิ่มบันทึก และไม่โหลด timeline',
       (tester) async {
-        expect(AppConfig.taskNotesEnabled, isFalse);
+        expect(AppConfig.taskTimelineEnabled, isFalse);
         final events = _FakeTaskEventRepository(events: [timeline.first]);
         await _pump(
           tester,
@@ -1533,13 +1533,14 @@ void main() {
             task: _makeTask(status: TaskStatus.pending),
           ),
           eventRepo: events,
-          taskNotes: AppConfig.taskNotesEnabled,
+          taskTimeline: AppConfig.taskTimelineEnabled,
         );
-        await scrollToTimeline(tester);
+        await tester.pumpAndSettle();
 
+        expect(find.text('ประวัติงาน'), findsNothing);
+        expect(find.text('สร้างงาน'), findsNothing);
         expect(find.byKey(const Key('task_add_note_button')), findsNothing);
-        expect(find.text('ประวัติงาน'), findsOneWidget);
-        expect(find.text('สร้างงาน'), findsOneWidget);
+        expect(events.getCalls, 0);
       },
     );
 

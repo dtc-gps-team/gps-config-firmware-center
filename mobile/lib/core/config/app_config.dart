@@ -53,12 +53,12 @@ class AppConfig {
     defaultValue: true,
   );
 
-  /// ปุ่ม "เพิ่มบันทึก" บนประวัติงาน (issue #296) — ปิดไว้ก่อน ยังไม่เปิดให้ผู้ใช้
-  /// ใช้ (B 12 พ.ย. 2569) · ประวัติงานยังแสดงตามปกติ · เปิดด้วย
-  /// `--dart-define=TASK_NOTES_ENABLED=true` (backend `POST /tasks/{id}/notes`
-  /// ยังอยู่และตรวจสิทธิ์เหมือนเดิม)
-  static const bool taskNotesEnabled = bool.fromEnvironment(
-    'TASK_NOTES_ENABLED',
+  /// การ์ด "ประวัติงาน" ใน Task Detail (Timeline + ปุ่ม "เพิ่มบันทึก", issue #296)
+  /// — ปิดไว้ก่อน ยังไม่เปิดให้ผู้ใช้ใช้ (B 12 พ.ย. 2569) · ปิด = ไม่แสดงการ์ดและไม่
+  /// โหลด `GET /tasks/{id}/events` · เปิดด้วย
+  /// `--dart-define=TASK_TIMELINE_ENABLED=true` (backend ยังอยู่และตรวจสิทธิ์เหมือนเดิม)
+  static const bool taskTimelineEnabled = bool.fromEnvironment(
+    'TASK_TIMELINE_ENABLED',
     defaultValue: false,
   );
 }
