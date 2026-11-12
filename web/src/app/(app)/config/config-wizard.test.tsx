@@ -29,7 +29,7 @@ vi.mock("@/hooks/use-config-definitions", () => ({
 // ทะเบียนโมเดล (`GET /device-models`) — โปรโตคอลที่เลือกได้ในหน้า step 1 ล็อก
 // ตาม `supportedProtocols` ของรุ่นในทะเบียน (เหมือนหน้าลงทะเบียนอุปกรณ์)
 const registryState = vi.hoisted(() => ({
-  data: [] as { name: string; supportedProtocols: string[] }[],
+  data: [] as { id: string; name: string; supportedProtocols: string[] }[],
 }));
 vi.mock("@/hooks/use-device-models", () => ({
   useDeviceModels: () => ({
@@ -97,7 +97,7 @@ async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
-  registryState.data = [{ name: "GT06N", supportedProtocols: ["TCP"] }];
+  registryState.data = [{ id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP"] }];
 });
 
 describe("ConfigWizard — โหมดโคลนบันทึกต้นทาง (clonedFromId)", () => {
@@ -105,6 +105,8 @@ describe("ConfigWizard — โหมดโคลนบันทึกต้น�
     id: "00000000-0000-4000-8000-000000000001",
     name: "GT06N มาตรฐาน",
     deviceModel: "GT06N",
+    idMaster: "11111111-1111-4111-8111-111111111111",
+    modelId: "22222222-2222-4222-8222-222222222222",
     protocol: "TCP",
     description: null,
     status: "approved" as const,
@@ -145,6 +147,36 @@ describe("ConfigWizard — โหมดโคลนบันทึกต้น�
 
     await waitFor(() => expect(createConfig).toHaveBeenCalled());
     expect(createConfig.mock.calls[0][1]).not.toHaveProperty("clonedFromId");
+  });
+
+  it("ส่งรุ่นเป็น modelId (id ในทะเบียนรุ่น) ไม่ส่งชื่อรุ่น (v3.97)", async () => {
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+    await user.click(screen.getByRole("button", { name: /APN1/ }));
+    await user.type(document.getElementById("field-APN1")!, "internet");
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    await waitFor(() => expect(createConfig).toHaveBeenCalled());
+    const body = createConfig.mock.calls[0][1];
+    expect(body.modelId).toBe("m-gt06n");
+    expect(body).not.toHaveProperty("deviceModel");
+  });
+
+  it("รุ่นที่ไม่อยู่ในทะเบียนรุ่น: ไม่ส่งคำขอ และบอกให้เพิ่มรุ่นก่อน", async () => {
+    // รุ่นมีในพารามิเตอร์ (ข้อมูลเก่า) แต่ไม่มีในทะเบียนรุ่น จึงหา modelId ไม่ได้
+    registryState.data = [];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+    await user.click(screen.getByRole("button", { name: /APN1/ }));
+    await user.type(document.getElementById("field-APN1")!, "internet");
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    expect(
+      await screen.findByText(/ไม่พบรุ่น "GT06N" ในทะเบียนรุ่นอุปกรณ์/),
+    ).toBeInTheDocument();
+    expect(createConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -314,6 +346,8 @@ describe("ConfigWizard: พารามิเตอร์นอกชุดข�
             id: "00000000-0000-4000-8000-000000000001",
             name: "มีค่าพิเศษ",
             deviceModel: "GT06N",
+            idMaster: "11111111-1111-4111-8111-111111111111",
+            modelId: "22222222-2222-4222-8222-222222222222",
             protocol: "TCP",
             description: null,
             status: "approved",
@@ -365,7 +399,7 @@ describe("ConfigWizard: ล็อกโปรโตคอลตามทะเ�
   }
 
   it("โมเดลที่รองรับโปรโตคอลเดียวในทะเบียน: เลือกโปรโตคอลให้อัตโนมัติและล็อกช่อง", async () => {
-    registryState.data = [{ name: "GT06N", supportedProtocols: ["TCP"] }];
+    registryState.data = [{ id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP"] }];
     const user = userEvent.setup();
     render(<ConfigWizard mode={{ kind: "create" }} />);
 
@@ -379,7 +413,7 @@ describe("ConfigWizard: ล็อกโปรโตคอลตามทะเ�
 
   it("โมเดลที่รองรับหลายโปรโตคอล: ไม่เลือกให้ ต้องเลือกเอง และเห็นเฉพาะที่ทะเบียนรองรับ", async () => {
     registryState.data = [
-      { name: "GT06N", supportedProtocols: ["TCP", "UDP"] },
+      { id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP", "UDP"] },
     ];
     const user = userEvent.setup();
     render(<ConfigWizard mode={{ kind: "create" }} />);
@@ -397,7 +431,7 @@ describe("ConfigWizard: ล็อกโปรโตคอลตามทะเ�
 
   it("ทะเบียนรองรับโปรโตคอลที่พารามิเตอร์ยังไม่มี: ยังเลือกได้ตามทะเบียน", async () => {
     registryState.data = [
-      { name: "GT06N", supportedProtocols: ["TCP", "HTTP"] },
+      { id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP", "HTTP"] },
     ];
     const user = userEvent.setup();
     render(<ConfigWizard mode={{ kind: "create" }} />);
@@ -419,8 +453,8 @@ describe("ConfigWizard: ล็อกโปรโตคอลตามทะเ�
       }),
     ];
     registryState.data = [
-      { name: "GT06N", supportedProtocols: ["TCP"] },
-      { name: "GT06L", supportedProtocols: ["UDP"] },
+      { id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP"] },
+      { id: "m-gt06l", name: "GT06L", supportedProtocols: ["UDP"] },
     ];
     const user = userEvent.setup();
     render(<ConfigWizard mode={{ kind: "create" }} />);

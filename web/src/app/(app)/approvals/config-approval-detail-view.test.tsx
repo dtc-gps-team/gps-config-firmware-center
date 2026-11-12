@@ -137,6 +137,8 @@ function config(overrides: Partial<Config> = {}): Config {
     id: "cfg-1",
     name: "Test Config",
     deviceModel: "GT06N",
+    idMaster: "11111111-1111-4111-8111-111111111111",
+    modelId: "22222222-2222-4222-8222-222222222222",
     protocol: "TCP",
     description: null,
     status: "testing",

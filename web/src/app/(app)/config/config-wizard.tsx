@@ -555,6 +555,18 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     }
 
     if (!session?.accessToken) return;
+    // backend ผูก Config กับรุ่นด้วย id (v3.97) ตัวเลือกในฟอร์มยังเป็นชื่อรุ่น จึงหา id
+    // จากทะเบียนรุ่นตอนสร้าง (โหมดแก้ไม่ส่งรุ่น เพราะรุ่นถูกล็อกอยู่แล้ว)
+    const modelId = editing
+      ? null
+      : (registeredModels ?? []).find((m) => m.name === deviceModel)?.id;
+    if (!editing && !modelId) {
+      setStep(1);
+      setFormError(
+        `ไม่พบรุ่น "${deviceModel}" ในทะเบียนรุ่นอุปกรณ์ ต้องเพิ่มรุ่นนี้ในหน้า Device Model ก่อน`,
+      );
+      return;
+    }
     const fields = buildFields();
     const trimmedDesc = description.trim();
 
@@ -569,7 +581,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
           })
         : await createConfig(session.accessToken, {
             name: trimmed,
-            deviceModel,
+            modelId: modelId as string,
             protocol,
             fields,
             ...(trimmedDesc ? { description: trimmedDesc } : {}),

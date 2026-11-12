@@ -67,6 +67,8 @@ const saved = {
   id: "c1",
   name: "Saved",
   deviceModel: "GT06N",
+  idMaster: "11111111-1111-4111-8111-111111111111",
+  modelId: "22222222-2222-4222-8222-222222222222",
   protocol: "TCP",
   description: null,
   status: "draft" as const,
