@@ -6,7 +6,6 @@ import type { ColumnDef, Row } from "@tanstack/react-table";
 import { CpuIcon } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { CopyButton } from "@/components/copy-button";
 import { ErrorState } from "@/components/error-state";
 import { RelativeTime } from "@/components/relative-time";
 import {
@@ -138,34 +137,6 @@ const columns: ColumnDef<Firmware>[] = [
         </StatusPill>
       );
     },
-  },
-  {
-    id: "checksum",
-    accessorFn: (row) => row.checksumSha256 ?? "",
-    header: "SHA-256",
-    enableSorting: false,
-    meta: { label: "SHA-256" },
-    cell: ({ row }) =>
-      row.original.checksumSha256 ? (
-        <span
-          className="inline-flex items-center gap-1"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <span
-            className="font-instrument text-xs text-muted-foreground"
-            title={row.original.checksumSha256}
-          >
-            {row.original.checksumSha256.slice(0, 10)}
-          </span>
-          <CopyButton
-            value={row.original.checksumSha256}
-            label="คัดลอก SHA-256"
-          />
-        </span>
-      ) : (
-        <span className="text-muted-foreground">-</span>
-      ),
   },
   {
     accessorKey: "fileSizeBytes",

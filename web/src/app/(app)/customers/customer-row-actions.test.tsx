@@ -68,6 +68,7 @@ describe("CustomerRowActions", () => {
 
     const toggle = screen.getByRole("button", { name: "เปิดใช้งาน" });
     expect(toggle.className).not.toContain("bg-destructive/10");
+    expect(toggle.className).toContain("bg-success/10");
     await user.click(toggle);
 
     await waitFor(() =>
