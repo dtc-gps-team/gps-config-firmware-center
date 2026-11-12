@@ -42,7 +42,8 @@ const staleConfig: Config = {
   id: 'cfg-1',
   name: 'ชุดค้างเก่า',
   description: null,
-  deviceModel: 'GT06N',
+  idMaster: 'im-1',
+  modelId: 'dm-1',
   protocol: 'TCP',
   status: 'draft',
   fields: {},
@@ -217,7 +218,7 @@ describe('ConfigDeletionService', () => {
       await service.findRequests({});
       expect(request.findMany).toHaveBeenCalledWith({
         where: { status: 'pending' },
-        include: { config: true },
+        include: { config: { include: { model: { select: { name: true } } } } },
         orderBy: { detectedAt: 'asc' },
       });
     });

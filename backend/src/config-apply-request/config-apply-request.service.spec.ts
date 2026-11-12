@@ -71,7 +71,8 @@ const task: Task = {
 const config = {
   id: CONFIG_ID,
   name: 'GT06N/TCP มาตรฐาน',
-  deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
+  model: { name: 'GT06N' },
   protocol: 'TCP',
   status: 'approved',
   deletedAt: null,
@@ -93,6 +94,7 @@ const firmware = {
 const device = {
   deviceId: DEVICE_ID,
   deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
   protocol: 'TCP',
   status: 'installed',
 };
@@ -437,7 +439,10 @@ describe('ConfigApplyRequestService', () => {
         });
         expect(
           (prisma.config as Record<string, jest.Mock>).findUnique,
-        ).toHaveBeenCalledWith({ where: { id: OTHER_CONFIG_ID } });
+        ).toHaveBeenCalledWith({
+          where: { id: OTHER_CONFIG_ID },
+          include: { model: { select: { name: true } } },
+        });
         expect(users.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: expect.objectContaining({
@@ -503,6 +508,7 @@ describe('ConfigApplyRequestService', () => {
           ...config,
           id: OTHER_CONFIG_ID,
           deviceModel: 'TK103',
+          modelId: 'model-tk103',
         });
 
         await expect(
@@ -567,6 +573,7 @@ describe('ConfigApplyRequestService', () => {
         {
           ...device,
           deviceModel: 'GT06L',
+          modelId: 'model-gt06l',
         },
       );
 
@@ -2047,7 +2054,7 @@ describe('ConfigApplyRequestService', () => {
           config: {
             id: CONFIG_ID,
             name: config.name,
-            deviceModel: 'GT06N',
+            model: { name: 'GT06N' },
             protocol: 'TCP',
             fields: config.fields,
           },
@@ -2074,7 +2081,7 @@ describe('ConfigApplyRequestService', () => {
         config: {
           id: CONFIG_ID,
           name: config.name,
-          deviceModel: 'GT06N',
+          model: { name: 'GT06N' },
           protocol: 'TCP',
           fields: config.fields,
         },
@@ -2144,7 +2151,7 @@ describe('ConfigApplyRequestService', () => {
           where: {
             status: { in: ['approved', 'synced'] },
             deletedAt: null,
-            deviceModel: 'GT06N',
+            modelId: 'model-gt06n',
             protocol: 'TCP',
           },
         }),

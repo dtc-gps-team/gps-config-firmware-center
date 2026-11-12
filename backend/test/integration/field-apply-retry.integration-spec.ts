@@ -128,7 +128,7 @@ describe('Field apply auto-retry (integration — real postgres, fake central)',
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID().slice(0, 8)}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         status: 'approved',
         fields: { SPEED_LIMIT: 120, APN: 'internet' },

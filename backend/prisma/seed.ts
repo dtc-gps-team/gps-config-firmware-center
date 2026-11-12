@@ -1145,6 +1145,15 @@ async function main() {
     });
     deviceModelByName.set(m.name, row);
   }
+  const requireDeviceModelId = (name: string): string => {
+    const model = deviceModelByName.get(name);
+    if (!model) {
+      throw new Error(
+        `seed ใช้ deviceModel "${name}" ที่ไม่มีอยู่ใน DEVICE_MODELS — เพิ่มเข้า DEVICE_MODELS ก่อน`,
+      );
+    }
+    return model.id;
+  };
 
   for (const { customerName, ...d } of demoDevices) {
     const customer = customerName
@@ -1260,7 +1269,8 @@ async function main() {
       update: { fields: c.fields },
       create: {
         name: c.name,
-        deviceModel: c.deviceModel,
+        // Config ผูกรุ่นด้วย id (FK) — demoConfigs ระบุชื่อรุ่นให้อ่านง่าย แปลงเป็น id ที่นี่
+        modelId: requireDeviceModelId(c.deviceModel),
         protocol: c.protocol,
         status: c.status,
         fields: c.fields,

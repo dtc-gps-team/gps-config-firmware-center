@@ -48,7 +48,8 @@ const sampleCampaign = {
 const approvedConfig = {
   id: 'cfg-1',
   name: 'ชุดตั้งค่า GT06N',
-  deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
+  model: { name: 'GT06N' },
   protocol: 'TCP',
   status: 'approved' as const,
   deletedAt: null as Date | null,
@@ -57,6 +58,7 @@ const approvedConfig = {
 const installedDeviceA = {
   deviceId: 'DEV-0001',
   deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
   protocol: 'TCP',
   status: 'installed' as const,
 };
@@ -64,6 +66,7 @@ const installedDeviceA = {
 const installedDeviceB = {
   deviceId: 'DEV-0002',
   deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
   protocol: 'TCP',
   status: 'installed' as const,
 };
@@ -534,7 +537,7 @@ describe('CampaignRolloutService', () => {
     it('Device deviceModel/protocol ไม่ตรงกับ Config -> ConflictException', async () => {
       device.findMany.mockResolvedValue([
         installedDeviceA,
-        { ...installedDeviceB, deviceModel: 'GT06E' },
+        { ...installedDeviceB, deviceModel: 'GT06E', modelId: 'model-gt06e' },
       ]);
 
       await expect(
@@ -608,7 +611,7 @@ describe('CampaignRolloutService', () => {
     it('Device deviceModel ไม่อยู่ใน deviceModelCompatibility ของ Firmware -> ConflictException', async () => {
       device.findMany.mockResolvedValue([
         installedDeviceA,
-        { ...installedDeviceB, deviceModel: 'GT06E' },
+        { ...installedDeviceB, deviceModel: 'GT06E', modelId: 'model-gt06e' },
       ]);
 
       await expect(
@@ -2721,7 +2724,12 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(1);
       // storedFirmware.deviceModelCompatibility = ['GT06N'] เท่านั้น
       device.findMany.mockResolvedValue([
-        { ...installedDeviceB, deviceId: 'DEV-0003', deviceModel: 'GT06L' },
+        {
+          ...installedDeviceB,
+          deviceId: 'DEV-0003',
+          deviceModel: 'GT06L',
+          modelId: 'model-gt06l',
+        },
       ]);
 
       await service.release(firmwareRollout.id, otherOperation);
@@ -5311,7 +5319,7 @@ describe('CampaignRolloutService', () => {
 
     it('เครื่องที่โมเดล/โปรโตคอลไม่ตรงกับ Config ไม่อยู่ในผลลัพธ์', async () => {
       device.findMany.mockResolvedValue([
-        { ...installedDeviceA, deviceModel: 'VT300' },
+        { ...installedDeviceA, deviceModel: 'VT300', modelId: 'model-vt300' },
       ]);
 
       const items = await service.getDeviceValues(

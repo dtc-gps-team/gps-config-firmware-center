@@ -16,9 +16,10 @@ export class CreateConfigDto {
   @MaxLength(120)
   name!: string;
 
-  @IsString()
-  @MinLength(1)
-  deviceModel!: string;
+  // รุ่นอุปกรณ์ของ Config = `DeviceModel.id` (FK, 12 พ.ย. 2569) — เดิมรับชื่อรุ่น
+  // (`deviceModel`) ตอนนี้ไม่รับแล้ว · ไม่พบรุ่น -> 404 ที่ ConfigService.create
+  @IsUUID()
+  modelId!: string;
 
   @IsString()
   @MinLength(1)

@@ -47,6 +47,11 @@ import {
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CONFIG_MODEL_INCLUDE,
+  type ConfigView,
+  toConfigView,
+} from '../config/config-model';
+import {
   markOverrideConsumed,
   mergeApprovedOverride,
 } from './config-override-merge';
@@ -840,9 +845,11 @@ export class DeviceService {
       );
     }
 
-    const config = await this.prisma.config.findUnique({
+    const configRow = await this.prisma.config.findUnique({
       where: { id: configId },
+      include: CONFIG_MODEL_INCLUDE,
     });
+    const config = configRow ? toConfigView(configRow) : null;
     // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" เช่นกัน — mirror
     // `ConfigService.findOne()`/`getBaseConfigForDevice()` (issue #226: เดิม
     // เช็คแค่ `!config` เฉยๆ ทำให้ Config ที่ถูกลบไปแล้วยังเอาไปใส่เข้าอุปกรณ์ได้)
@@ -855,7 +862,7 @@ export class DeviceService {
       );
     }
     if (
-      config.deviceModel !== device.deviceModel ||
+      config.modelId !== device.modelId ||
       config.protocol !== device.protocol
     ) {
       throw new ConflictException(
@@ -1216,9 +1223,11 @@ export class DeviceService {
       );
     }
 
-    const config = await this.prisma.config.findUnique({
+    const configRow = await this.prisma.config.findUnique({
       where: { id: configId },
+      include: CONFIG_MODEL_INCLUDE,
     });
+    const config = configRow ? toConfigView(configRow) : null;
     // soft-deleted Config ถือว่า "ไม่พบ" เช่นกัน — mirror `applyConfig()`/
     // `getBaseConfigForDevice()` (issue #226)
     if (!config || config.deletedAt !== null) {
@@ -1231,8 +1240,7 @@ export class DeviceService {
     }
 
     const compatible =
-      config.deviceModel === device.deviceModel &&
-      config.protocol === device.protocol;
+      config.modelId === device.modelId && config.protocol === device.protocol;
     const compatibilityCheck: CompatibilityCheckResult = compatible
       ? {
           passed: true,
@@ -1312,7 +1320,7 @@ export class DeviceService {
    * เป็น "ล่าสุด" แทน Task ที่ติดตั้งจริงทีหลังกว่าได้ ยอมรับ trade-off นี้ไปก่อน
    * จนกว่าจะมี `completedAt` แยก
    */
-  private async getBaseConfigForDevice(deviceId: string): Promise<Config> {
+  private async getBaseConfigForDevice(deviceId: string): Promise<ConfigView> {
     return (await this.resolveBaseConfig(deviceId)).config;
   }
 
@@ -1320,7 +1328,7 @@ export class DeviceService {
    * เมื่อ Config ฐานมาจาก Rollout (มีหลักฐานว่าส่งเข้ากล่องแล้ว) ไม่งั้น `null` */
   private async resolveBaseConfig(
     deviceId: string,
-  ): Promise<{ config: Config; deliveredAt: Date | null }> {
+  ): Promise<{ config: ConfigView; deliveredAt: Date | null }> {
     // เลือกอันที่ใหม่กว่าระหว่าง (1) Task ที่ช่างทำเสร็จล่าสุด กับ (2) Rollout
     // target ของ Config ที่สำเร็จล่าสุด (docs/19 §5) — เดิมดูแค่ Task ทำให้
     // Config ที่ Rollout ส่งสำเร็จไม่ถูกนับเป็น Config ปัจจุบันของเครื่อง
@@ -1356,9 +1364,13 @@ export class DeviceService {
     const fromRollout =
       !!rolloutConfigId && (!task || rolloutTarget!.updatedAt > task.updatedAt);
     const configId = fromRollout ? rolloutConfigId : (task?.configId ?? null);
-    const config = configId
-      ? await this.prisma.config.findUnique({ where: { id: configId } })
+    const configRow = configId
+      ? await this.prisma.config.findUnique({
+          where: { id: configId },
+          include: CONFIG_MODEL_INCLUDE,
+        })
       : null;
+    const config = configRow ? toConfigView(configRow) : null;
     // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" เช่นกัน — mirror
     // `ConfigService.findOne()` เป๊ะๆ (comment A บน PR #222: ไม่งั้น endpoint
     // นี้จะคืน 200 ให้ Config ที่ถูกลบไปแล้ว แล้วไปเจอ 404 ตอน overrideConfig แทน)
@@ -1375,7 +1387,7 @@ export class DeviceService {
 
   /** Config ที่ใช้อยู่ตอนนี้ของเครื่อง หรือ null ถ้ายังไม่เคยมี Config ที่ยืนยันติดตั้ง
    * (ใช้กับประวัติของอุปกรณ์ ที่ไม่ควร 404 เพียงเพราะเครื่องยังไม่เคยมี Config) */
-  async findCurrentConfigOrNull(deviceId: string): Promise<Config | null> {
+  async findCurrentConfigOrNull(deviceId: string): Promise<ConfigView | null> {
     try {
       return await this.getBaseConfigForDevice(deviceId);
     } catch (err) {
@@ -1487,7 +1499,7 @@ export class DeviceService {
    */
   private async describeDelivery(
     deviceId: string,
-    baseConfig: Config,
+    baseConfig: ConfigView,
     expected: Record<string, unknown>,
     pendingApproved: DeviceConfigOverride | null,
     deliveredAt: Date,
@@ -1714,10 +1726,12 @@ export class DeviceService {
   }
 
   /** Config ที่ยังไม่ถูกลบ ไม่งั้น 404 */
-  private async findLiveConfigOrThrow(configId: string): Promise<Config> {
-    const config = await this.prisma.config.findUnique({
+  private async findLiveConfigOrThrow(configId: string): Promise<ConfigView> {
+    const configRow = await this.prisma.config.findUnique({
       where: { id: configId },
+      include: CONFIG_MODEL_INCLUDE,
     });
+    const config = configRow ? toConfigView(configRow) : null;
     if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }

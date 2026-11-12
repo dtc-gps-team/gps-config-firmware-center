@@ -62,7 +62,8 @@ const sampleTask: Task = {
 
 const approvedConfig = {
   id: CONFIG_ID,
-  deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
+  model: { name: 'GT06N' },
   protocol: 'TCP',
   status: 'approved' as const,
 };
@@ -211,6 +212,7 @@ describe('TaskService', () => {
 
         expect(config.findUnique).toHaveBeenCalledWith({
           where: { id: CONFIG_ID },
+          include: { model: { select: { name: true } } },
         });
         expect(task.create).toHaveBeenCalledWith({
           data: {
@@ -258,6 +260,7 @@ describe('TaskService', () => {
         device.findUnique.mockResolvedValue({
           deviceId: 'DEV-0001',
           deviceModel: 'GT06L',
+          modelId: 'model-gt06l',
           protocol: 'TCP',
         });
 
@@ -544,6 +547,7 @@ describe('TaskService', () => {
 
           expect(config.findUnique).toHaveBeenCalledWith({
             where: { id: CONFIG_ID },
+            include: { model: { select: { name: true } } },
           });
           expect(task.update).toHaveBeenCalledWith({
             where: { id: sampleTask.id },
@@ -619,6 +623,7 @@ describe('TaskService', () => {
           device.findUnique.mockResolvedValue({
             deviceId: 'DEV-0001',
             deviceModel: 'GT06L',
+            modelId: 'model-gt06l',
             protocol: 'TCP',
           });
 

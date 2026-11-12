@@ -14,6 +14,7 @@ import {
   makeUser,
   resetDb,
   TEST_DATABASE_URL,
+  getOrCreateDeviceModel,
 } from './setup';
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -84,7 +85,7 @@ describe('GET /campaigns/:id/rollouts/:rid/targets (+ /attempts) — รอบ�
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID().slice(0, 8)}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         status: 'approved',
         fields: { SPEED_LIMIT: 120 },

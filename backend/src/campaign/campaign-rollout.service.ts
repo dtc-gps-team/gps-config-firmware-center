@@ -71,6 +71,7 @@ import {
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
+import { CONFIG_MODEL_INCLUDE, toConfigView } from '../config/config-model';
 import { isSerializationFailure, lockCampaign } from './campaign-lock';
 import { ActingUser } from './campaign.service';
 import {
@@ -552,7 +553,7 @@ export class CampaignRolloutService {
 
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
-      select: { deviceModel: true, protocol: true, fields: true },
+      select: { protocol: true, fields: true, ...CONFIG_MODEL_INCLUDE },
     });
     if (!config) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
@@ -568,7 +569,7 @@ export class CampaignRolloutService {
     for (const [deviceId, fields] of result) {
       const fieldErrors =
         await this.configDefinitionService.validateOperationOverridableFields(
-          config.deviceModel,
+          config.model.name,
           config.protocol,
           fields,
           templateFieldNames,
@@ -865,7 +866,13 @@ export class CampaignRolloutService {
     }
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
-      select: { id: true, deviceModel: true, protocol: true, fields: true },
+      select: {
+        id: true,
+        modelId: true,
+        protocol: true,
+        fields: true,
+        ...CONFIG_MODEL_INCLUDE,
+      },
     });
     if (!config) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
@@ -882,7 +889,7 @@ export class CampaignRolloutService {
       where: { deviceId: { in: members.map((m) => m.deviceId) } },
       select: {
         deviceId: true,
-        deviceModel: true,
+        modelId: true,
         protocol: true,
         status: true,
       },
@@ -893,7 +900,7 @@ export class CampaignRolloutService {
       .filter(
         (d) =>
           d.status === TARGETABLE_DEVICE_STATUS &&
-          d.deviceModel === config.deviceModel &&
+          d.modelId === config.modelId &&
           d.protocol === config.protocol,
       )
       .map((d) => d.deviceId);
@@ -928,7 +935,7 @@ export class CampaignRolloutService {
       if (!def) return false;
       return (
         templateFieldNames.has(fieldName) ||
-        fieldSupportsModel(def, config.deviceModel, config.protocol)
+        fieldSupportsModel(def, config.model.name, config.protocol)
       );
     };
 
@@ -1477,9 +1484,11 @@ export class CampaignRolloutService {
     if (!rollout.configId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
     const configId = rollout.configId;
 
-    const config = await this.prisma.config.findUnique({
+    const configRow = await this.prisma.config.findUnique({
       where: { id: configId },
+      include: CONFIG_MODEL_INCLUDE,
     });
+    const config = configRow ? toConfigView(configRow) : null;
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
       where: {
@@ -1566,7 +1575,7 @@ export class CampaignRolloutService {
       }
 
       // #235 review รอบ 3 ข้อ 3 — เช็คต่อเครื่องเหมือน `DeviceService.applyConfig()`
-      // (device.status ต้อง installed, deviceModel/protocol ต้องตรง Config)
+      // (device.status ต้อง installed, รุ่น (modelId)/protocol ต้องตรง Config)
       // เผื่อเครื่องถูก decommission หรือเปลี่ยนรุ่นไประหว่างรอ resume
       if (device.status !== TARGETABLE_DEVICE_STATUS) {
         await this.recordTargetResult(
@@ -1579,7 +1588,7 @@ export class CampaignRolloutService {
         continue;
       }
       if (
-        config.deviceModel !== device.deviceModel ||
+        config.modelId !== device.modelId ||
         config.protocol !== device.protocol
       ) {
         await this.recordTargetResult(
@@ -2937,12 +2946,14 @@ export class CampaignRolloutService {
       throw new BadRequestException('payloadType "Config" ต้องระบุ configId');
     }
 
-    const config = await this.prisma.config.findUnique({
+    const configRow = await this.prisma.config.findUnique({
       where: { id: dto.configId },
+      include: CONFIG_MODEL_INCLUDE,
     });
-    if (!config) {
+    if (!configRow) {
       throw new NotFoundException(`ไม่พบ Config id ${dto.configId}`);
     }
+    const config = toConfigView(configRow);
     if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
       throw new ConflictException(
         `Config สถานะปัจจุบัน (${config.status}) ยังใช้สร้าง Rollout ไม่ได้ — ต้องผ่านการอนุมัติ (${APPLICABLE_CONFIG_STATUSES.join('/')}) ก่อน`,
@@ -2955,7 +2966,7 @@ export class CampaignRolloutService {
       const device = devices.get(target.deviceId);
       if (!device) continue; // ปัญหานี้ถูกเก็บไว้แล้วใน problems
       if (
-        device.deviceModel !== config.deviceModel ||
+        device.modelId !== config.modelId ||
         device.protocol !== config.protocol
       ) {
         problems.push(

@@ -11,7 +11,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
-  Config,
   ConfigApplyRequest,
   ConfigApplyRequestStatus,
   ConfigStatus,
@@ -45,6 +44,11 @@ import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { lockDeviceForUse } from '../device/device-lock';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  CONFIG_MODEL_INCLUDE,
+  type ConfigView,
+  toConfigView,
+} from '../config/config-model';
 import { ActingUser, TaskService } from '../task/task.service';
 import {
   CONFIG_APPLY_APPROVAL_TTL_HOURS,
@@ -105,9 +109,10 @@ const LIST_INCLUDE = {
     select: {
       id: true,
       name: true,
-      deviceModel: true,
       protocol: true,
       fields: true,
+      // ชื่อรุ่นมาจาก relation (Config ผูกรุ่นด้วย modelId) — toView() แปลงเป็น `deviceModel`
+      ...CONFIG_MODEL_INCLUDE,
     },
   },
   requester: { select: { id: true, fullName: true } },
@@ -133,7 +138,12 @@ export type ConfigApplyRequestView = Omit<
   RequestWithRelations,
   'config' | 'override'
 > & {
-  config: Omit<NonNullable<RequestWithRelations['config']>, 'fields'> | null;
+  config: {
+    id: string;
+    name: string;
+    deviceModel: string;
+    protocol: string;
+  } | null;
   fieldNames: string[];
   /** docs/30 — null = คำขอปกติ · `fieldNames` = field ที่ Override แก้ */
   override: { id: string; reason: string; fieldNames: string[] } | null;
@@ -961,7 +971,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
       where: {
         status: { in: [...APPLICABLE_CONFIG_STATUSES] },
         deletedAt: null,
-        deviceModel: device.deviceModel,
+        modelId: device.modelId,
         protocol: device.protocol,
       },
       orderBy: { name: 'asc' },
@@ -1125,8 +1135,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
       ...asFieldMap(row.config.fields),
       ...asFieldMap(row.override?.fields ?? null),
     };
-    const { fields: _baseFields, ...config } = row.config;
-    void _baseFields;
+    const { id: configId, name, protocol, model } = row.config;
+    const config = { id: configId, name, deviceModel: model.name, protocol };
     return { ...row, config, fieldNames: Object.keys(fields), override };
   }
 
@@ -1774,8 +1784,12 @@ export class ConfigApplyRequestService implements OnModuleInit {
     configId: string,
     deviceId: string,
     phase: 'create' | 'approve',
-  ): Promise<{ config: Config; device: Device }> {
-    const config = await db.config.findUnique({ where: { id: configId } });
+  ): Promise<{ config: ConfigView; device: Device }> {
+    const row = await db.config.findUnique({
+      where: { id: configId },
+      include: CONFIG_MODEL_INCLUDE,
+    });
+    const config = row ? toConfigView(row) : null;
     if (!config || config.deletedAt !== null) {
       if (phase === 'approve') {
         throw new ConflictException('Config ของคำขอนี้ถูกลบไปแล้ว');
@@ -1800,7 +1814,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
       );
     }
     if (
-      config.deviceModel !== device.deviceModel ||
+      config.modelId !== device.modelId ||
       config.protocol !== device.protocol
     ) {
       throw new ConflictException(
