@@ -22,9 +22,12 @@ import {
   type ApplyOptions,
   type ConfigApplyRequestView,
   type ConfigApplyRequestProgress,
+  type TaskRequestHistoryPage,
+  type TaskRequestListItem,
 } from './config-apply-request.service';
 import { CreateConfigApplyRequestDto } from './dto/create-config-apply-request.dto';
 import { QueryConfigApplyRequestDto } from './dto/query-config-apply-request.dto';
+import { QueryTaskApplyHistoryDto } from './dto/query-task-apply-history.dto';
 import { RejectConfigApplyRequestDto } from './dto/reject-config-apply-request.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ — mirror task.controller.ts */
@@ -59,8 +62,18 @@ export class TaskConfigApplyRequestController {
   listForTask(
     @Param('taskId', ParseUUIDPipe) taskId: string,
     @Req() req: AuthenticatedRequest,
-  ): Promise<ConfigApplyRequest[]> {
+  ): Promise<TaskRequestListItem[]> {
     return this.service.listForTask(taskId, toActor(req));
+  }
+
+  /** หน้าประวัติคำขอบนมือถือ — แบ่งหน้า + กรอง (v3.96) · สิทธิ์เดียวกับรายการ */
+  @Get('history')
+  history(
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Query() query: QueryTaskApplyHistoryDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<TaskRequestHistoryPage> {
+    return this.service.historyForTask(taskId, query, toActor(req));
   }
 
   @Get(':id/progress')

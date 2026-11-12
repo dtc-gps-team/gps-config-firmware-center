@@ -1728,17 +1728,144 @@ describe('ConfigApplyRequestService', () => {
       expect(requests.findMany).not.toHaveBeenCalled();
     });
 
+    const LIST_INCLUDE = {
+      firmware: { select: { id: true, version: true } },
+      // docs/30 — การ์ดหน้างานแสดงค่าที่ช่างขอ Override
+      override: { select: { id: true, reason: true, fields: true } },
+      // v3.96 — จำนวนรอบที่ส่งไปแล้ว
+      rollout: {
+        select: { targets: { select: { attemptCount: true }, take: 1 } },
+      },
+    };
+
     it('listForTask: ใหม่สุดก่อน พร้อมเวอร์ชัน Firmware ของคำขอ (docs/27 B2)', async () => {
       await service.listForTask(TASK_ID, tech);
 
       expect(requests.findMany).toHaveBeenCalledWith({
         where: { taskId: TASK_ID },
         orderBy: { requestedAt: 'desc' },
-        include: {
-          firmware: { select: { id: true, version: true } },
-          // docs/30 — การ์ดหน้างานแสดงค่าที่ช่างขอ Override
-          override: { select: { id: true, reason: true, fields: true } },
-        },
+        include: LIST_INCLUDE,
+      });
+    });
+
+    it('listForTask: แต่ละคำขอบอกจำนวนรอบที่ส่ง และไม่ส่งข้อมูล Rollout ออกไป (v3.96)', async () => {
+      requests.findMany.mockResolvedValue([
+        { ...pending, rollout: { targets: [{ attemptCount: 3 }] } },
+        { ...pending, id: 'b', rollout: null },
+      ]);
+
+      const rows = await service.listForTask(TASK_ID, tech);
+
+      expect(rows[0]).toMatchObject({ attemptCount: 3, maxAttempts: 3 });
+      expect(rows[1]).toMatchObject({ attemptCount: 0, maxAttempts: 3 });
+      expect(rows[0]).not.toHaveProperty('rollout');
+    });
+
+    describe('historyForTask (v3.96)', () => {
+      const row = (id: string, iso: string) => ({
+        ...pending,
+        id,
+        requestedAt: new Date(iso),
+        rollout: null,
+      });
+
+      it('ใช้กฎเห็นงานของ TaskService (404 ถ้าเห็นงานไม่ได้)', async () => {
+        taskService.findOne.mockRejectedValue(new NotFoundException());
+
+        await expect(
+          service.historyForTask(TASK_ID, {}, { id: 'tech-2', role: 'OT' }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(requests.findMany).not.toHaveBeenCalled();
+      });
+
+      it('ไม่ส่งอะไร = หน้าแรก 20 รายการ เรียงเวลาแล้ว id และถามเกิน 1 เพื่อรู้ว่ามีหน้าต่อ', async () => {
+        await service.historyForTask(TASK_ID, {}, tech);
+
+        expect(requests.findMany).toHaveBeenCalledWith({
+          where: { taskId: TASK_ID },
+          orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+          take: 21,
+          include: LIST_INCLUDE,
+        });
+      });
+
+      it('ได้เกิน limit -> ตัดเหลือ limit และ nextCursor = เวลา_id ของรายการสุดท้าย', async () => {
+        const id1 = '11111111-1111-4111-8111-111111111111';
+        const id2 = '22222222-2222-4222-8222-222222222222';
+        const id3 = '33333333-3333-4333-8333-333333333333';
+        requests.findMany.mockResolvedValue([
+          row(id3, '2026-11-12T03:30:00.000Z'),
+          row(id2, '2026-11-12T03:20:00.000Z'),
+          row(id1, '2026-11-12T03:10:00.000Z'),
+        ]);
+
+        const page = await service.historyForTask(TASK_ID, { limit: 2 }, tech);
+
+        expect(page.items.map((r) => r.id)).toEqual([id3, id2]);
+        expect(page.nextCursor).toBe(`2026-11-12T03:20:00.000Z_${id2}`);
+      });
+
+      it('ได้ไม่เกิน limit -> ไม่มีหน้าต่อ', async () => {
+        requests.findMany.mockResolvedValue([
+          row(
+            '11111111-1111-4111-8111-111111111111',
+            '2026-11-12T03:10:00.000Z',
+          ),
+        ]);
+
+        const page = await service.historyForTask(TASK_ID, { limit: 2 }, tech);
+
+        expect(page.nextCursor).toBeNull();
+      });
+
+      it('cursor + กรอง: เฉพาะงานนี้ ก่อน cursor (เวลาเท่ากันใช้ id) กลุ่มผลและชนิดที่เลือก', async () => {
+        const id = '22222222-2222-4222-8222-222222222222';
+
+        await service.historyForTask(
+          TASK_ID,
+          {
+            before: `2026-11-12T03:20:00.000Z_${id}`,
+            result: 'unsuccessful',
+            kind: 'firmware',
+          },
+          tech,
+        );
+
+        const at = new Date('2026-11-12T03:20:00.000Z');
+        expect(requests.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              taskId: TASK_ID,
+              kind: 'firmware',
+              status: {
+                in: [
+                  'failed',
+                  'skipped_offline',
+                  'rejected',
+                  'cancelled',
+                  'expired',
+                ],
+              },
+              OR: [
+                { requestedAt: { lt: at } },
+                { requestedAt: at, id: { lt: id } },
+              ],
+            },
+          }),
+        );
+      });
+
+      it.each([
+        ['succeeded', ['succeeded']],
+        ['open', ['pending', 'approved', 'sending']],
+      ] as const)('กลุ่มผล %s -> สถานะ %j', async (result, statuses) => {
+        await service.historyForTask(TASK_ID, { result }, tech);
+
+        expect(requests.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { taskId: TASK_ID, status: { in: statuses } },
+          }),
+        );
       });
     });
 

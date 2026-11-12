@@ -476,12 +476,21 @@ class ConfigApplyRequest {
     this.releasedAt,
     this.completedAt,
     this.override,
+    this.attemptCount = 0,
+    this.maxAttempts,
   });
 
   final String id;
   final String taskId;
   final String deviceId;
   final FieldApplyKind kind;
+
+  /// รอบที่ส่งเข้ากล่องไปแล้ว (v3.96) — 0 = ยังไม่ได้กดส่ง · มีในรายการคำขอของงาน
+  /// เท่านั้น (response ของ create/release ไม่มี = 0)
+  final int attemptCount;
+
+  /// จำนวนรอบสูงสุดของการลองส่งใหม่ (v3.96) — `null` = backend ไม่ได้ส่งมา
+  final int? maxAttempts;
 
   /// Config ที่ขอส่ง — `null` เมื่อ [kind] เป็น Firmware (v3.62)
   final String? configId;
@@ -545,8 +554,39 @@ class ConfigApplyRequest {
       override: override is Map
           ? ApplyRequestOverride.fromJson(override.cast<String, dynamic>())
           : null,
+      attemptCount: (json['attemptCount'] as num?)?.toInt() ?? 0,
+      maxAttempts: (json['maxAttempts'] as num?)?.toInt(),
     );
   }
+}
+
+/// กลุ่มผลที่หน้าประวัติคำขอกรองได้ (v3.96 `result`) — ไม่เลือก = ทุกสถานะ
+enum ApplyHistoryResult {
+  succeeded('succeeded'),
+  unsuccessful('unsuccessful'),
+  open('open');
+
+  const ApplyHistoryResult(this.wireName);
+  final String wireName;
+}
+
+/// หน้าหนึ่งของ `GET /tasks/{taskId}/config-apply-requests/history` (v3.96)
+class ConfigApplyRequestHistoryPage {
+  const ConfigApplyRequestHistoryPage({required this.items, this.nextCursor});
+
+  final List<ConfigApplyRequest> items;
+
+  /// ส่งกลับเป็น `before` เพื่อดึงหน้าถัดไป · `null` = หมดแล้ว
+  final String? nextCursor;
+
+  factory ConfigApplyRequestHistoryPage.fromJson(Map<String, dynamic> json) =>
+      ConfigApplyRequestHistoryPage(
+        items: [
+          for (final item in json['items'] as List<dynamic>)
+            ConfigApplyRequest.fromJson((item as Map).cast<String, dynamic>()),
+        ],
+        nextCursor: json['nextCursor'] as String?,
+      );
 }
 
 enum ConfigApplyProgressStepKey {

@@ -1428,7 +1428,9 @@ paths:
       description: >-
         ใช้กฎการเห็นงานเดียวกับ `GET /tasks/{taskId}` (ST/OT เห็นเฉพาะงานตัวเอง,
         Operation/Auditor/Admin/SuperAdmin เห็นทุกงาน) — Mobile ใช้คำขอล่าสุด
-        แสดงการ์ดใน Task Detail
+        แสดงการ์ดใน Task Detail · v3.96 เพิ่ม `attemptCount`/`maxAttempts` ต่อ
+        รายการ (เพิ่ม field เท่านั้น ลำดับและรูปแบบ response เดิม) · หน้าประวัติ
+        ที่ต้องแบ่งหน้า/กรองใช้ `listTaskConfigApplyRequestHistory`
       parameters:
         - in: path
           name: taskId
@@ -1445,6 +1447,68 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ConfigApplyRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบงาน หรือผู้เรียกไม่มีสิทธิ์เห็นงานนี้
+
+  /tasks/{taskId}/config-apply-requests/history:
+    get:
+      tags: [config-apply-request]
+      operationId: listTaskConfigApplyRequestHistory
+      summary: ประวัติคำขอส่งเข้ากล่องของงาน แบ่งหน้าและกรองได้ (v3.96)
+      description: >-
+        สำหรับหน้าประวัติคำขอบน Mobile ซึ่งรายการยาวขึ้นได้ตามเวลา · สิทธิ์และ
+        scope เดียวกับ `GET /tasks/{taskId}/config-apply-requests` (ผู้มองไม่เห็นงาน
+        ได้ 404) · เรียง `requestedAt` ใหม่สุดก่อน แล้ว `id` (ลำดับคงที่ระหว่างหน้า) ·
+        แบ่งหน้าแบบ cursor แบบเดียวกับ `GET /devices/{deviceId}/history` เพราะคำขอ
+        ใหม่เข้ามาได้ระหว่างเลื่อนดู · cursor กรองภายในงานนี้เท่านั้น
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - in: query
+          name: before
+          required: false
+          description: cursor จาก `nextCursor` ของหน้าก่อนหน้า (รูปแบบ `<ISO เวลา>_<uuid>`)
+          schema:
+            type: string
+        - in: query
+          name: result
+          required: false
+          description: >-
+            กลุ่มผล · `succeeded` = succeeded · `unsuccessful` = failed,
+            skipped_offline, rejected, cancelled, expired · `open` = pending,
+            approved, sending · ไม่ส่ง = ทุกสถานะ
+          schema:
+            type: string
+            enum: [succeeded, unsuccessful, open]
+        - in: query
+          name: kind
+          required: false
+          schema:
+            type: string
+            enum: [config, firmware]
+      responses:
+        "200":
+          description: หน้าหนึ่งของประวัติคำขอ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequestHistoryPage"
+        "400":
+          description: limit นอกช่วง 1–50, before ไม่ใช่ cursor, result/kind ไม่ใช่ค่าที่กำหนด หรือ taskId ไม่ใช่ uuid
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
@@ -6849,6 +6913,34 @@ components:
         updatedAt:
           type: string
           format: date-time
+        attemptCount:
+          type: integer
+          minimum: 0
+          description: >-
+            (v3.96) จำนวนรอบที่ส่งเข้ากล่องไปแล้ว (docs/31) · 0 = ยังไม่ได้กดส่ง ·
+            มีเฉพาะในรายการคำขอของงาน (`listTaskConfigApplyRequests`,
+            `listTaskConfigApplyRequestHistory`) ไม่มีใน response ของ
+            create/approve/reject/cancel/release
+        maxAttempts:
+          type: integer
+          minimum: 1
+          description: >-
+            (v3.96) จำนวนรอบสูงสุดตามการตั้งค่าลองส่งใหม่อัตโนมัติขณะอ่าน ·
+            มีเฉพาะในรายการคำขอของงานเหมือน `attemptCount`
+
+    ConfigApplyRequestHistoryPage:
+      type: object
+      description: หน้าหนึ่งของประวัติคำขอของงาน (v3.96)
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigApplyRequest"
+        nextCursor:
+          type: string
+          nullable: true
+          description: ส่งกลับมาเป็น `before` เพื่อดึงหน้าถัดไป `null` = หมดแล้ว
 
     ConfigApplyRequestQueueItem:
       description: แถวในคิวอนุมัติ — คำขอ + ข้อมูลที่การ์ด Approval Center ใช้ (ไม่มีค่าจริงของ field)
