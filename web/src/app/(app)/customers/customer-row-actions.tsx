@@ -88,8 +88,8 @@ export function CustomerRowActions({
       </Button>
       <Button
         size="sm"
-        // ปิดใช้งาน = destructive, เปิดใช้งานกลับคืน = outline ปกติ (มติ UI เดิม ตามหน้า User Management)
-        variant={customer.isActive ? "destructive" : "outline"}
+        // ปิดใช้งาน = แดง (destructive) เปิดใช้งานกลับคืน = เขียว (success) ตามหน้า User Management
+        variant={customer.isActive ? "destructive" : "success"}
         disabled={pending}
         title={
           customer.isActive

@@ -19,8 +19,10 @@ import {
   canDecideConfigApproval,
   canDecideDeviceConfigOverride,
   canDecideFieldApplyRequest,
+  canDecideFirmwareApproval,
   canDecideFirmwareOverride,
 } from "@/lib/permissions";
+import { useFirmwareList } from "@/hooks/use-firmware";
 import { getTokenSubject } from "@/lib/jwt";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +54,10 @@ import { ApprovalCard } from "./approval-card";
 import { CampaignRolloutApprovalCard } from "./campaign-rollout-approval-card";
 import { DeviceConfigOverrideApprovalCard } from "./device-config-override-approval-card";
 import { DeviceFirmwareOverrideApprovalCard } from "./device-firmware-override-approval-card";
+import {
+  FirmwareReviewQueue,
+  pendingFirmwareReviews,
+} from "./firmware-review-view";
 import { FieldApplyRequestApprovalCard } from "./field-apply-request-approval-card";
 
 type ApprovalCategory =
@@ -59,7 +65,8 @@ type ApprovalCategory =
   | "rollout"
   | "config-override"
   | "firmware-override"
-  | "field-apply";
+  | "field-apply"
+  | "firmware-review";
 
 export function ApprovalCenterView() {
   const { session } = useAuth();
@@ -91,6 +98,15 @@ export function ApprovalCenterView() {
     error: fieldApplyError,
     refetch: refetchFieldApply,
   } = usePendingFieldApplyRequests(canDecideFieldApply);
+  // คิวตรวจคุณภาพ Firmware: หน้าของ QAEngineer แยกเป็น FirmwareReviewView อยู่แล้ว
+  // (approval-center-entry.tsx) ในหน้านี้จึงมีผลแค่กับ SuperAdmin ที่ต้องเห็นทุกคิว
+  // role อื่นไม่ยิง API นี้
+  const canReviewFirmware = canDecideFirmwareApproval(session?.role);
+  const firmwareReview = useFirmwareList(canReviewFirmware);
+  const pendingFirmwareCount =
+    firmwareReview.data === null
+      ? null
+      : pendingFirmwareReviews(firmwareReview.data).length;
   // โหมด central: คำขอ Firmware Override ถูกปิดทั้งมือถือและ backend (ใช้ "ส่งเข้ากล่องจากหน้างาน"
   // แทน - docs/27 §11) แท็บนี้จะว่างเสมอ จึงซ่อน · ยังไม่รู้โหมด (กำลังโหลด/ต่อ Server ไม่ได้) = แสดงตามเดิม
   // · ถ้ายังมีคำขอเก่าค้าง (สร้างตอนยังไม่ใช่ central) ต้องเห็นแท็บต่อ ไม่งั้นตัดสินใจไม่ได้
@@ -188,6 +204,15 @@ export function ApprovalCenterView() {
           },
         ]
       : []),
+    ...(canReviewFirmware
+      ? [
+          {
+            key: "firmware-review" as const,
+            label: "ตรวจคุณภาพ Firmware",
+            count: pendingFirmwareCount,
+          },
+        ]
+      : []),
   ];
   const notices: Record<ApprovalCategory, string | null> = {
     config: notice,
@@ -195,6 +220,7 @@ export function ApprovalCenterView() {
     "config-override": overrideNotice,
     "firmware-override": firmwareOverrideNotice,
     "field-apply": fieldApplyNotice,
+    "firmware-review": null,
   };
   const preferredTab = categories.some((category) => category.count === null)
     ? undefined
@@ -583,6 +609,25 @@ export function ApprovalCenterView() {
             )}
           </CardContent>
         </Card>
+    ),
+    "firmware-review": (
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Firmware รอตรวจคุณภาพ{" "}
+            <span className="text-muted-foreground">
+              ({pendingFirmwareCount ?? 0})
+            </span>
+          </CardTitle>
+          <CardDescription>
+            Firmware ที่ Firmware Engineer อัปโหลดแล้ว รอตรวจคุณภาพก่อนนำไปใช้
+            ดูผลทดสอบในหน้ารายละเอียดก่อนอนุมัติหรือปฏิเสธ
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <FirmwareReviewQueue {...firmwareReview} />
+        </CardContent>
+      </Card>
     ),
   };
 

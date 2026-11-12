@@ -93,10 +93,9 @@ export function UserRowActions({
       </Select>
       <Button
         size="sm"
-        // ปิดใช้งาน = destructive (มติ UI เดิม — mirror ปุ่มลบ/หยุดที่
-        // campaign-manage-controls.tsx, device-detail-view.tsx,
-        // parameter-manage-controls.tsx) เปิดใช้งานกลับคืน = outline ปกติ
-        variant={user.isActive ? "destructive" : "outline"}
+        // ปิดใช้งาน = แดง (destructive) เปิดใช้งานกลับคืน = เขียว (success)
+        // ใช้คู่สีเดียวกันทั้งหน้า User Management, Customer และ Device Model
+        variant={user.isActive ? "destructive" : "success"}
         disabled={pending}
         onClick={() => void toggleActive()}
       >

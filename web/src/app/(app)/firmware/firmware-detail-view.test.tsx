@@ -87,23 +87,14 @@ describe("FirmwareDetailView — แก้ UUID ดิบที่ 'อัปโ
   });
 });
 
-describe("FirmwareDetailView — SHA-256 checksum ให้ QA เทียบก่อนอนุมัติ", () => {
-  it("มี checksum -> โชว์ hash เต็ม", () => {
+describe("FirmwareDetailView: ไม่แสดง SHA-256 บนหน้าเว็บ", () => {
+  it("มี checksum ใน API แต่หน้าไม่แสดงค่าหรือหัวข้อ SHA-256", () => {
     firmwareState.data = baseFirmware;
 
     render(<FirmwareDetailView firmwareId="fw-1" />);
 
-    expect(screen.getByText("a".repeat(64))).toBeInTheDocument();
-  });
-
-  it("ไม่มี checksum (อัปโหลดก่อนมีฟีเจอร์นี้) -> โชว์ข้อความแทน ไม่ใช่ค่าว่าง", () => {
-    firmwareState.data = { ...baseFirmware, checksumSha256: null };
-
-    render(<FirmwareDetailView firmwareId="fw-1" />);
-
-    expect(
-      screen.getByText("ไม่มี (อัปโหลดก่อนมีฟีเจอร์นี้)"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("a".repeat(64))).not.toBeInTheDocument();
+    expect(screen.queryByText("SHA-256")).not.toBeInTheDocument();
   });
 });
 
