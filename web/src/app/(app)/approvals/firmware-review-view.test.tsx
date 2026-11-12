@@ -89,6 +89,14 @@ describe("Approval Center ของ QAEngineer", () => {
     ).toBeInTheDocument();
   });
 
+  it("SuperAdmin: เห็นหน้าคิวรวมทุกหมวด ไม่ใช่หน้าคิวตรวจคุณภาพอย่างเดียว", () => {
+    state.role = "SuperAdmin";
+    render(<ApprovalCenterEntry />);
+
+    expect(screen.getByText("คิวอนุมัติของ Operation")).toBeInTheDocument();
+    expect(screen.queryByText("เวอร์ชัน 2.5.0")).not.toBeInTheDocument();
+  });
+
   it("Role อื่น (Operation): เห็นคิวเดิม ไม่ใช่คิวตรวจคุณภาพ", () => {
     state.role = "Operation";
     render(<ApprovalCenterEntry />);

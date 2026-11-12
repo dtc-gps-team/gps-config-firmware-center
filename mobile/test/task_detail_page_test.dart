@@ -10,6 +10,7 @@ import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
@@ -19,6 +20,7 @@ import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/apply_request_history_page.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
+import 'package:mobile/features/task/task_timeline_section.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
@@ -139,6 +141,8 @@ Future<void> _pump(
   TaskEventRepository? eventRepo,
   GoRouter? router,
   bool disableAnimations = false,
+  // การ์ดประวัติงานปิดในแอปจริง (ค่าเริ่มต้น) — เทสเดิมของการ์ดสั่งเปิด
+  bool taskTimeline = true,
 }) async {
   // หัว r4 (AppInkHeader) สูงกว่าหัวเดิม เนื้อหาเลยตกใต้จอ 800x600 ของเทส
   // ใช้จอสูงเป็นค่าเริ่มต้น — ยกเว้นเทสที่ตั้งขนาดจอเอง (เช่น 411dp)
@@ -173,6 +177,7 @@ Future<void> _pump(
         configApplyRequestRepositoryProvider.overrideWithValue(
           applyRepo ?? FakeConfigApplyRequestRepository(),
         ),
+        taskTimelineEnabledProvider.overrideWithValue(taskTimeline),
       ],
       child: router == null
           ? MaterialApp(
@@ -1517,6 +1522,28 @@ void main() {
       expect(find.text('สร้างงาน'), findsOneWidget);
     });
 
+    testWidgets(
+      'ปิดการ์ดประวัติงาน (ค่าเริ่มต้นของแอป) -> ไม่เห็นการ์ด ปุ่มเพิ่มบันทึก และไม่โหลด timeline',
+      (tester) async {
+        expect(AppConfig.taskTimelineEnabled, isFalse);
+        final events = _FakeTaskEventRepository(events: [timeline.first]);
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.pending),
+          ),
+          eventRepo: events,
+          taskTimeline: AppConfig.taskTimelineEnabled,
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('ประวัติงาน'), findsNothing);
+        expect(find.text('สร้างงาน'), findsNothing);
+        expect(find.byKey(const Key('task_add_note_button')), findsNothing);
+        expect(events.getCalls, 0);
+      },
+    );
+
     for (final (label, role, status, visible) in [
       ('ST งานที่ยังไม่ยกเลิก', UserRole.st, TaskStatus.pending, true),
       ('OT งานที่ยังไม่ยกเลิก', UserRole.ot, TaskStatus.inProgress, true),
@@ -2143,7 +2170,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ประวัติคำขอ'), findsWidgets);
-      expect(find.textContaining('Firmware v1.3.0'), findsOneWidget);
+      expect(find.text('Firmware 1.3.0'), findsOneWidget);
       expect(
         find.text(
           configApplyRequestStatusLabel(ConfigApplyRequestStatus.succeeded),
