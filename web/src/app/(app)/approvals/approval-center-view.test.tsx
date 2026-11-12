@@ -57,10 +57,22 @@ vi.mock("@/hooks/use-pending-field-apply-requests", () => ({
   usePendingFieldApplyRequests: () => usePendingFieldApplyRequests(),
 }));
 
+// คิวตรวจคุณภาพ Firmware (เฉพาะ SuperAdmin ในหน้านี้) · เช็ค arg `enabled` ตรงๆ
+const useFirmwareList = vi.fn();
+vi.mock("@/hooks/use-firmware", () => ({
+  useFirmwareList: (enabled: boolean) => useFirmwareList(enabled),
+  // การ์ด Firmware Override ใช้ดึงเวอร์ชันของ Firmware ที่ขอ
+  useFirmware: () => ({ data: null, isLoading: false, error: null }),
+}));
+vi.mock("../firmware/firmware-approval-panel", () => ({
+  FirmwareApprovalPanel: () => <div>ปุ่มตัดสิน Firmware</div>,
+}));
+
 // แท็บเก็บอยู่ใน URL (?tab=) และ jsdom ใช้ URL ร่วมกันทั้งไฟล์ ต้องรีเซ็ตทุกเทส
 beforeEach(() => {
   window.history.replaceState(null, "", "/approvals");
   usePendingFieldApplyRequests.mockReturnValue(emptyQueryState());
+  useFirmwareList.mockReturnValue(emptyQueryState());
 });
 
 function emptyQueryState() {
@@ -155,6 +167,78 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(true);
     expect(usePendingDeviceFirmwareOverrides).toHaveBeenCalledWith(true);
   });
+});
+
+describe("ApprovalCenterView: แท็บตรวจคุณภาพ Firmware", () => {
+  beforeEach(() => {
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+  });
+
+  it("SuperAdmin: เห็นทุกหมวดเหมือน Operation และมีแท็บตรวจคุณภาพ Firmware เพิ่ม", () => {
+    authState.role = "SuperAdmin";
+    useFirmwareList.mockReturnValue({
+      ...emptyQueryState(),
+      data: [
+        {
+          id: "f1",
+          version: "2.5.0",
+          deviceModelCompatibility: ["GT06N"],
+          uploadStatus: "stored",
+          approvalStatus: "pending_review",
+          fileSizeBytes: 2048,
+          uploadedBy: "u-1",
+          uploadedAt: "2026-10-20T09:00:00Z",
+        },
+        {
+          id: "f2",
+          version: "2.4.1",
+          deviceModelCompatibility: ["GT06N"],
+          uploadStatus: "stored",
+          approvalStatus: "approved",
+          fileSizeBytes: 2048,
+          uploadedBy: "u-1",
+          uploadedAt: "2026-10-19T09:00:00Z",
+        },
+      ],
+    });
+
+    render(<ApprovalCenterView />);
+
+    for (const name of [
+      /^Config\s*\d*$/,
+      /^Campaign Rollout/,
+      /^Config Override/,
+      /^Firmware Override/,
+      /^ส่งเข้ากล่องจากหน้างาน/,
+    ]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+    const firmwareTab = screen.getByRole("tab", {
+      name: /^ตรวจคุณภาพ Firmware/,
+    });
+    expect(firmwareTab).toHaveTextContent("1");
+    expect(useFirmwareList).toHaveBeenCalledWith(true);
+
+    fireEvent.click(firmwareTab);
+    expect(screen.getByText("เวอร์ชัน 2.5.0")).toBeInTheDocument();
+    expect(screen.queryByText("เวอร์ชัน 2.4.1")).not.toBeInTheDocument();
+    expect(screen.getByText("ปุ่มตัดสิน Firmware")).toBeInTheDocument();
+  });
+
+  it.each(["Operation", "Admin"])(
+    "%s: ไม่เห็นแท็บตรวจคุณภาพ Firmware และไม่ยิง API รายการ Firmware",
+    (role) => {
+      authState.role = role;
+
+      render(<ApprovalCenterView />);
+
+      expect(
+        screen.queryByRole("tab", { name: /^ตรวจคุณภาพ Firmware/ }),
+      ).not.toBeInTheDocument();
+      expect(useFirmwareList).toHaveBeenCalledWith(false);
+    },
+  );
 });
 
 /** รายการแก้ UI เว็บตามรีวิวพี่เลี้ยง: แยกหมวดเป็นแท็บ แสดงทีละหมวด */
