@@ -10,6 +10,7 @@ import {
   Config,
   type ConfigStatus,
   type ConfigVersion,
+  type DeviceModel,
   Prisma,
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -27,6 +28,11 @@ import { DeviceModelService } from '../device-model/device-model.service';
 import { type LegacyConfigWrite } from '../config-sync-writer/config-sync-writer.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { flattenFields } from './config-fields';
+import {
+  CONFIG_MODEL_INCLUDE,
+  type ConfigView,
+  toConfigView,
+} from './config-model';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
@@ -98,30 +104,24 @@ export class ConfigService {
   }
 
   /**
-   * ตรวจว่า `protocol` ที่ระบุ อยู่ใน `DeviceModel.supportedProtocols` ของ
-   * `deviceModel` นั้นไหม (issue #209 ข้อ 4) — enforce เข้มงวดจริง ไม่ใช่แค่
-   * dropdown ช่วยเฉยๆ เพราะ backfill (seed.ts) มีข้อมูลจริงรองรับทุกรุ่นอยู่
-   * แล้ว ไม่มีปัญหาเรื่อง supportedProtocols ว่างเปล่าที่เคยกังวลไว้
+   * หารุ่นจาก `modelId` แล้วตรวจว่า `protocol` ที่ระบุอยู่ใน `DeviceModel.supportedProtocols`
+   * ของรุ่นนั้นไหม (issue #209 ข้อ 4) — enforce เข้มงวดจริง ไม่ใช่แค่ dropdown ช่วยเฉยๆ
    *
-   * ไม่พบรุ่นนี้ในทะเบียนเลย -> block เหมือนกัน (block ทั้งคู่ ไม่มีทางลัด
-   * ให้รุ่นที่ยังไม่ได้ลงทะเบียนข้ามไปได้ — mirror หลักการเดียวกับ
-   * ConfigDefinitionService.validateFields())
+   * ไม่พบรุ่น -> 404 ตาม convention ของ id อ้างอิงใน body (เหมือน `clonedFromId`) ·
+   * คืนรุ่นให้ผู้เรียกใช้ชื่อรุ่นตรวจกับ Parameter Library ต่อ (Parameter Library ยังผูก
+   * รุ่นด้วยชื่อ — `ConfigFieldDefinitionModelSupport.deviceModel`)
    */
-  private async validateDeviceModelProtocol(
-    deviceModel: string,
+  private async resolveDeviceModel(
+    modelId: string,
     protocol: string,
-  ): Promise<void> {
-    const model = await this.deviceModelService.findByName(deviceModel);
-    if (!model) {
-      throw new BadRequestException(
-        `ไม่พบรุ่นอุปกรณ์ "${deviceModel}" ในทะเบียน — ต้องสร้างรุ่นนี้ก่อนใน Device Model Registry`,
-      );
-    }
+  ): Promise<DeviceModel> {
+    const model = await this.deviceModelService.findOne(modelId);
     if (!model.supportedProtocols.includes(protocol)) {
       throw new BadRequestException(
-        `รุ่น "${deviceModel}" ไม่รองรับ protocol "${protocol}" (รองรับ: ${model.supportedProtocols.join(', ')})`,
+        `รุ่น "${model.name}" ไม่รองรับ protocol "${protocol}" (รองรับ: ${model.supportedProtocols.join(', ')})`,
       );
     }
+    return model;
   }
 
   /**
@@ -177,11 +177,11 @@ export class ConfigService {
     throw err;
   }
 
-  async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
+  async create(dto: CreateConfigDto, actor: ActingUser): Promise<ConfigView> {
     // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
     // (เฉพาะ Role ConfigEngineer ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
-    await this.validateDeviceModelProtocol(dto.deviceModel, dto.protocol);
-    await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
+    const model = await this.resolveDeviceModel(dto.modelId, dto.protocol);
+    await this.validateFields(model.name, dto.protocol, dto.fields);
 
     // ต้นทางของการโคลน (ถ้าส่งมา) ต้องมีอยู่จริงและยังไม่ถูกลบ — soft-deleted
     // ถือว่า "ไม่พบ" เหมือน findOne() เพื่อไม่ผูกกับ Config ที่ถูกถอดออกจากระบบ
@@ -192,18 +192,18 @@ export class ConfigService {
       await this.findOne(dto.clonedFromId);
     }
 
-    let created: Config;
+    let created: ConfigView;
     try {
       // ล็อกนิยาม field ที่ Config ใช้ (FOR SHARE) ใน transaction เดียวกับการเขียน - กัน field ถูกลบ
       // จากคลังแทรกระหว่าง validate กับสร้าง (Parameter Library ลบได้ เฉพาะ field ที่ไม่มี Config ใช้)
       created = await this.prisma.$transaction(async (tx) => {
-        // ล็อกรุ่นอุปกรณ์ที่อ้างด้วยชื่อ (FOR SHARE) กันรุ่นถูกลบแทรก — Config อ้างรุ่นด้วย string ไม่มี FK
-        await lockDeviceModelForUse(tx, dto.deviceModel);
+        // ล็อกรุ่นอุปกรณ์ (FOR SHARE) กันรุ่นถูกลบแทรก — ได้ 409 อ่านรู้เรื่องแทน FK error
+        await lockDeviceModelForUse(tx, dto.modelId);
         await lockFieldsForUse(tx, Object.keys(dto.fields));
-        return tx.config.create({
+        const row = await tx.config.create({
           data: {
             name: dto.name,
-            deviceModel: dto.deviceModel,
+            modelId: dto.modelId,
             protocol: dto.protocol,
             clonedFromId: dto.clonedFromId,
             // cast เป็น Prisma.InputJsonValue — DTO ใช้ Record<string, unknown>
@@ -215,7 +215,9 @@ export class ConfigService {
             description: dto.description,
             createdBy: actor.id,
           },
+          include: CONFIG_MODEL_INCLUDE,
         });
+        return toConfigView(row);
       });
     } catch (err) {
       this.throwIfDuplicateName(err, dto.name);
@@ -248,7 +250,7 @@ export class ConfigService {
     file: Express.Multer.File | undefined,
     format: string | undefined,
     actor: ActingUser,
-  ): Promise<Config> {
+  ): Promise<ConfigView> {
     if (!file) {
       throw new BadRequestException(
         'ไม่มีไฟล์แนบมา (multipart field name ต้องเป็น "file")',
@@ -316,6 +318,14 @@ export class ConfigService {
     // `clonedFromId` ใช้ได้เฉพาะตอนสร้างจากฟอร์มโคลน (POST /config) ไม่รับผ่าน
     // import — DTO ตัวเดียวกันกับ createConfig จึง whitelist field นี้ไว้ ต้องดัก
     // เองตรงนี้ ไม่งั้นไฟล์ import จะอ้างต้นทางได้ทั้งที่ไม่ได้ผ่านฟอร์มโคลน
+    // ไฟล์รูปแบบเดิมระบุรุ่นด้วยชื่อ (`deviceModel`) — ตั้งแต่ Config ผูกรุ่นด้วย id ต้องใช้
+    // `modelId` แทน บอกให้ชัดแทน error "property should not exist" ของ whitelist
+    if ('deviceModel' in normalized) {
+      throw new BadRequestException(
+        'ไฟล์ import ต้องระบุรุ่นด้วย "modelId" (id ของรุ่นอุปกรณ์) แทน "deviceModel"',
+      );
+    }
+
     if ('clonedFromId' in normalized) {
       throw new BadRequestException(
         'ไฟล์ import ใส่ clonedFromId ไม่ได้ (ระบุต้นทางได้เฉพาะตอนโคลน Config จากหน้าเว็บ)',
@@ -404,7 +414,7 @@ export class ConfigService {
     passed: boolean,
     actor: ActingUser,
     suggestedApproverId?: string,
-  ): Promise<Config> {
+  ): Promise<ConfigView> {
     const config = await this.findOne(id);
 
     if (config.status !== DECIDABLE_CONFIG_STATUS) {
@@ -466,7 +476,7 @@ export class ConfigService {
    * อยู่แล้ว) `fields` ที่ snapshot คือค่าที่ ConfigEngineer simulate จริง — config แก้
    * ไม่ได้หลังพ้น `draft` อยู่แล้ว
    */
-  async approve(id: string, actor: ActingUser): Promise<Config> {
+  async approve(id: string, actor: ActingUser): Promise<ConfigView> {
     const config = await this.findOne(id);
 
     if (config.status !== APPROVABLE_CONFIG_STATUS) {
@@ -475,7 +485,7 @@ export class ConfigService {
       );
     }
 
-    let approved: Config;
+    let approved: ConfigView;
     let versionNumber: number;
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -493,10 +503,13 @@ export class ConfigService {
             approvedBy: actor.id,
           },
         });
-        const updated = await tx.config.update({
-          where: { id },
-          data: { status: 'approved', approvedBy: actor.id },
-        });
+        const updated = toConfigView(
+          await tx.config.update({
+            where: { id },
+            data: { status: 'approved', approvedBy: actor.id },
+            include: CONFIG_MODEL_INCLUDE,
+          }),
+        );
         // AuditLog (#27) — อยู่ใน transaction เดียวกับ ConfigVersion/status
         // update อยู่แล้ว (ต่างจาก create/update/remove/decide/reject ที่
         // เขียนแยกนอก transaction — ตรงนี้ join ฟรีเพราะ transaction มีอยู่แล้ว)
@@ -600,7 +613,7 @@ export class ConfigService {
    * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ ConfigEngineer แก้ไขต่อได้
    * ทันที (`draft` เป็นสถานะที่ `update`/`remove` อนุญาตอยู่แล้ว)
    */
-  async reject(id: string, actor: ActingUser): Promise<Config> {
+  async reject(id: string, actor: ActingUser): Promise<ConfigView> {
     const config = await this.findOne(id);
 
     if (config.status !== APPROVABLE_CONFIG_STATUS) {
@@ -624,12 +637,15 @@ export class ConfigService {
     // approvedBy / suggestedApproverId เป็น scalar FK — ใช้รูป unchecked
     // เหมือน createdBy ใน create() · suggestedApproverId: null = เคลียร์ค่า
     extra?: { approvedBy?: string; suggestedApproverId?: string | null },
-  ): Promise<Config> {
+  ): Promise<ConfigView> {
     try {
-      return await this.prisma.config.update({
-        where: { id },
-        data: { status, ...extra },
-      });
+      return toConfigView(
+        await this.prisma.config.update({
+          where: { id },
+          data: { status, ...extra },
+          include: CONFIG_MODEL_INCLUDE,
+        }),
+      );
     } catch (err) {
       if (
         err instanceof PrismaClientKnownRequestError &&
@@ -641,37 +657,42 @@ export class ConfigService {
     }
   }
 
-  findAll(query: QueryConfigDto): Promise<Config[]> {
+  async findAll(query: QueryConfigDto): Promise<ConfigView[]> {
     // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด และ
     // ConfigEngineer ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
     // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #46 —
     // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
     // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
-    return this.prisma.config.findMany({
+    const rows = await this.prisma.config.findMany({
       // soft-delete (docs/11 Part A): Config ที่ SuperAdmin อนุมัติให้ลบแล้ว
       // (`deletedAt != null`) ต้องหายจากทุก query อ่าน — hard delete ของ
       // ConfigEngineer (remove()) ยังลบ row จริงเหมือนเดิม ไม่เกี่ยวกับ filter นี้
       where: { status: query.status, deletedAt: null },
       orderBy: { createdAt: 'desc' },
+      include: CONFIG_MODEL_INCLUDE,
     });
+    return rows.map(toConfigView);
   }
 
-  async findOne(id: string): Promise<Config> {
-    const config = await this.prisma.config.findUnique({ where: { id } });
+  async findOne(id: string): Promise<ConfigView> {
+    const config = await this.prisma.config.findUnique({
+      where: { id },
+      include: CONFIG_MODEL_INCLUDE,
+    });
     // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" (404) — เช็คหลัง
     // findUnique เพื่อไม่ต้องเปลี่ยนเป็น findFirst (deletedAt ไม่ใช่ unique key)
     // ดูคอมเมนต์ที่ findAll()
     if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${id}`);
     }
-    return config;
+    return toConfigView(config);
   }
 
   async update(
     id: string,
     dto: UpdateConfigDto,
     actor: ActingUser,
-  ): Promise<Config> {
+  ): Promise<ConfigView> {
     // IDOR/state-guard pattern เดียวกับ Task (CLAUDE.md): filter ด้วย status
     // ตอน update แล้วเช็ค count === 0 -> ต้องแยกให้ออกว่าเป็น "ไม่เจอ id เลย"
     // (404) หรือ "เจอแต่สถานะไม่ใช่ draft" (409) เลย findOne ก่อนเพื่อแยก 2
@@ -683,16 +704,17 @@ export class ConfigService {
       );
     }
 
-    // update() แก้ได้ทีละส่วน (deviceModel/protocol/fields ทุกตัว optional)
+    // update() แก้ได้ทีละส่วน (modelId/protocol/fields ทุกตัว optional)
     // — validate เทียบกับค่าที่จะเป็นจริงหลัง merge เสมอ (ค่าใหม่จาก dto ถ้ามี
     // ไม่งั้นใช้ค่าเดิมของ Config) ไม่ใช่แค่ค่าที่ dto ส่งมาเฉยๆ เพราะ fields
-    // เดิมต้องยังตรงกับ deviceModel/protocol ใหม่ด้วยถ้ามีการเปลี่ยนรุ่น
-    await this.validateDeviceModelProtocol(
-      dto.deviceModel ?? existing.deviceModel,
+    // เดิมต้องยังตรงกับรุ่น/protocol ใหม่ด้วยถ้ามีการเปลี่ยนรุ่น
+    const modelId = dto.modelId ?? existing.modelId;
+    const model = await this.resolveDeviceModel(
+      modelId,
       dto.protocol ?? existing.protocol,
     );
     await this.validateFields(
-      dto.deviceModel ?? existing.deviceModel,
+      model.name,
       dto.protocol ?? existing.protocol,
       dto.fields ?? (existing.fields as Record<string, unknown>),
     );
@@ -700,14 +722,11 @@ export class ConfigService {
     // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน
     // สถานะไปพอดีจาก request อื่น (rare) — Prisma โยน P2025 ("Record to
     // update not found") ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500
-    let updated: Config;
+    let updated: ConfigView;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
         // ล็อกรุ่นอุปกรณ์ของค่าที่จะเป็นจริงหลังแก้ (FOR SHARE) เหตุผลเดียวกับ create()
-        await lockDeviceModelForUse(
-          tx,
-          dto.deviceModel ?? existing.deviceModel,
-        );
+        await lockDeviceModelForUse(tx, modelId);
         // ล็อกนิยาม field ของค่าที่จะเป็นจริงหลังแก้ (FOR SHARE) เหตุผลเดียวกับ create()
         await lockFieldsForUse(
           tx,
@@ -715,16 +734,18 @@ export class ConfigService {
             dto.fields ?? (existing.fields as Record<string, unknown>),
           ),
         );
-        return tx.config.update({
+        const row = await tx.config.update({
           where: { id },
           data: {
             name: dto.name,
-            deviceModel: dto.deviceModel,
+            modelId: dto.modelId,
             protocol: dto.protocol,
             fields: dto.fields as Prisma.InputJsonValue | undefined,
             description: dto.description,
           },
+          include: CONFIG_MODEL_INCLUDE,
         });
+        return toConfigView(row);
       });
     } catch (err) {
       if (

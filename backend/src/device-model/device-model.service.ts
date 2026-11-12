@@ -66,14 +66,6 @@ export class DeviceModelService {
     return model;
   }
 
-  /** ใช้จาก `ConfigService` เพื่อ validate ว่า `Config.protocol` อยู่ใน
-   * `supportedProtocols` ของรุ่นนั้นไหม (issue #209 ข้อ 4) — คืน `null` ถ้า
-   * ไม่เจอรุ่นนี้ในทะเบียนเลย (ให้ผู้เรียกตัดสินใจเองว่าจะ throw ข้อความ
-   * ไหน ไม่ใช่หน้าที่ของ service นี้) */
-  findByName(name: string): Promise<DeviceModel | null> {
-    return this.prisma.deviceModel.findUnique({ where: { name } });
-  }
-
   /**
    * เขียน AuditLog ในทรานแซกชันเดียวกับการเปลี่ยนข้อมูลเสมอ (ไม่ใช่ never-throw)
    * — บันทึกไม่สำเร็จ = การสร้าง/แก้ล้มตามไปด้วย ไม่มีทางที่ข้อมูลเปลี่ยนโดยไม่มี
@@ -179,7 +171,7 @@ export class DeviceModelService {
   /**
    * `DELETE /device-models/{id}` — ลบจริงได้เฉพาะรุ่นที่ **ไม่มีอะไรอ้างอิงอยู่เลย** (มติ A 2026-11-05:
    * "เลิกผลิต" เป็นปุ่มหลัก ลบจริงเฉพาะที่ไม่มีอะไรผูก เช่นสร้างรุ่นผิดชื่อ) ผู้อ้างอิงที่นับ: อุปกรณ์
-   * (`modelId` ทุกสถานะ รวมปลดระวางแล้ว), Config (ชื่อรุ่น รวมที่ลบแบบ soft delete แล้ว), Firmware
+   * (`modelId` ทุกสถานะ รวมปลดระวางแล้ว), Config (`modelId` รวมที่ลบแบบ soft delete แล้ว), Firmware
    * (`deviceModelCompatibility` รวมที่ลบแล้ว), พารามิเตอร์ (`supportedModels`) · มีอย่างใดอย่างหนึ่ง
    * -> 409 บอกจำนวนแต่ละชนิดและชี้ไป "ปรับเป็นเลิกผลิต" แทน
    *
@@ -195,9 +187,9 @@ export class DeviceModelService {
       const [devices, configs, configsDeleted, firmware, parameters] =
         await Promise.all([
           tx.device.count({ where: { modelId: id } }),
-          tx.config.count({ where: { deviceModel: name } }),
+          tx.config.count({ where: { modelId: id } }),
           tx.config.count({
-            where: { deviceModel: name, deletedAt: { not: null } },
+            where: { modelId: id, deletedAt: { not: null } },
           }),
           tx.firmware.count({
             where: { deviceModelCompatibility: { has: name } },

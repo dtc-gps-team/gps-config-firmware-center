@@ -103,7 +103,7 @@ describe('DeviceSyncController (integration — real postgres + DeviceApiKeyGuar
     return prisma.config.create({
       data: {
         name,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         status: 'approved',
         fields: { SPEED_LIMIT: 120, APN: 'internet' },

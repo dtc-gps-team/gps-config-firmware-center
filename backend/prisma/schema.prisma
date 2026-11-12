@@ -420,9 +420,10 @@ enum DeviceModelStatus {
 
 model DeviceModel {
   id                 String            @id @default(uuid())
-  // ต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ (เช่น "GT06N") — Device/
-  // Config/Firmware ยังอ้าง string นี้อยู่ ไม่ได้ migrate ไปใช้ modelId ทั้งระบบ
-  // ในรอบนี้ (out of scope ตาม issue #209 — ดู docs/15 หัวข้อ 5)
+  // ต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ (เช่น "GT06N") — Device
+  // (สำเนาชื่อใน `Device.deviceModel`), Firmware และ Parameter Library ยังอ้าง
+  // string นี้อยู่ (issue #209 — ดู docs/15 หัวข้อ 5) · Config ย้ายไปอ้าง `id`
+  // ผ่าน `Config.modelId` แล้ว (12 พ.ย. 2569)
   name               String            @unique
   manufacturer       String?
   // โปรโตคอลที่รุ่นนี้รองรับได้ — บังคับอย่างน้อย 1 ค่าตอนสร้าง (DTO
@@ -445,6 +446,7 @@ model DeviceModel {
   updatedAt          DateTime          @updatedAt
 
   devices Device[]
+  configs Config[]
 }
 
 model Device {
@@ -678,7 +680,23 @@ model Config {
   // field นี้เทียบเท่ากับ CONFIG_TEMPLATE.template_name ของ DD แต่บังคับ unique
   // ทั้งระบบตามมติ review ข้างต้น
   name                String       @unique
-  deviceModel         String
+  // รหัสกลางของ Config สำหรับเชื่อมกับระบบอื่น (B, 12 พ.ย. 2569) — UUID ที่
+  // ฐานข้อมูลสร้างให้เองตอนสร้างแถว ไม่ซ้ำทั้งระบบ และไม่เปลี่ยนตลอดอายุ Config
+  // (ไม่มี API ให้แก้ · Config ที่โคลนได้ค่าใหม่ของตัวเอง) · แยกจาก `id` เพื่อให้
+  // ระบบภายนอกอ้างได้โดยไม่ผูกกับ primary key ภายใน · ชื่อคอลัมน์ในฐานเป็น
+  // `id_master` ตามที่ระบบปลายทางใช้ ส่วนโค้ดและ API ใช้ `idMaster`
+  //
+  // Deviation จาก Data Dictionary: DD ไม่มี field นี้ — เพิ่มเพื่อการเชื่อมระบบ
+  idMaster            String       @unique @default(dbgenerated("gen_random_uuid()")) @map("id_master")
+  // รุ่นอุปกรณ์ของ Config — FK ไป `DeviceModel.id` (B, 12 พ.ย. 2569) แทน
+  // string `deviceModel` เดิมที่จับคู่ด้วยชื่อ: ฐานข้อมูลบังคับเองว่ารุ่นมีอยู่จริง
+  // และลบรุ่นที่มี Config ใช้อยู่ไม่ได้ (onDelete Restrict) · ชื่อรุ่นอ่านจาก
+  // relation `model.name` ที่เดียว ไม่เก็บซ้ำในตารางนี้ (API ยังตอบ
+  // `deviceModel` เป็นค่าที่คำนวณจาก relation)
+  //
+  // Deviation จาก Data Dictionary: เหมือน `Device.modelId` — DD ออกแบบรุ่นเป็น
+  // ลำดับชั้นหลายระดับ ระบบนี้ย่อเป็น `DeviceModel` ตัวเดียว (docs/15)
+  modelId             String
   protocol            String
   // คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร — ไม่บังคับ (optional)
   // เทียบเท่า CONFIG_TEMPLATE.description ของ Data Dictionary (สอดคล้อง ไม่ใช่
@@ -718,6 +736,7 @@ model Config {
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
+  model             DeviceModel             @relation(fields: [modelId], references: [id], onDelete: Restrict)
   creator           User                    @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
   approver          User?                   @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
   suggestedApprover User?                   @relation("ConfigSuggestedApprover", fields: [suggestedApproverId], references: [id])
@@ -730,6 +749,8 @@ model Config {
   applyRequests     ConfigApplyRequest[]
   clonedFrom        Config?                 @relation("ConfigClone", fields: [clonedFromId], references: [id], onDelete: SetNull)
   clones            Config[]                @relation("ConfigClone")
+
+  @@index([modelId])
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve

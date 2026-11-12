@@ -28,11 +28,20 @@ type ConfigVersionDelegateMock = {
   findUnique: jest.Mock;
 };
 
-const draftConfig: Config = {
+/** แถวที่ Prisma คืน (include ชื่อรุ่นจาก relation — Config ผูกรุ่นด้วย modelId) */
+type ConfigRow = Config & { model: { name: string } };
+
+const MODEL_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const GT06L_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const MODEL_INCLUDE = { model: { select: { name: true } } };
+
+const draftConfig: ConfigRow = {
   id: '11111111-1111-1111-1111-111111111111',
+  idMaster: '99999999-9999-4999-8999-999999999999',
   name: 'ชุดตั้งค่าทดสอบ',
   description: null,
-  deviceModel: 'GT06N',
+  modelId: MODEL_ID,
+  model: { name: 'GT06N' },
   protocol: 'TCP',
   status: 'draft',
   fields: { APN1: 'internet' },
@@ -45,9 +54,15 @@ const draftConfig: Config = {
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
-const testingConfig: Config = { ...draftConfig, status: 'testing' };
-const approvedConfig: Config = { ...draftConfig, status: 'approved' };
-const syncedConfig: Config = { ...draftConfig, status: 'synced' };
+const testingConfig: ConfigRow = { ...draftConfig, status: 'testing' };
+const approvedConfig: ConfigRow = { ...draftConfig, status: 'approved' };
+const syncedConfig: ConfigRow = { ...draftConfig, status: 'synced' };
+
+/** รูปที่ ConfigService คืนให้ API: ไม่มี object `model` แต่มี `deviceModel` (ชื่อรุ่น) */
+function view(row: ConfigRow) {
+  const { model, ...rest } = row;
+  return { ...rest, deviceModel: model.name };
+}
 
 const configEngineer: ActingUser = { id: 'ce-1', role: 'ConfigEngineer' };
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
@@ -91,7 +106,7 @@ describe('ConfigService', () => {
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
   let configSyncQueue: { enqueueConfigSync: jest.Mock };
-  let deviceModelService: { findByName: jest.Mock };
+  let deviceModelService: { findOne: jest.Mock };
 
   beforeEach(async () => {
     config = {
@@ -140,8 +155,8 @@ describe('ConfigService', () => {
     // เทสเดิมทั้งหมดไม่เกี่ยวกับ issue #209 ข้อ 4 โดยตรง จึงให้ผ่านเสมอ
     // describe ที่เกี่ยวกับ validateDeviceModelProtocol โดยตรงจะ override เอง
     deviceModelService = {
-      findByName: jest.fn().mockResolvedValue({
-        id: 'dm-1',
+      findOne: jest.fn().mockResolvedValue({
+        id: MODEL_ID,
         name: 'GT06N',
         supportedProtocols: ['TCP'],
       }),
@@ -206,7 +221,7 @@ describe('ConfigService', () => {
       await service.create(
         {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         },
@@ -216,12 +231,13 @@ describe('ConfigService', () => {
       expect(config.create).toHaveBeenCalledWith({
         data: {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           description: undefined,
           createdBy: 'ce-1',
         },
+        include: MODEL_INCLUDE,
       });
     });
 
@@ -231,7 +247,7 @@ describe('ConfigService', () => {
       await service.create(
         {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         },
@@ -251,13 +267,13 @@ describe('ConfigService', () => {
         service.create(
           {
             name: 'ชุดตั้งค่าทดสอบ',
-            deviceModel: 'GT06N',
+            modelId: MODEL_ID,
             protocol: 'TCP',
             fields: { APN1: 'internet' },
           },
           configEngineer,
         ),
-      ).resolves.toEqual(draftConfig);
+      ).resolves.toEqual(view(draftConfig));
     });
 
     it('ส่ง description มา -> เขียนลง DB ตามนั้น', async () => {
@@ -266,7 +282,7 @@ describe('ConfigService', () => {
       await service.create(
         {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           description: 'ตั้งค่ามาตรฐานภาคกลาง',
@@ -277,22 +293,43 @@ describe('ConfigService', () => {
       expect(config.create).toHaveBeenCalledWith({
         data: {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           description: 'ตั้งค่ามาตรฐานภาคกลาง',
           createdBy: 'ce-1',
         },
+        include: MODEL_INCLUDE,
       });
     });
 
-    it('เรียก validateFields ด้วย deviceModel/protocol/fields จาก dto ก่อนเขียนลง DB', async () => {
+    it('คืน Config พร้อม deviceModel (ชื่อรุ่นจาก relation) และ idMaster ที่ฐานข้อมูลสร้าง ไม่ส่ง object model ออกไป', async () => {
+      config.create.mockResolvedValue(draftConfig);
+
+      const result = await service.create(
+        {
+          name: 'ชุดตั้งค่าทดสอบ',
+          modelId: MODEL_ID,
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        },
+        configEngineer,
+      );
+
+      expect(result.deviceModel).toBe('GT06N');
+      expect(result.modelId).toBe(MODEL_ID);
+      expect(result.idMaster).toBe(draftConfig.idMaster);
+      expect(result).not.toHaveProperty('model');
+      expect(deviceModelService.findOne).toHaveBeenCalledWith(MODEL_ID);
+    });
+
+    it('เรียก validateFields ด้วยชื่อรุ่น (จาก modelId)/protocol/fields จาก dto ก่อนเขียนลง DB', async () => {
       config.create.mockResolvedValue(draftConfig);
 
       await service.create(
         {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         },
@@ -315,7 +352,7 @@ describe('ConfigService', () => {
         service.create(
           {
             name: 'ชุดตั้งค่าทดสอบ',
-            deviceModel: 'GT06N',
+            modelId: MODEL_ID,
             protocol: 'TCP',
             fields: { APN1: 'xxx' },
           },
@@ -325,25 +362,27 @@ describe('ConfigService', () => {
       expect(config.create).not.toHaveBeenCalled();
     });
 
-    it('deviceModel ไม่มีในทะเบียน DeviceModel เลย -> BadRequestException ไม่เรียก config.create (issue #209)', async () => {
-      deviceModelService.findByName.mockResolvedValue(null);
+    it('modelId ไม่มีในทะเบียน DeviceModel -> 404 จาก DeviceModelService ไม่เรียก config.create', async () => {
+      deviceModelService.findOne.mockRejectedValue(
+        new NotFoundException('ไม่พบรุ่นอุปกรณ์'),
+      );
 
       await expect(
         service.create(
           {
             name: 'ชุดตั้งค่าทดสอบ',
-            deviceModel: 'UNKNOWN_MODEL',
+            modelId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
             protocol: 'TCP',
             fields: { APN1: 'internet' },
           },
           configEngineer,
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(NotFoundException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น -> BadRequestException ไม่เรียก config.create (issue #209)', async () => {
-      deviceModelService.findByName.mockResolvedValue({
+      deviceModelService.findOne.mockResolvedValue({
         id: 'dm-1',
         name: 'GT06N',
         supportedProtocols: ['TCP'],
@@ -353,7 +392,7 @@ describe('ConfigService', () => {
         service.create(
           {
             name: 'ชุดตั้งค่าทดสอบ',
-            deviceModel: 'GT06N',
+            modelId: MODEL_ID,
             protocol: 'UDP',
             fields: { APN1: 'internet' },
           },
@@ -365,7 +404,7 @@ describe('ConfigService', () => {
 
     it('protocol อยู่ใน supportedProtocols -> ผ่านปกติ เรียก config.create (issue #209)', async () => {
       config.create.mockResolvedValue(draftConfig);
-      deviceModelService.findByName.mockResolvedValue({
+      deviceModelService.findOne.mockResolvedValue({
         id: 'dm-1',
         name: 'GT06N',
         supportedProtocols: ['TCP', 'UDP'],
@@ -374,7 +413,7 @@ describe('ConfigService', () => {
       await service.create(
         {
           name: 'ชุดตั้งค่าทดสอบ',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'UDP',
           fields: { APN1: 'internet' },
         },
@@ -397,7 +436,7 @@ describe('ConfigService', () => {
         service.create(
           {
             name: 'ชื่อซ้ำ',
-            deviceModel: 'GT06N',
+            modelId: MODEL_ID,
             protocol: 'TCP',
             fields: { APN1: 'internet' },
           },
@@ -410,7 +449,7 @@ describe('ConfigService', () => {
   describe('create: clonedFromId (ต้นทางของการโคลน)', () => {
     const base = {
       name: 'โคลนจาก SOS',
-      deviceModel: 'GT06N',
+      modelId: MODEL_ID,
       protocol: 'TCP',
       fields: { APN1: 'internet' },
     };
@@ -429,11 +468,13 @@ describe('ConfigService', () => {
 
       expect(config.findUnique).toHaveBeenCalledWith({
         where: { id: approvedConfig.id },
+        include: MODEL_INCLUDE,
       });
       expect(config.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           clonedFromId: approvedConfig.id,
         }) as Record<string, unknown>,
+        include: MODEL_INCLUDE,
       });
       expect(result.clonedFromId).toBe(approvedConfig.id);
     });
@@ -475,6 +516,7 @@ describe('ConfigService', () => {
         data: expect.objectContaining({
           clonedFromId: undefined,
         }) as Record<string, unknown>,
+        include: MODEL_INCLUDE,
       });
     });
   });
@@ -498,6 +540,22 @@ describe('ConfigService', () => {
       expect(config.create).not.toHaveBeenCalled();
     });
 
+    it('ไฟล์รูปแบบเดิมระบุรุ่นด้วยชื่อ (deviceModel) -> 400 บอกให้ใช้ modelId ไม่สร้าง Config', async () => {
+      const file = makeMulterFile(
+        JSON.stringify({
+          name: 'ไฟล์เก่า',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        }),
+      );
+
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow('modelId');
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
     it('ไฟล์ parse เป็น JSON ไม่ได้ -> BadRequestException', async () => {
       const file = makeMulterFile('{ not valid json');
       await expect(
@@ -516,7 +574,7 @@ describe('ConfigService', () => {
 
     it('JSON เป็น array -> BadRequestException', async () => {
       const file = makeMulterFile(
-        JSON.stringify([{ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }]),
+        JSON.stringify([{ modelId: MODEL_ID, protocol: 'TCP', fields: {} }]),
       );
       await expect(
         service.importFromJson(file, 'json', configEngineer),
@@ -552,7 +610,7 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({
           id: 'should-not-be-here',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: {},
         }),
@@ -568,7 +626,7 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({
           name: 'ชุดตั้งค่านำเข้า',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         }),
@@ -576,22 +634,23 @@ describe('ConfigService', () => {
 
       const result = await service.importFromJson(file, 'json', configEngineer);
 
-      expect(result).toEqual(draftConfig);
+      expect(result).toEqual(view(draftConfig));
       expect(config.create).toHaveBeenCalledWith({
         data: {
           name: 'ชุดตั้งค่านำเข้า',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: 'ce-1',
         },
+        include: MODEL_INCLUDE,
       });
     });
 
     it('JSON ไม่มี field name -> BadRequestException (name บังคับกรอก — มติ Sprint 1 review ข้อ 4)', async () => {
       const file = makeMulterFile(
         JSON.stringify({
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         }),
@@ -608,7 +667,7 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({
           name: 'ชุดตั้งค่านำเข้าแบบใหม่',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           settings: {
             gps: { enabled: true, send_interval_sec: 10 },
@@ -622,7 +681,7 @@ describe('ConfigService', () => {
       expect(config.create).toHaveBeenCalledWith({
         data: {
           name: 'ชุดตั้งค่านำเข้าแบบใหม่',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: {
             'gps.enabled': true,
@@ -632,6 +691,7 @@ describe('ConfigService', () => {
           },
           createdBy: 'ce-1',
         },
+        include: MODEL_INCLUDE,
       });
     });
 
@@ -639,7 +699,7 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({
           name: 'กำกวม',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           settings: { gps: { enabled: true } },
@@ -656,7 +716,7 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({
           name: 'settings ผิดชนิด',
-          deviceModel: 'GT06N',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           settings: 'not-an-object',
         }),
@@ -673,7 +733,7 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({
           name: 'ตัวอย่าง SMARTEYEPLUS',
-          deviceModel: 'SMARTEYEPLUS',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           settings: { APN1: 'internet', MTYP: '1', SIM1: '0812345678' },
         }),
@@ -684,11 +744,12 @@ describe('ConfigService', () => {
       expect(config.create).toHaveBeenCalledWith({
         data: {
           name: 'ตัวอย่าง SMARTEYEPLUS',
-          deviceModel: 'SMARTEYEPLUS',
+          modelId: MODEL_ID,
           protocol: 'TCP',
           fields: { APN1: 'internet', MTYP: '1', SIM1: '0812345678' },
           createdBy: 'ce-1',
         },
+        include: MODEL_INCLUDE,
       });
     });
   });
@@ -705,7 +766,7 @@ describe('ConfigService', () => {
 
       expect(result).toEqual({ passed: true, details: ['ผ่านหมด'] });
       expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
-        deviceModel: draftConfig.deviceModel,
+        deviceModel: draftConfig.model.name,
         protocol: draftConfig.protocol,
         fields: draftConfig.fields,
       });
@@ -759,10 +820,11 @@ describe('ConfigService', () => {
 
       const result = await service.decide(draftConfig.id, true, configEngineer);
 
-      expect(result).toEqual(testingConfig);
+      expect(result).toEqual(view(testingConfig));
       expect(config.update).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
         data: { status: 'testing' },
+        include: MODEL_INCLUDE,
       });
     });
 
@@ -784,7 +846,7 @@ describe('ConfigService', () => {
 
       await expect(
         service.decide(draftConfig.id, true, configEngineer),
-      ).resolves.toEqual(testingConfig);
+      ).resolves.toEqual(view(testingConfig));
     });
 
     it('status draft, passed:false -> ไม่ยิง update ลง DB เลย คืน config เดิม (ยังเป็น draft) ไม่เขียน AuditLog', async () => {
@@ -796,7 +858,7 @@ describe('ConfigService', () => {
         configEngineer,
       );
 
-      expect(result).toEqual(draftConfig);
+      expect(result).toEqual(view(draftConfig));
       expect(config.update).not.toHaveBeenCalled();
       expect(auditLog.create).not.toHaveBeenCalled();
     });
@@ -847,6 +909,7 @@ describe('ConfigService', () => {
         expect(config.update).toHaveBeenCalledWith({
           where: { id: draftConfig.id },
           data: { status: 'testing' },
+          include: MODEL_INCLUDE,
         });
       });
 
@@ -864,6 +927,7 @@ describe('ConfigService', () => {
         expect(config.update).toHaveBeenCalledWith({
           where: { id: draftConfig.id },
           data: { status: 'testing', suggestedApproverId: 'op-1' },
+          include: MODEL_INCLUDE,
         });
       });
 
@@ -914,7 +978,7 @@ describe('ConfigService', () => {
           'op-1',
         );
 
-        expect(result).toEqual(draftConfig);
+        expect(result).toEqual(view(draftConfig));
         expect(user.findUnique).not.toHaveBeenCalled();
         expect(config.update).not.toHaveBeenCalled();
       });
@@ -931,10 +995,13 @@ describe('ConfigService', () => {
 
       const result = await service.approve(testingConfig.id, operation);
 
-      expect(result).toEqual({ ...approvedConfig, approvedBy: operation.id });
+      expect(result).toEqual(
+        view({ ...approvedConfig, approvedBy: operation.id }),
+      );
       expect(config.update).toHaveBeenCalledWith({
         where: { id: testingConfig.id },
         data: { status: 'approved', approvedBy: operation.id },
+        include: MODEL_INCLUDE,
       });
     });
 
@@ -958,7 +1025,7 @@ describe('ConfigService', () => {
 
       await expect(
         service.approve(testingConfig.id, operation),
-      ).resolves.toEqual(approvedConfig);
+      ).resolves.toEqual(view(approvedConfig));
       expect(configVersion.create).toHaveBeenCalled();
     });
 
@@ -974,7 +1041,7 @@ describe('ConfigService', () => {
           configId: testingConfig.id,
           versionNumber: 3,
           fields: testingConfig.fields,
-          deviceModel: testingConfig.deviceModel,
+          deviceModel: testingConfig.model.name,
           protocol: testingConfig.protocol,
           approvedBy: operation.id,
         },
@@ -993,7 +1060,7 @@ describe('ConfigService', () => {
           configId: testingConfig.id,
           versionNumber: 1,
           fields: testingConfig.fields,
-          deviceModel: testingConfig.deviceModel,
+          deviceModel: testingConfig.model.name,
           protocol: testingConfig.protocol,
           approvedBy: operation.id,
         },
@@ -1095,10 +1162,11 @@ describe('ConfigService', () => {
 
       const result = await service.reject(testingConfig.id, operation);
 
-      expect(result).toEqual(draftConfig);
+      expect(result).toEqual(view(draftConfig));
       expect(config.update).toHaveBeenCalledWith({
         where: { id: testingConfig.id },
         data: { status: 'draft' },
+        include: MODEL_INCLUDE,
       });
     });
 
@@ -1120,7 +1188,7 @@ describe('ConfigService', () => {
 
       await expect(
         service.reject(testingConfig.id, operation),
-      ).resolves.toEqual(draftConfig);
+      ).resolves.toEqual(view(draftConfig));
     });
 
     it('status draft (ยังไม่เคยส่งต่อ Operation) -> ConflictException', async () => {
@@ -1255,10 +1323,11 @@ describe('ConfigService', () => {
 
       const result = await service.findAll({ status: 'draft' });
 
-      expect(result).toEqual([draftConfig]);
+      expect(result).toEqual([view(draftConfig)]);
       expect(config.findMany).toHaveBeenCalledWith({
         where: { status: 'draft', deletedAt: null },
         orderBy: { createdAt: 'desc' },
+        include: MODEL_INCLUDE,
       });
     });
   });
@@ -1284,7 +1353,7 @@ describe('ConfigService', () => {
     it('เจอ config -> คืนค่าตรงๆ', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       await expect(service.findOne(draftConfig.id)).resolves.toEqual(
-        draftConfig,
+        view(draftConfig),
       );
     });
   });
@@ -1293,11 +1362,7 @@ describe('ConfigService', () => {
     it('config status ไม่ใช่ draft -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
       await expect(
-        service.update(
-          testingConfig.id,
-          { deviceModel: 'GT06L' },
-          configEngineer,
-        ),
+        service.update(testingConfig.id, { modelId: GT06L_ID }, configEngineer),
       ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
@@ -1306,12 +1371,13 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue({
         ...draftConfig,
-        deviceModel: 'GT06L',
+        modelId: GT06L_ID,
+        model: { name: 'GT06L' },
       });
 
       await service.update(
         draftConfig.id,
-        { deviceModel: 'GT06L' },
+        { modelId: GT06L_ID },
         configEngineer,
       );
 
@@ -1319,17 +1385,18 @@ describe('ConfigService', () => {
         where: { id: draftConfig.id },
         data: {
           name: undefined,
-          deviceModel: 'GT06L',
+          modelId: GT06L_ID,
           protocol: undefined,
           fields: undefined,
           description: undefined,
         },
+        include: MODEL_INCLUDE,
       });
     });
 
     it('protocol ใหม่ไม่อยู่ใน supportedProtocols ของ deviceModel เดิม -> BadRequestException ไม่เรียก config.update (issue #209)', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
-      deviceModelService.findByName.mockResolvedValue({
+      deviceModelService.findOne.mockResolvedValue({
         id: 'dm-1',
         name: 'GT06N',
         supportedProtocols: ['TCP'],
@@ -1345,12 +1412,13 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue({
         ...draftConfig,
-        deviceModel: 'GT06L',
+        modelId: GT06L_ID,
+        model: { name: 'GT06L' },
       });
 
       await service.update(
         draftConfig.id,
-        { deviceModel: 'GT06L' },
+        { modelId: GT06L_ID },
         configEngineer,
       );
 
@@ -1361,17 +1429,17 @@ describe('ConfigService', () => {
 
     it('AuditLog เขียนไม่สำเร็จ -> update() ยังสำเร็จปกติ (never-throw)', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
-      const updated = { ...draftConfig, deviceModel: 'GT06L' };
+      const updated: ConfigRow = {
+        ...draftConfig,
+        modelId: GT06L_ID,
+        model: { name: 'GT06L' },
+      };
       config.update.mockResolvedValue(updated);
       auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
 
       await expect(
-        service.update(
-          draftConfig.id,
-          { deviceModel: 'GT06L' },
-          configEngineer,
-        ),
-      ).resolves.toEqual(updated);
+        service.update(draftConfig.id, { modelId: GT06L_ID }, configEngineer),
+      ).resolves.toEqual(view(updated));
     });
 
     it('ส่ง description ใหม่มา -> update ค่านั้น', async () => {
@@ -1388,11 +1456,12 @@ describe('ConfigService', () => {
         where: { id: draftConfig.id },
         data: {
           name: undefined,
-          deviceModel: undefined,
+          modelId: undefined,
           protocol: undefined,
           fields: undefined,
           description: 'อัปเดตคำอธิบาย',
         },
+        include: MODEL_INCLUDE,
       });
     });
 
@@ -1418,7 +1487,7 @@ describe('ConfigService', () => {
     it('ไม่เจอ config เลย -> NotFoundException (ไม่ใช่ ConflictException)', async () => {
       config.findUnique.mockResolvedValue(null);
       await expect(
-        service.update('missing-id', { deviceModel: 'GT06L' }, configEngineer),
+        service.update('missing-id', { modelId: GT06L_ID }, configEngineer),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1427,11 +1496,7 @@ describe('ConfigService', () => {
       config.update.mockRejectedValue(makeP2025());
 
       await expect(
-        service.update(
-          draftConfig.id,
-          { deviceModel: 'GT06L' },
-          configEngineer,
-        ),
+        service.update(draftConfig.id, { modelId: GT06L_ID }, configEngineer),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1449,22 +1514,28 @@ describe('ConfigService', () => {
       );
 
       expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
-        draftConfig.deviceModel,
+        draftConfig.model.name,
         draftConfig.protocol,
         { APN1: 'new-apn' },
       );
     });
 
-    it('ส่งแค่ deviceModel ใหม่มา -> validateFields ใช้ fields เดิมจาก DB มา merge ให้ (เช็คว่า fields เดิมยังตรงกับรุ่นใหม่ไหม)', async () => {
+    it('ส่งแค่ modelId ใหม่มา -> validateFields ใช้ fields เดิมจาก DB มา merge ให้ (เช็คว่า fields เดิมยังตรงกับรุ่นใหม่ไหม)', async () => {
+      deviceModelService.findOne.mockResolvedValue({
+        id: GT06L_ID,
+        name: 'GT06L',
+        supportedProtocols: ['TCP'],
+      });
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue({
         ...draftConfig,
-        deviceModel: 'GT06L',
+        modelId: GT06L_ID,
+        model: { name: 'GT06L' },
       });
 
       await service.update(
         draftConfig.id,
-        { deviceModel: 'GT06L' },
+        { modelId: GT06L_ID },
         configEngineer,
       );
 

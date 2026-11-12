@@ -1,6 +1,11 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { createTestPrisma, resetDb, makeUser } from './setup';
+import {
+  createTestPrisma,
+  resetDb,
+  makeUser,
+  getOrCreateDeviceModel,
+} from './setup';
 
 /**
  * Schema-only PR (#25) สำหรับ Config/Firmware/Campaign/Incident — ยังไม่มี
@@ -33,7 +38,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
       await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: 'non-existent-user-id',
@@ -50,7 +55,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
     await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineer.id,
@@ -73,7 +78,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineer.id,

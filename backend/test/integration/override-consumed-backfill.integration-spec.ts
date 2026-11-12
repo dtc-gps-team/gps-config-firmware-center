@@ -59,7 +59,7 @@ describe('migration backfill DeviceConfigOverride.consumedAt (integration)', () 
       prisma.config.create({
         data: {
           name,
-          deviceModel: 'GT06N',
+          modelId: model.id,
           protocol: 'TCP',
           status: 'approved',
           fields: { SPEED_LIMIT: 120 },

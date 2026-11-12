@@ -92,7 +92,12 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
     return prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: overrides?.deviceModel ?? 'GT06N',
+        modelId: (
+          await getOrCreateDeviceModel(
+            prisma,
+            overrides?.deviceModel ?? 'GT06N',
+          )
+        ).id,
         protocol: overrides?.protocol ?? 'TCP',
         status: 'approved',
         fields: { APN: 'internet' },

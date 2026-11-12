@@ -134,6 +134,25 @@ void main() {
 
   group('DeviceConfigDraft.fromJson', () {
     test(
+      'v3.97: อ่าน idMaster + modelId และยังได้ชื่อรุ่นจาก deviceModel · ไม่มี -> null',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'idMaster': '1b13ce04-0c45-4f3f-8e9b-3cd86ea92864',
+          'modelId': '6649d288-c905-4d47-b107-699e96b4f279',
+          'deviceModel': 'ESP32-DEVKIT-V1',
+        });
+        expect(draft.idMaster, '1b13ce04-0c45-4f3f-8e9b-3cd86ea92864');
+        expect(draft.modelId, '6649d288-c905-4d47-b107-699e96b4f279');
+        expect(draft.deviceModel, 'ESP32-DEVKIT-V1');
+
+        final old = DeviceConfigDraft.fromJson({'id': 'cfg-1'});
+        expect(old.idMaster, isNull);
+        expect(old.modelId, isNull);
+      },
+    );
+
+    test(
       'boxFields (v3.74): ค่าที่กล่องรายงานว่าใช้อยู่ · ไม่มี/null -> null',
       () {
         final draft = DeviceConfigDraft.fromJson({

@@ -128,7 +128,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel,
+        modelId: (await getOrCreateDeviceModel(prisma, deviceModel)).id,
         protocol: 'TCP',
         status,
         fields: { APN: 'internet' },
@@ -1199,7 +1199,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           status: 'approved',
           // ค่า base เดิมถูกต้อง (บวก) — ถ้า apply-config ไม่ merge override เลย
@@ -1245,7 +1245,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           status: 'approved',
           fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
@@ -2108,7 +2108,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           status: 'approved',
           fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
@@ -2156,7 +2156,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           status: 'approved',
           fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
@@ -3251,7 +3251,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           status: 'approved',
           fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
@@ -3296,7 +3296,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           status: 'approved',
           fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },

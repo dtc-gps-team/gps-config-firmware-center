@@ -12,6 +12,7 @@ import { NotificationService } from '../notification/notification.service';
 import { lockConfigForReference } from '../config/config-lock';
 import { lockDeviceForUse } from '../device/device-lock';
 import { PrismaService } from '../prisma/prisma.service';
+import { CONFIG_MODEL_INCLUDE, toConfigView } from '../config/config-model';
 import { CreateTaskNoteDto } from './dto/create-task-note.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
@@ -935,12 +936,14 @@ export class TaskService {
     configId: string,
     deviceId: string | null | undefined,
   ): Promise<void> {
-    const config = await this.prisma.config.findUnique({
+    const configRow = await this.prisma.config.findUnique({
       where: { id: configId },
+      include: CONFIG_MODEL_INCLUDE,
     });
-    if (!config) {
+    if (!configRow) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
+    const config = toConfigView(configRow);
     if (!CONFIG_STATUSES_ASSIGNABLE_TO_TASK.includes(config.status)) {
       throw new ConflictException(
         `Config สถานะปัจจุบัน (${config.status}) ยังผูกกับงานไม่ได้ — ต้องผ่านการอนุมัติ (${CONFIG_STATUSES_ASSIGNABLE_TO_TASK.join('/')}) ก่อน`,
@@ -955,7 +958,7 @@ export class TaskService {
       return;
     }
     if (
-      config.deviceModel !== device.deviceModel ||
+      config.modelId !== device.modelId ||
       config.protocol !== device.protocol
     ) {
       throw new ConflictException(

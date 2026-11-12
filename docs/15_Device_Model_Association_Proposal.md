@@ -319,6 +319,13 @@ version ที่ใช้ได้กับรุ่นนั้นไว้ท
 `ConfigFieldDefinitionModelSupport.deviceModel` เดิมเลยในรอบนี้ — ทั้ง 3 จุดนี้ยังเป็น string ต่อไป
 จนกว่าจะมีการตัดสินใจแยกต่างหากว่าจะ migrate ให้ครบทั้งระบบหรือไม่ (เฟสถัดไป ถ้าต้องการ)
 
+> **อัปเดต 12 พ.ย. 2569 (B):** `Config` ย้ายไปผูกรุ่นด้วย `Config.modelId` (FK ไป `DeviceModel.id`,
+> `onDelete: Restrict`) แล้ว และลบคอลัมน์ `Config.deviceModel` ออก — ชื่อรุ่นอ่านจาก relation ที่เดียว
+> (API ยังตอบ `deviceModel` เป็นค่าที่คำนวณ) · migration `20261112100000_config_model_id_and_id_master`
+> ตรวจก่อนว่า Config ทุกแถวจับคู่ชื่อรุ่นกับทะเบียนได้ ไม่ได้ = หยุดโดยไม่แตะข้อมูล · ยังเป็น string:
+> `Firmware.deviceModelCompatibility`, `ConfigFieldDefinitionModelSupport.deviceModel` และ
+> `ConfigVersion.deviceModel` (snapshot ตามเวลา) — ดู RBAC_Matrix แก้ครั้งที่ 126
+
 ---
 
 ## 6. คำถามเปิด (Open Questions)
