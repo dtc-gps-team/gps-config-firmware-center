@@ -6,7 +6,6 @@ import { useState } from "react";
 import {
   CalendarIcon,
   FileIcon,
-  FingerprintIcon,
   HardDriveIcon,
   Trash2Icon,
   UserIcon,
@@ -17,7 +16,6 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Card } from "@/components/ui/card";
-import { CopyButton } from "@/components/copy-button";
 import { ErrorState } from "@/components/error-state";
 import {
   FIRMWARE_RELEASE_LABEL,
@@ -190,20 +188,6 @@ function FirmwareDetailContent({
               </InfoRow>
               <InfoRow label="ขนาดไฟล์" icon={HardDriveIcon}>
                 {formatFileSize(firmware.fileSizeBytes)}
-              </InfoRow>
-              <InfoRow label="SHA-256" icon={FingerprintIcon}>
-                {firmware.checksumSha256 ? (
-                  <span className="inline-flex items-start gap-1">
-                    <span className="font-instrument text-xs break-all">
-                      {firmware.checksumSha256}
-                    </span>
-                    <CopyButton value={firmware.checksumSha256} label="คัดลอก SHA-256" />
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">
-                    ไม่มี (อัปโหลดก่อนมีฟีเจอร์นี้)
-                  </span>
-                )}
               </InfoRow>
               <InfoRow label="สถานะอัปเดตกล่อง">
                 <StatusPill

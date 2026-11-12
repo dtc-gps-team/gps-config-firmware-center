@@ -83,7 +83,8 @@ export function DeviceModelRowActions({
     <div className="flex items-center justify-end gap-2">
       <Button
         size="sm"
-        variant="outline"
+        // เลิกผลิต = แดง ยังผลิตอยู่ = เขียว คู่สีเดียวกับปุ่มปิด/เปิดใช้งานของ User Management และ Customer
+        variant={model.status === "active" ? "destructive" : "success"}
         disabled={pending}
         onClick={() => void toggleStatus()}
       >

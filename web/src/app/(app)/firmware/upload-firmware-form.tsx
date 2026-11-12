@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -8,11 +8,9 @@ import { canUploadFirmware } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { uploadFirmware, type Firmware } from "@/lib/firmware-api";
 import { formatFileSize } from "@/lib/format-bytes";
-import { CopyButton } from "@/components/copy-button";
 import { FileDropzone } from "@/components/file-dropzone";
 import { ProgressBar } from "@/components/progress-bar";
 import { Button } from "@/components/ui/button";
-import { sha256Hex } from "@/lib/file-checksum";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -48,21 +46,6 @@ export function UploadFirmwareForm({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
-  // SHA-256 ของไฟล์ที่เลือก คำนวณในเครื่องเพื่อเทียบกับ checksum ที่ระบบเก็บหลังอัปโหลด
-  const [sum, setSum] = useState<{ file: File; hex: string | null } | null>(null);
-  const checksum = file && sum?.file === file ? sum.hex : null;
-
-  useEffect(() => {
-    if (!file) return;
-    let cancelled = false;
-    void sha256Hex(file).then((hex) => {
-      if (!cancelled) setSum({ file, hex });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
-
   if (!canUploadFirmware(session?.role)) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -146,13 +129,6 @@ export function UploadFirmwareForm({
             </span>
           ) : undefined}
         </FileDropzone>
-        {file && checksum && (
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            SHA-256
-            <span className="font-instrument break-all">{checksum}</span>
-            <CopyButton value={checksum} label="คัดลอก SHA-256" />
-          </p>
-        )}
         {submitting && (
           <div className="flex items-center gap-2">
             <ProgressBar value={progress} label="ความคืบหน้าการอัปโหลด" />
