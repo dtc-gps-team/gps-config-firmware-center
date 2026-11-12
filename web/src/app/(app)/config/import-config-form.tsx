@@ -32,8 +32,10 @@ const REQUIRED_KEYS = ["name", "modelId", "protocol"] as const;
 
 const TEMPLATE_MODEL_NAME = "SMARTEYEPLUS";
 
-/** ใส่แทน `modelId` ในไฟล์ตัวอย่างเมื่อระบบนี้ยังไม่มีรุ่น SMARTEYEPLUS */
-const TEMPLATE_MODEL_PLACEHOLDER = "ใส่ id ของรุ่นอุปกรณ์จากหน้า Device Model";
+/** ใส่แทน `modelId` ในไฟล์ตัวอย่างเมื่อระบบนี้ยังไม่มีรุ่น SMARTEYEPLUS · หน้า Device Model
+ *  ไม่แสดง id ทางที่ผู้ใช้หา id ได้ตอนนี้คือ JSON ที่คัดลอกจาก Config ของรุ่นเดียวกัน */
+const TEMPLATE_MODEL_PLACEHOLDER =
+  'ใส่ id ของรุ่น (คัดลอกค่า "modelId" จากปุ่ม "คัดลอก JSON" ในหน้า Config ที่ใช้รุ่นเดียวกัน)';
 
 /** ไฟล์ตัวอย่างให้ดาวน์โหลด — โครงเดียวกับที่หน้า Config Detail export ให้
  *  ตั้งแต่ v3.67 (`settings` ซ้อนชั้น ตรงกับ JSON ที่ส่งเข้า Server กลางจริง) —
@@ -315,7 +317,7 @@ export function ImportConfigForm({
           {preview.hasLegacyDeviceModel && (
             <p className="text-destructive">
               ไฟล์ระบุรุ่นด้วย &quot;deviceModel&quot; (ชื่อรุ่น) ซึ่งใช้ไม่ได้แล้ว ให้เปลี่ยนเป็น
-              &quot;modelId&quot; (id ของรุ่นจากหน้า Device Model)
+              &quot;modelId&quot; (คัดลอกได้จากปุ่ม &quot;คัดลอก JSON&quot; ในหน้า Config ที่ใช้รุ่นเดียวกัน)
             </p>
           )}
           {preview.missing.length > 0 && (
