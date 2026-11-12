@@ -78,7 +78,8 @@ function buildImportPayload(config: Config, fields: Record<string, unknown>) {
   return {
     name: config.name,
     ...(config.description ? { description: config.description } : {}),
-    deviceModel: config.deviceModel,
+    // import ระบุรุ่นด้วย id (v3.97) ไม่รับชื่อรุ่น (`deviceModel`) แล้ว
+    modelId: config.modelId,
     protocol: config.protocol,
     settings: nestFields(fields),
   };

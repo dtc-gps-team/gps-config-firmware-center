@@ -7,6 +7,8 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { canCreateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { importConfig, type Config } from "@/lib/config-api";
+import type { DeviceModel } from "@/lib/device-model-api";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import { flattenFields } from "@/lib/config-fields";
 import { Button } from "@/components/ui/button";
 import { FileDropzone } from "@/components/file-dropzone";
@@ -26,23 +28,38 @@ const MAX_FILE_BYTES = 1024 * 1024;
  *  ตัว validate จริง (รวม semantic เทียบ ConfigFieldDefinition) อยู่ที่ backend
  *  · ไม่รวม `fields`/`settings` เพราะมีได้แค่อย่างใดอย่างหนึ่ง (เช็คแยกด้านล่าง
  *  — backend v3.67 รองรับทั้งสอง format, รีวิวพี่เลี้ยง 27 ต.ค. 2569) */
-const REQUIRED_KEYS = ["name", "deviceModel", "protocol"] as const;
+const REQUIRED_KEYS = ["name", "modelId", "protocol"] as const;
+
+const TEMPLATE_MODEL_NAME = "SMARTEYEPLUS";
+
+/** ใส่แทน `modelId` ในไฟล์ตัวอย่างเมื่อระบบนี้ยังไม่มีรุ่น SMARTEYEPLUS · หน้า Device Model
+ *  ไม่แสดง id ทางที่ผู้ใช้หา id ได้ตอนนี้คือ JSON ที่คัดลอกจาก Config ของรุ่นเดียวกัน */
+const TEMPLATE_MODEL_PLACEHOLDER =
+  'ใส่ id ของรุ่น (คัดลอกค่า "modelId" จากปุ่ม "คัดลอก JSON" ในหน้า Config ที่ใช้รุ่นเดียวกัน)';
 
 /** ไฟล์ตัวอย่างให้ดาวน์โหลด — โครงเดียวกับที่หน้า Config Detail export ให้
  *  ตั้งแต่ v3.67 (`settings` ซ้อนชั้น ตรงกับ JSON ที่ส่งเข้า Server กลางจริง) —
  *  รุ่นนี้ key ไม่มีจุดอยู่แล้ว (SMARTEYEPLUS) จึงซ้อนชั้นแบบไม่มีผล (no-op)
- *  เหมือนไฟล์เดิม ไฟล์เก่าที่ใช้ `fields` แบนยังนำเข้าได้ปกติ */
-const TEMPLATE = {
-  name: "ตัวอย่าง Config SMARTEYEPLUS",
-  deviceModel: "SMARTEYEPLUS",
-  protocol: "TCP",
-  description: "อธิบายสั้น ๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ)",
-  settings: { APN1: "internet", MTYP: "1", SIM1: "0812345678" },
-};
+ *  เหมือนไฟล์เดิม ไฟล์เก่าที่ใช้ `fields` แบนยังนำเข้าได้ปกติ
+ *
+ *  ระบุรุ่นด้วย `modelId` (v3.97) ซึ่งเป็น id ของรุ่นในฐานข้อมูลนี้ จึงสร้างไฟล์จาก
+ *  ทะเบียนรุ่นตอนกดดาวน์โหลด ไม่ฝังค่าตายตัว */
+export function buildTemplate(models: DeviceModel[] | null) {
+  const model = (models ?? []).find((m) => m.name === TEMPLATE_MODEL_NAME);
+  return {
+    name: `ตัวอย่าง Config ${TEMPLATE_MODEL_NAME}`,
+    modelId: model?.id ?? TEMPLATE_MODEL_PLACEHOLDER,
+    protocol: "TCP",
+    description: "อธิบายสั้น ๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ)",
+    settings: { APN1: "internet", MTYP: "1", SIM1: "0812345678" },
+  };
+}
 
 type Preview = {
   name: string | null;
-  deviceModel: string | null;
+  modelId: string | null;
+  /** ไฟล์รูปแบบเดิมระบุรุ่นด้วยชื่อ (`deviceModel`) ซึ่ง backend ไม่รับแล้ว (v3.97) */
+  hasLegacyDeviceModel: boolean;
   protocol: string | null;
   fieldCount: number | null;
   missing: string[];
@@ -94,7 +111,8 @@ export function parsePreview(text: string): ParseResult {
     ok: true,
     preview: {
       name: asText(obj.name),
-      deviceModel: asText(obj.deviceModel),
+      modelId: asText(obj.modelId),
+      hasLegacyDeviceModel: Object.hasOwn(obj, "deviceModel"),
       protocol: asText(obj.protocol),
       fieldCount: fieldsIsObject
         ? Object.keys(
@@ -106,8 +124,8 @@ export function parsePreview(text: string): ParseResult {
   };
 }
 
-function downloadTemplate() {
-  const blob = new Blob([JSON.stringify(TEMPLATE, null, 2)], {
+function downloadTemplate(models: DeviceModel[] | null) {
+  const blob = new Blob([JSON.stringify(buildTemplate(models), null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
@@ -141,6 +159,7 @@ export function ImportConfigForm({
   onImported: (config: Config) => void;
 }) {
   const { session } = useAuth();
+  const { data: models } = useDeviceModels();
 
   const [file, setFile] = useState<File | null>(null);
   const [parse, setParse] = useState<ParseResult | null>(null);
@@ -214,6 +233,9 @@ export function ImportConfigForm({
   }
 
   const preview = parse?.ok ? parse.preview : null;
+  const previewModel = preview?.modelId
+    ? (models ?? []).find((m) => m.id === preview.modelId) ?? null
+    : null;
   const canSubmit = file !== null && parse?.ok === true && !submitting;
 
   return (
@@ -240,7 +262,7 @@ export function ImportConfigForm({
           variant="ghost"
           size="sm"
           className="self-start"
-          onClick={downloadTemplate}
+          onClick={() => downloadTemplate(models)}
         >
           <DownloadIcon />
           ดาวน์โหลดไฟล์ตัวอย่าง
@@ -260,7 +282,7 @@ export function ImportConfigForm({
       {preview && (
         <div className="flex flex-col gap-3 rounded-lg border bg-surface-sunken p-4 text-sm">
           <p className="flex items-center gap-2 font-medium">
-            {preview.missing.length === 0 ? (
+            {preview.missing.length === 0 && !preview.hasLegacyDeviceModel ? (
               <>
                 <CircleCheckIcon className="size-4 text-success" />
                 ไฟล์พร้อมนำเข้า
@@ -276,7 +298,15 @@ export function ImportConfigForm({
             <dt>ชื่อ</dt>
             <dd className="text-foreground">{preview.name ?? "-"}</dd>
             <dt>โมเดล</dt>
-            <dd className="font-instrument text-foreground">{preview.deviceModel ?? "-"}</dd>
+            <dd className="font-instrument text-foreground">
+              {previewModel
+                ? previewModel.name
+                : preview.modelId
+                  ? models
+                    ? "ไม่พบรุ่นนี้ในระบบ"
+                    : preview.modelId
+                  : "-"}
+            </dd>
             <dt>โปรโตคอล</dt>
             <dd className="font-instrument text-foreground">{preview.protocol ?? "-"}</dd>
             <dt>จำนวน field</dt>
@@ -284,6 +314,12 @@ export function ImportConfigForm({
               {preview.fieldCount ?? "-"}
             </dd>
           </dl>
+          {preview.hasLegacyDeviceModel && (
+            <p className="text-destructive">
+              ไฟล์ระบุรุ่นด้วย &quot;deviceModel&quot; (ชื่อรุ่น) ซึ่งใช้ไม่ได้แล้ว ให้เปลี่ยนเป็น
+              &quot;modelId&quot; (คัดลอกได้จากปุ่ม &quot;คัดลอก JSON&quot; ในหน้า Config ที่ใช้รุ่นเดียวกัน)
+            </p>
+          )}
           {preview.missing.length > 0 && (
             <p className="text-destructive">
               ไฟล์ยังขาด: {preview.missing.join(", ")}, backend จะปฏิเสธถ้าไม่ครบ

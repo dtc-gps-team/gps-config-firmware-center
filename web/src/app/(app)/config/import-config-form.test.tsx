@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePreview } from "./import-config-form";
+import { buildTemplate, parsePreview } from "./import-config-form";
 
 describe(
   "parsePreview — รองรับไฟล์ 2 format: 'settings' ซ้อนชั้น (ของใหม่, v3.67) และ 'fields' แบน (ของเดิม)",
@@ -8,7 +8,7 @@ describe(
       const result = parsePreview(
         JSON.stringify({
           name: "ทดสอบ",
-          deviceModel: "GT06N",
+          modelId: "22222222-2222-4222-8222-222222222222",
           protocol: "TCP",
           settings: {
             gps: { enabled: true, send_interval_sec: 10 },
@@ -29,7 +29,7 @@ describe(
       const result = parsePreview(
         JSON.stringify({
           name: "ไฟล์เก่า",
-          deviceModel: "SMARTEYEPLUS",
+          modelId: "22222222-2222-4222-8222-222222222222",
           protocol: "TCP",
           fields: { APN1: "internet", MTYP: "1" },
         }),
@@ -45,7 +45,7 @@ describe(
       const result = parsePreview(
         JSON.stringify({
           name: "GT06N ผ่าน settings",
-          deviceModel: "GT06N",
+          modelId: "22222222-2222-4222-8222-222222222222",
           protocol: "TCP",
           settings: { APN1: "internet", MTYP: "1", SIM1: "0812345678" },
         }),
@@ -60,7 +60,7 @@ describe(
       const result = parsePreview(
         JSON.stringify({
           name: "กำกวม",
-          deviceModel: "GT06N",
+          modelId: "22222222-2222-4222-8222-222222222222",
           protocol: "TCP",
           fields: { APN1: "internet" },
           settings: { gps: { enabled: true } },
@@ -77,7 +77,7 @@ describe(
       const result = parsePreview(
         JSON.stringify({
           name: "ไม่มี field เลย",
-          deviceModel: "GT06N",
+          modelId: "22222222-2222-4222-8222-222222222222",
           protocol: "TCP",
         }),
       );
@@ -92,7 +92,7 @@ describe(
       const result = parsePreview(
         JSON.stringify({
           name: "settings ผิดชนิด",
-          deviceModel: "GT06N",
+          modelId: "22222222-2222-4222-8222-222222222222",
           protocol: "TCP",
           settings: "not-an-object",
         }),
@@ -104,7 +104,7 @@ describe(
       expect(result.preview.missing).toContain("settings");
     });
 
-    it("ขาด name/deviceModel/protocol -> preview.missing บอกครบทุกตัวที่ขาด", () => {
+    it("ขาด name/modelId/protocol -> preview.missing บอกครบทุกตัวที่ขาด", () => {
       const result = parsePreview(
         JSON.stringify({ settings: { gps: { enabled: true } } }),
       );
@@ -112,8 +112,24 @@ describe(
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.preview.missing).toEqual(
-        expect.arrayContaining(["name", "deviceModel", "protocol"]),
+        expect.arrayContaining(["name", "modelId", "protocol"]),
       );
+    });
+
+    it('ไฟล์รูปแบบเดิมที่ระบุรุ่นด้วย "deviceModel" -> เตือน (backend ไม่รับแล้ว v3.97) และนับว่าขาด modelId', () => {
+      const result = parsePreview(
+        JSON.stringify({
+          name: "ไฟล์เก่า",
+          deviceModel: "GT06N",
+          protocol: "TCP",
+          settings: { APN1: "internet" },
+        }),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.preview.hasLegacyDeviceModel).toBe(true);
+      expect(result.preview.missing).toContain("modelId");
     });
 
     it("JSON parse ไม่ผ่าน -> ok:false", () => {
@@ -127,3 +143,29 @@ describe(
     });
   },
 );
+
+describe("buildTemplate — ไฟล์ตัวอย่างใช้ modelId ของรุ่นในระบบนี้ (v3.97)", () => {
+  const model = (id: string, name: string) => ({
+    id,
+    name,
+    manufacturer: null,
+    supportedProtocols: ["TCP"],
+    status: "active" as const,
+    warrantyMonths: null,
+    endOfSupportDate: null,
+    notes: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+
+  it("มีรุ่น SMARTEYEPLUS ในทะเบียน -> ใส่ id ของรุ่นนั้น ไม่มี deviceModel", () => {
+    const template = buildTemplate([model("m-1", "GT06N"), model("m-2", "SMARTEYEPLUS")]);
+    expect(template.modelId).toBe("m-2");
+    expect(template).not.toHaveProperty("deviceModel");
+  });
+
+  it("ยังไม่มีรุ่น SMARTEYEPLUS หรือทะเบียนยังไม่โหลด -> ใส่ข้อความบอกให้กรอก id เอง", () => {
+    expect(buildTemplate([model("m-1", "GT06N")]).modelId).toContain("ใส่ id");
+    expect(buildTemplate(null).modelId).toContain("ใส่ id");
+  });
+});

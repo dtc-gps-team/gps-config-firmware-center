@@ -20,6 +20,11 @@ export type Config = {
   id: string;
   /** ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review ข้อ 4) */
   name: string;
+  /** รหัสกลางของ Config สำหรับเชื่อมกับระบบอื่น (v3.97) — server สร้างให้ แก้ไม่ได้ */
+  idMaster: string;
+  /** id ของรุ่นอุปกรณ์ (`DeviceModel.id`, v3.97) — ใช้ตอนสร้าง/แก้/import */
+  modelId: string;
+  /** ชื่อรุ่นอุปกรณ์ (อ่านอย่างเดียว คำนวณจาก `modelId` ฝั่ง backend) — ใช้แสดงผล */
   deviceModel: string;
   protocol: string;
   /** คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ) */
@@ -55,7 +60,8 @@ export type ConfigVersion = {
 /** request body — `ConfigWriteInput` ใน openapi.yaml (createConfig ส่งครบทุก field) */
 export type ConfigWriteInput = {
   name: string;
-  deviceModel: string;
+  /** id ของรุ่นอุปกรณ์ (v3.97) — backend ไม่รับชื่อรุ่น (`deviceModel`) แล้ว (400) */
+  modelId: string;
   protocol: string;
   fields: Record<string, unknown>;
   /** ไม่บังคับ · ส่ง "" เพื่อล้างค่าตอน update */
