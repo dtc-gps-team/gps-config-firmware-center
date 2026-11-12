@@ -14,6 +14,7 @@ import {
   makeUser,
   resetDb,
   TEST_DATABASE_URL,
+  getOrCreateDeviceModel,
 } from './setup';
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -70,7 +71,7 @@ describe('config-sync-writer wiring (integration — real postgres + DI graph)',
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         status: 'testing',
         fields: fields as Prisma.InputJsonValue,

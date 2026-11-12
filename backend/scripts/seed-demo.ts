@@ -555,7 +555,12 @@ async function main(): Promise<void> {
         data: {
           clonedFromId: source?.id ?? null,
           name: c.name,
-          deviceModel: c.model,
+          // Config ผูกรุ่นด้วย id (FK) — ชุดตัวอย่างระบุชื่อรุ่น แปลงเป็น id ที่นี่
+          modelId: (
+            await prisma.deviceModel.findUniqueOrThrow({
+              where: { name: c.model },
+            })
+          ).id,
           protocol: c.protocol,
           status: c.status,
           description: c.description,
@@ -1123,9 +1128,13 @@ async function main(): Promise<void> {
 
   // Incident จาก config-sync-writer (เขียน Config ไม่สำเร็จหลัง retry ครบ 3 ครั้ง)
   {
-    const syncCfg = await prisma.config.findUnique({
+    const syncCfgRow = await prisma.config.findUnique({
       where: { name: 'GT06L/TCP มาตรฐาน' },
+      include: { model: { select: { name: true } } },
     });
+    const syncCfg = syncCfgRow
+      ? { ...syncCfgRow, deviceModel: syncCfgRow.model.name }
+      : null;
     const syncTitle = 'เขียน Config เข้าระบบเดิมไม่สำเร็จ (v1)';
     if (syncCfg) {
       // ปุ่ม "ลองเขียนใหม่" เขียนจาก snapshot เวอร์ชันที่อนุมัติ (ConfigVersion) ให้

@@ -14,6 +14,7 @@ import {
   resetDb,
   RoleCode,
   TEST_DATABASE_URL,
+  getOrCreateDeviceModel,
 } from './setup';
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -87,7 +88,7 @@ describe('ConfigDeletion Part A endpoints (integration — real postgres + guard
     return prisma.config.create({
       data: {
         name: `stale-${Date.now()}-${configSeq}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         status: 'draft',

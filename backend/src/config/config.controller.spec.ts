@@ -1,19 +1,23 @@
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Config } from '@prisma/client';
 import { Request } from 'express';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import type { ConfigView } from './config-model';
 import { ConfigController } from './config.controller';
 import { ConfigService } from './config.service';
 
 const JWT_SECRET = 'test-secret';
 
-const sampleConfig: Config = {
+const MODEL_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+const sampleConfig: ConfigView = {
   id: '11111111-1111-1111-1111-111111111111',
+  idMaster: '99999999-9999-4999-8999-999999999999',
   name: 'ชุดตั้งค่าทดสอบ',
   description: null,
+  modelId: MODEL_ID,
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'draft',
@@ -99,7 +103,7 @@ describe('ConfigController', () => {
     service.create.mockResolvedValue(sampleConfig);
     const dto = {
       name: 'ชุดตั้งค่าทดสอบ',
-      deviceModel: 'GT06N',
+      modelId: MODEL_ID,
       protocol: 'TCP',
       fields: {},
     };
@@ -131,9 +135,10 @@ describe('ConfigController', () => {
   it('PUT /config/:id -> service.update พร้อม dto และ actor จาก JWT', async () => {
     service.update.mockResolvedValue({
       ...sampleConfig,
+      modelId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       deviceModel: 'GT06L',
     });
-    const dto = { deviceModel: 'GT06L' };
+    const dto = { modelId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
     await controller.update(sampleConfig.id, dto, configEngineerReq);
     expect(service.update).toHaveBeenCalledWith(sampleConfig.id, dto, {
       id: 'ce-1',

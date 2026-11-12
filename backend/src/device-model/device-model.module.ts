@@ -6,7 +6,7 @@ import { DeviceModelService } from './device-model.service';
 // device-model module (issue #209, docs/15) — แยกจาก `device` module โดยตั้งใจ
 // (ตารางคนละตัว, RBAC resource คนละตัว) import AuthModule เพื่อใช้
 // JwtAuthGuard/JwtModule ร่วม mirror `config-definition.module.ts`
-// export DeviceModelService ให้ ConfigModule เรียก findByName() ตอน validate
+// export DeviceModelService ให้ ConfigModule เรียก findOne() ตอน validate
 // protocol (issue #209 ข้อ 4)
 @Module({
   imports: [AuthModule],

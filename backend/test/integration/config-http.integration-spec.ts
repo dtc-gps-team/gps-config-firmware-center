@@ -30,6 +30,8 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
 describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/Reject (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaClient;
+  let gt06nId: string;
+  let gt06lId: string;
   let jwtService: JwtService;
 
   beforeAll(async () => {
@@ -77,12 +79,12 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     // เดียวกับ config-definition-http.integration-spec.ts)
     await prisma.rolePermission.deleteMany();
     await prisma.configFieldDefinition.deleteMany();
-    // DeviceModel (issue #209 ข้อ 4) — ConfigService.create()/update() เรียก
-    // DeviceModelService.findByName() validate protocol จริงผ่าน HTTP นี้แล้ว
-    // (ไม่ใช่ mock เหมือน config.service.spec.ts) ต้อง seed ให้ทุกเทสในไฟล์นี้
-    // ใช้ได้ (เทสส่วนใหญ่ใช้ GT06N/TCP, บางเทสเปลี่ยนเป็น GT06L ตอน PUT)
-    await getOrCreateDeviceModel(prisma, 'GT06N');
-    await getOrCreateDeviceModel(prisma, 'GT06L');
+    // DeviceModel (issue #209 ข้อ 4) — ConfigService.create()/update() หารุ่นจาก
+    // modelId แล้ว validate protocol จริงผ่าน HTTP นี้ (ไม่ใช่ mock เหมือน
+    // config.service.spec.ts) ต้อง seed ให้ทุกเทสในไฟล์นี้ใช้ได้ (เทสส่วนใหญ่ใช้
+    // GT06N/TCP, บางเทสเปลี่ยนเป็น GT06L ตอน PUT)
+    gt06nId = (await getOrCreateDeviceModel(prisma, 'GT06N')).id;
+    gt06lId = (await getOrCreateDeviceModel(prisma, 'GT06L')).id;
   });
 
   // Semantic Validation (#26): createConfig/updateConfig เรียก
@@ -122,7 +124,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   it('POST /config ไม่ส่ง Authorization header -> 401', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/config')
-      .send({ deviceModel: 'GT06N', protocol: 'TCP', fields: {} })
+      .send({ modelId: gt06nId, protocol: 'TCP', fields: {} })
       .expect(401);
   });
 
@@ -133,7 +135,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await request(app.getHttpServer())
       .post('/api/v1/config')
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceModel: 'GT06N', protocol: 'TCP', fields: {} })
+      .send({ modelId: gt06nId, protocol: 'TCP', fields: {} })
       .expect(403);
   });
 
@@ -150,7 +152,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'TCP',
         fields: { APN1: 'internet' },
       })
@@ -159,6 +161,134 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const body = res.body as { createdBy: string; status: string };
     expect(body.createdBy).toBe(configEngineerUser.id);
     expect(body.status).toBe('draft');
+  });
+
+  // Config ผูกรุ่นด้วย id + รหัสกลาง idMaster (12 พ.ย. 2569)
+  describe('modelId (FK ไป DeviceModel) และ idMaster', () => {
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    type Body = {
+      id: string;
+      idMaster: string;
+      modelId: string;
+      deviceModel: string;
+      model?: unknown;
+    };
+
+    function createAs(token: string, name: string) {
+      return request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name,
+          modelId: gt06nId,
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        });
+    }
+
+    async function engineerToken(): Promise<string> {
+      const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Create);
+      await grant('ConfigEngineer', ActionType.Read);
+      await grant('ConfigEngineer', ActionType.Update);
+      await seedApn1();
+      return tokenFor(user.id, 'ConfigEngineer');
+    }
+
+    it('สร้าง -> บันทึก modelId จริงใน DB · ตอบชื่อรุ่น deviceModel + idMaster (UUID ที่ DB สร้าง) ไม่ส่ง object model', async () => {
+      const token = await engineerToken();
+
+      const res = await createAs(token, `cfg-${randomUUID()}`).expect(201);
+      const body = res.body as Body;
+
+      expect(body.modelId).toBe(gt06nId);
+      expect(body.deviceModel).toBe('GT06N');
+      expect(body.idMaster).toMatch(UUID_RE);
+      expect(body.idMaster).not.toBe(body.id);
+      expect(body).not.toHaveProperty('model');
+      const row = await prisma.config.findUniqueOrThrow({
+        where: { id: body.id },
+      });
+      expect(row.modelId).toBe(gt06nId);
+      expect(row.idMaster).toBe(body.idMaster);
+
+      // GET ตอบรูปเดียวกัน
+      const got = await request(app.getHttpServer())
+        .get(`/api/v1/config/${body.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((got.body as Body).deviceModel).toBe('GT06N');
+      expect((got.body as Body).idMaster).toBe(body.idMaster);
+    });
+
+    it('Config แต่ละตัวได้ idMaster ไม่ซ้ำกัน', async () => {
+      const token = await engineerToken();
+
+      const a = (await createAs(token, `a-${randomUUID()}`).expect(201))
+        .body as Body;
+      const b = (await createAs(token, `b-${randomUUID()}`).expect(201))
+        .body as Body;
+
+      expect(a.idMaster).not.toBe(b.idMaster);
+    });
+
+    it('ส่ง deviceModel (ชื่อรุ่นแบบเดิม) แทน modelId -> 400 ไม่สร้าง Config', async () => {
+      const token = await engineerToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        })
+        .expect(400);
+      expect(await prisma.config.count()).toBe(0);
+    });
+
+    it('PUT ส่ง idMaster มาแก้ -> 400 ค่าเดิมไม่เปลี่ยน', async () => {
+      const token = await engineerToken();
+      const created = (await createAs(token, `cfg-${randomUUID()}`).expect(201))
+        .body as Body;
+
+      await request(app.getHttpServer())
+        .put(`/api/v1/config/${created.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ idMaster: randomUUID() })
+        .expect(400);
+
+      const row = await prisma.config.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(row.idMaster).toBe(created.idMaster);
+    });
+
+    it('PUT เปลี่ยนรุ่นด้วย modelId -> ตอบชื่อรุ่นใหม่', async () => {
+      const token = await engineerToken();
+      const created = (await createAs(token, `cfg-${randomUUID()}`).expect(201))
+        .body as Body;
+
+      const res = await request(app.getHttpServer())
+        .put(`/api/v1/config/${created.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ modelId: gt06lId })
+        .expect(200);
+
+      expect((res.body as Body).modelId).toBe(gt06lId);
+      expect((res.body as Body).deviceModel).toBe('GT06L');
+    });
+
+    it('ฐานข้อมูลไม่ยอมให้ลบรุ่นที่มี Config ใช้อยู่ (FK Restrict)', async () => {
+      const token = await engineerToken();
+      await createAs(token, `cfg-${randomUUID()}`).expect(201);
+
+      await expect(
+        prisma.deviceModel.delete({ where: { id: gt06nId } }),
+      ).rejects.toThrow();
+    });
   });
 
   // รีวิวพี่เลี้ยง 12 ต.ค. 2569: ผู้สร้าง template เพิ่มพารามิเตอร์นอกชุดของ
@@ -176,7 +306,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06L',
+        modelId: gt06lId,
         protocol: 'TCP',
         fields: { APN1: 'internet' },
       })
@@ -199,7 +329,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'TCP',
         fields: { NOT_IN_LIBRARY: 'x' },
       })
@@ -215,7 +345,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const source = await prisma.config.create({
         data: {
           name: `src-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           status: 'approved',
@@ -228,7 +358,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     function cloneBody(clonedFromId: string | undefined) {
       return {
         name: `clone-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'TCP',
         fields: { APN1: 'internet.new' },
         ...(clonedFromId ? { clonedFromId } : {}),
@@ -308,7 +438,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const draft = await prisma.config.create({
         data: {
           name: `draft-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: ce.id,
@@ -347,7 +477,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const draftSource = await prisma.config.create({
         data: {
           name: `draft-src-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: ce.id,
@@ -356,7 +486,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const clone = await prisma.config.create({
         data: {
           name: `clone-of-draft-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: ce.id,
@@ -376,7 +506,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
   });
 
-  it('POST /config deviceModel ไม่มีในทะเบียน DeviceModel -> 400 (issue #209)', async () => {
+  it('POST /config modelId ไม่มีในทะเบียน DeviceModel -> 404', async () => {
     const configEngineerUser = await makeUser(prisma, {
       role: 'ConfigEngineer',
     });
@@ -389,11 +519,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'UNKNOWN_MODEL',
+        modelId: randomUUID(),
         protocol: 'TCP',
         fields: {},
       })
-      .expect(400);
+      .expect(404);
   });
 
   it('POST /config protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น -> 400 (issue #209)', async () => {
@@ -409,7 +539,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'SMS',
         fields: {},
       })
@@ -429,7 +559,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'TCP',
         fields: { APN1: 'internet' },
       })
@@ -459,7 +589,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: dupName,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'TCP',
         fields: { APN1: 'internet' },
       })
@@ -470,7 +600,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: dupName,
-        deviceModel: 'GT06N',
+        modelId: gt06nId,
         protocol: 'TCP',
         fields: { APN1: 'internet' },
       })
@@ -485,7 +615,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const taken = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -494,7 +624,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const target = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -520,7 +650,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .attach(
         'file',
         Buffer.from(
-          JSON.stringify({ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }),
+          JSON.stringify({ modelId: gt06nId, protocol: 'TCP', fields: {} }),
         ),
         'config.json',
       )
@@ -544,7 +674,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         Buffer.from(
           JSON.stringify({
             name: `cfg-${randomUUID()}`,
-            deviceModel: 'GT06N',
+            modelId: gt06nId,
             protocol: 'TCP',
             fields: { APN1: 'internet' },
           }),
@@ -580,7 +710,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         Buffer.from(
           JSON.stringify({
             name: `cfg-${randomUUID()}`,
-            deviceModel: 'GT06N',
+            modelId: gt06nId,
             protocol: 'TCP',
             settings: { APN1: 'internet' },
           }),
@@ -609,7 +739,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         Buffer.from(
           JSON.stringify({
             name: `cfg-${randomUUID()}`,
-            deviceModel: 'GT06N',
+            modelId: gt06nId,
             protocol: 'TCP',
             fields: { APN1: 'internet' },
             settings: { APN1: 'internet' },
@@ -648,7 +778,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .field('format', 'json')
       .attach(
         'file',
-        Buffer.from(JSON.stringify([{ deviceModel: 'GT06N' }])),
+        Buffer.from(JSON.stringify([{ modelId: gt06nId }])),
         'config.json',
       )
       .expect(400);
@@ -729,7 +859,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -752,7 +882,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -785,7 +915,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -796,7 +926,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const res = await request(app.getHttpServer())
       .put(`/api/v1/config/${configRow.id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceModel: 'GT06L' })
+      .send({ modelId: gt06lId })
       .expect(200);
 
     expect((res.body as { deviceModel: string }).deviceModel).toBe('GT06L');
@@ -810,7 +940,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -822,7 +952,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await request(app.getHttpServer())
       .put(`/api/v1/config/${configRow.id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceModel: 'GT06L' })
+      .send({ modelId: gt06lId })
       .expect(409);
   });
 
@@ -836,7 +966,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -864,7 +994,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const configRow = await prisma.config.create({
       data: {
         name: originalName,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -890,7 +1020,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await prisma.config.create({
       data: {
         name: originalName,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -910,7 +1040,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: {},
         createdBy: configEngineerUser.id,
@@ -947,7 +1077,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: configEngineerUser.id,
@@ -969,7 +1099,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: configEngineerUser.id,
@@ -991,7 +1121,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet', CONN_TIMEOUT: 30 },
           createdBy: configEngineerUser.id,
@@ -1017,7 +1147,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1044,7 +1174,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: configEngineerUser.id,
@@ -1081,7 +1211,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1102,7 +1232,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1125,7 +1255,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1148,7 +1278,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1173,7 +1303,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1198,7 +1328,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1237,7 +1367,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1267,7 +1397,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1297,7 +1427,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1323,7 +1453,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1343,7 +1473,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1367,7 +1497,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1399,7 +1529,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1432,7 +1562,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1466,7 +1596,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1486,7 +1616,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1510,7 +1640,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1536,7 +1666,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,
@@ -1574,7 +1704,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: configEngineerUser.id,
@@ -1645,7 +1775,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
           fields: {},
           createdBy: configEngineerUser.id,

@@ -8,6 +8,11 @@ import { Config, ConfigDeletionRequest, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  CONFIG_MODEL_INCLUDE,
+  type ConfigView,
+  toConfigView,
+} from '../config/config-model';
 import { QueryConfigDeletionDto } from './dto/query-config-deletion.dto';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
@@ -111,14 +116,16 @@ export class ConfigDeletionService {
   }
 
   /** คิวคำขอสำหรับ SuperAdmin — ไม่ระบุ status = `pending` (§5) */
-  findRequests(
+  async findRequests(
     query: QueryConfigDeletionDto,
-  ): Promise<ConfigDeletionRequest[]> {
-    return this.prisma.configDeletionRequest.findMany({
+  ): Promise<(ConfigDeletionRequest & { config: ConfigView })[]> {
+    const rows = await this.prisma.configDeletionRequest.findMany({
       where: { status: query.status ?? 'pending' },
-      include: { config: true },
+      // ชื่อรุ่นของ Config มาจาก relation (Config ผูกรุ่นด้วย modelId) — ตอบ `deviceModel` เหมือนเดิม
+      include: { config: { include: CONFIG_MODEL_INCLUDE } },
       orderBy: { detectedAt: 'asc' },
     });
+    return rows.map((r) => ({ ...r, config: toConfigView(r.config) }));
   }
 
   /**

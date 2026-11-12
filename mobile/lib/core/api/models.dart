@@ -1059,7 +1059,9 @@ class DeviceFirmwareOverride {
 class DeviceConfigDraft {
   const DeviceConfigDraft({
     this.id,
+    this.idMaster,
     this.name,
+    this.modelId,
     this.deviceModel,
     this.protocol,
     this.status,
@@ -1073,9 +1075,19 @@ class DeviceConfigDraft {
 
   final String? id;
 
+  /// รหัสกลางของ Config สำหรับเชื่อมกับระบบอื่น (v3.97) — ฐานข้อมูลสร้างให้เอง
+  /// ไม่เปลี่ยนตลอดอายุ Config · `null` = backend เก่า/mock ที่ไม่มี field นี้.
+  final String? idMaster;
+
   /// ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review ข้อ 4).
   /// Nullable ฝั่ง client เผื่อ response เก่า/mock ที่ไม่มี field นี้.
   final String? name;
+
+  /// รุ่นอุปกรณ์ของ Config = `DeviceModel.id` (v3.97 — Config ผูกรุ่นด้วย id)
+  /// · `null` = backend เก่า/mock.
+  final String? modelId;
+
+  /// ชื่อรุ่นอุปกรณ์สำหรับแสดงผล — backend คำนวณจากรุ่นของ [modelId] (v3.97)
   final String? deviceModel;
   final String? protocol;
   final ConfigStatus? status;
@@ -1117,7 +1129,9 @@ class DeviceConfigDraft {
     final rawBoxSchema = json['boxSchema'] as Map?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
+      idMaster: json['idMaster'] as String?,
       name: json['name'] as String?,
+      modelId: json['modelId'] as String?,
       deviceModel: json['deviceModel'] as String?,
       protocol: json['protocol'] as String?,
       status: rawStatus == null ? null : ConfigStatus.fromWire(rawStatus),

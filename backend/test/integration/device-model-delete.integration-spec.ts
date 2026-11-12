@@ -15,6 +15,7 @@ import {
   resetDb,
   RoleCode,
   TEST_DATABASE_URL,
+  getOrCreateDeviceModel,
 } from './setup';
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -191,7 +192,7 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
       await prisma.config.create({
         data: {
           name: 'c1',
-          deviceModel: m.name,
+          modelId: (await getOrCreateDeviceModel(prisma, m.name)).id,
           protocol: 'TCP',
           fields: {},
           createdBy: by,
@@ -200,7 +201,7 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
       await prisma.config.create({
         data: {
           name: 'c2',
-          deviceModel: m.name,
+          modelId: (await getOrCreateDeviceModel(prisma, m.name)).id,
           protocol: 'TCP',
           fields: {},
           createdBy: by,
@@ -262,7 +263,7 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
       await prisma.config.create({
         data: {
           name: 'c1',
-          deviceModel: used.name,
+          modelId: (await getOrCreateDeviceModel(prisma, used.name)).id,
           protocol: 'TCP',
           fields: {},
           createdBy: await ownerId(),
@@ -321,7 +322,7 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
           await tx.config.create({
             data: {
               name: 'race-cfg',
-              deviceModel: m.name,
+              modelId: (await getOrCreateDeviceModel(prisma, m.name)).id,
               protocol: 'TCP',
               fields: {},
               createdBy: by,
@@ -373,7 +374,7 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
         .set('Authorization', `Bearer ${tokenFor(ce.id, 'ConfigEngineer')}`)
         .send({
           name: 'cfg-after-delete',
-          deviceModel: m.name,
+          modelId: m.id,
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         })
@@ -385,9 +386,7 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
       const res = await creating;
 
       expect(res.status).toBe(409);
-      expect(
-        await prisma.config.count({ where: { deviceModel: m.name } }),
-      ).toBe(0);
+      expect(await prisma.config.count({ where: { modelId: m.id } })).toBe(0);
     });
   });
 });

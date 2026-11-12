@@ -370,7 +370,9 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
-          deviceModel: opts.deviceModel ?? 'GT06N',
+          modelId: (
+            await getOrCreateDeviceModel(prisma, opts.deviceModel ?? 'GT06N')
+          ).id,
           protocol: opts.protocol ?? 'TCP',
           status,
           fields: { APN: 'internet' },

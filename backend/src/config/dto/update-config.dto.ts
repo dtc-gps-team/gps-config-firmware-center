@@ -2,6 +2,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -15,10 +16,10 @@ export class UpdateConfigDto {
   @MaxLength(120)
   name?: string;
 
+  // เปลี่ยนรุ่นได้ตอนยัง draft — `DeviceModel.id` (ดู CreateConfigDto.modelId)
   @IsOptional()
-  @IsString()
-  @MinLength(1)
-  deviceModel?: string;
+  @IsUUID()
+  modelId?: string;
 
   @IsOptional()
   @IsString()

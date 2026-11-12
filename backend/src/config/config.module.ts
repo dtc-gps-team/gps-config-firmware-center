@@ -25,7 +25,7 @@ import {
   // อนุมัติแล้วเข้าระบบเดิมผ่าน ConfigSyncWriterQueue (docs/07 §5) — module
   // export queue ไว้แล้ว
   // DeviceModelModule: ConfigService.create()/update() ต้องเรียก
-  // DeviceModelService.findByName() validate ว่า protocol อยู่ใน
+  // DeviceModelService.findOne() หารุ่นจาก modelId แล้ว validate ว่า protocol อยู่ใน
   // supportedProtocols ของรุ่นนั้นไหม (issue #209 ข้อ 4)
   imports: [
     AuthModule,

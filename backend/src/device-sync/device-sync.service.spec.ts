@@ -12,7 +12,8 @@ const DEVICE_ID = 'DEV-0001';
 const config = {
   id: 'cfg-1',
   name: 'GT06N มาตรฐาน',
-  deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
+  model: { name: 'GT06N' },
   protocol: 'TCP',
   status: 'approved' as const,
   deletedAt: null as Date | null,
@@ -22,6 +23,7 @@ const config = {
 const device = {
   deviceId: DEVICE_ID,
   deviceModel: 'GT06N',
+  modelId: 'model-gt06n',
   protocol: 'TCP',
   status: 'installed' as const,
 };
@@ -250,6 +252,7 @@ describe('DeviceSyncService', () => {
       deviceModel.findUnique.mockResolvedValue({
         ...device,
         deviceModel: 'GT06L',
+        modelId: 'model-gt06l',
       });
 
       const result = await service.listJobs(DEVICE_ID);

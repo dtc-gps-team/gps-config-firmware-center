@@ -117,7 +117,7 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         status: 'approved',
         fields: { APN: 'internet' },

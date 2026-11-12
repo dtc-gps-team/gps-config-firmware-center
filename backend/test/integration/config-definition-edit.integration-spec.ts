@@ -156,7 +156,7 @@ describe('ConfigDefinition แก้ไข/ลบ (integration — real postgres
     const used = await prisma.config.create({
       data: {
         name: `ใช้ field ${fieldName}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: { [fieldName]: 'x' },
         createdBy: ce.id,
@@ -165,7 +165,7 @@ describe('ConfigDefinition แก้ไข/ลบ (integration — real postgres
     await prisma.config.create({
       data: {
         name: `ลบแล้ว ${fieldName}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: { [fieldName]: 'y' },
         createdBy: ce.id,
@@ -207,7 +207,7 @@ describe('ConfigDefinition แก้ไข/ลบ (integration — real postgres
         await tx.config.create({
           data: {
             name: `race-${randomUUID()}`,
-            deviceModel: 'GT06N',
+            modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
             protocol: 'TCP',
             fields: { [fieldName]: 'x' },
             createdBy: ce.id,
@@ -264,7 +264,7 @@ describe('ConfigDefinition แก้ไข/ลบ (integration — real postgres
       .set('Authorization', `Bearer ${token}`)
       .send({
         name: `race-${randomUUID()}`,
-        deviceModel: 'GT06N',
+        modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
         protocol: 'TCP',
         fields: { [fieldName]: 'x' },
       })

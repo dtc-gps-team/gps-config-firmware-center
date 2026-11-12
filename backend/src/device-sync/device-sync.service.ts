@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Config } from '@prisma/client';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { TARGETABLE_DEVICE_STATUS } from '../campaign/campaign-rollout.service';
 import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
@@ -8,6 +7,11 @@ import {
   mergeApprovedOverride,
 } from '../device/config-override-merge';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  CONFIG_MODEL_INCLUDE,
+  type ConfigView,
+  toConfigView,
+} from '../config/config-model';
 import { JobResult } from './dto/report-job-result.dto';
 
 /** ให้อุปกรณ์รอกี่วินาทีก่อนดึงงานครั้งถัดไป (docs/19 §4.1) */
@@ -108,16 +112,17 @@ export class DeviceSyncService {
     if (targets.length === 0) return response;
 
     const device = await this.prisma.device.findUnique({ where: { deviceId } });
-    const configCache = new Map<string, Config | null>();
+    const configCache = new Map<string, ConfigView | null>();
 
     for (const target of targets) {
       const configId = target.rollout.configId as string;
 
       if (!configCache.has(configId)) {
-        configCache.set(
-          configId,
-          await this.prisma.config.findUnique({ where: { id: configId } }),
-        );
+        const row = await this.prisma.config.findUnique({
+          where: { id: configId },
+          include: CONFIG_MODEL_INCLUDE,
+        });
+        configCache.set(configId, row ? toConfigView(row) : null);
       }
       const config = configCache.get(configId) ?? null;
 
@@ -137,7 +142,7 @@ export class DeviceSyncService {
         );
         continue;
       }
-      const validConfig = config as Config;
+      const validConfig = config as ConfigView;
 
       const { fields } = await mergeApprovedOverride(
         this.prisma,
@@ -364,8 +369,13 @@ export class DeviceSyncService {
   /** เหตุผลที่งานนี้ส่งให้อุปกรณ์ไม่ได้ (null = ส่งได้) — เงื่อนไขเดียวกับ
    * `autoApplyConfig()` ของโหมด `mock` */
   private findProblem(
-    config: Config | null,
-    device: { status: string; deviceModel: string; protocol: string } | null,
+    config: ConfigView | null,
+    device: {
+      status: string;
+      modelId: string;
+      deviceModel: string;
+      protocol: string;
+    } | null,
   ): string | null {
     if (!config) return 'ไม่พบ Config ของ Rollout นี้';
     if (
@@ -379,7 +389,7 @@ export class DeviceSyncService {
       return `Device สถานะปัจจุบัน (${device.status}) ไม่ใช่ ${TARGETABLE_DEVICE_STATUS} อีกต่อไป`;
     }
     if (
-      config.deviceModel !== device.deviceModel ||
+      config.modelId !== device.modelId ||
       config.protocol !== device.protocol
     ) {
       return `Config นี้เป็นของ ${config.deviceModel}/${config.protocol} ไม่ตรงกับอุปกรณ์ ${device.deviceModel}/${device.protocol}`;

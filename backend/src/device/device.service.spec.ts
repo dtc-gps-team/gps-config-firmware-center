@@ -75,11 +75,14 @@ const mockResult = {
   testedAt: '2026-09-02T10:00:00.000Z',
 };
 
-const approvedConfig: Config = {
+// แถวที่ prisma.config.findUnique คืน (include ชื่อรุ่นจาก relation — Config ผูกรุ่นด้วย modelId)
+const approvedConfig: Config & { model: { name: string } } = {
   id: '22222222-2222-2222-2222-222222222222',
+  idMaster: '33333333-3333-3333-3333-333333333333',
   name: 'ชุดตั้งค่าทดสอบ (device spec)',
   description: null,
-  deviceModel: 'GT06N',
+  modelId: 'dm-1',
+  model: { name: 'GT06N' },
   protocol: 'TCP',
   status: 'approved',
   fields: { APN: 'internet' },
@@ -1330,6 +1333,7 @@ describe('DeviceService', () => {
       expect(result).toEqual(applyResult);
       expect(config.findUnique).toHaveBeenCalledWith({
         where: { id: approvedConfig.id },
+        include: { model: { select: { name: true } } },
       });
       expect(configApplier.applyConfig).toHaveBeenCalledWith({
         deviceId: 'DTC-0001',
@@ -1499,7 +1503,8 @@ describe('DeviceService', () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue({
         ...approvedConfig,
-        deviceModel: 'GT06L',
+        modelId: 'dm-gt06l',
+        model: { name: 'GT06L' },
       });
 
       await expect(
@@ -2069,7 +2074,8 @@ describe('DeviceService', () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue({
         ...approvedConfig,
-        deviceModel: 'GT06L',
+        modelId: 'dm-gt06l',
+        model: { name: 'GT06L' },
       });
       deviceSimulator.simulateConfig.mockResolvedValue(simPass);
       connectionTester.testConnection.mockResolvedValue(connPass);
@@ -2326,8 +2332,11 @@ describe('DeviceService', () => {
 
       const result = await service.getCurrentConfig('DTC-0001');
 
+      // API ตอบชื่อรุ่นเป็น `deviceModel` (จาก relation) ไม่ส่ง object `model`
+      const { model: _model, ...approvedConfigRow } = approvedConfig;
       expect(result).toEqual({
-        ...approvedConfig,
+        ...approvedConfigRow,
+        deviceModel: _model.name,
         hasDeviceOverride: false,
         pendingOverride: null,
         // Config ฐานมาจากงานที่ช่างปิด (ยืนยันติดตั้งเอง) ไม่มีหลักฐานว่าส่งค่าอะไรเข้ากล่อง
@@ -2428,6 +2437,7 @@ describe('DeviceService', () => {
       });
       expect(config.findUnique).toHaveBeenCalledWith({
         where: { id: approvedConfig.id },
+        include: { model: { select: { name: true } } },
       });
       expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
         where: {

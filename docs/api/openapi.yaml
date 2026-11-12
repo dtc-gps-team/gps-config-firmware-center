@@ -341,9 +341,13 @@ paths:
         "403":
           description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "404":
-          description: ไม่พบ Config ต้นทางตาม `clonedFromId` (หรือถูกลบไปแล้ว) — v3.51
+          description: >-
+            ไม่พบ Config ต้นทางตาม `clonedFromId` (หรือถูกลบไปแล้ว) — v3.51 ·
+            **(v3.97)** หรือไม่พบรุ่นอุปกรณ์ตาม `modelId`
         "409":
-          description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
+          description: >-
+            มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ ·
+            **(v3.97)** หรือรุ่นตาม `modelId` ถูกลบระหว่างบันทึก
 
   # เพิ่มใหม่: GET/PUT/DELETE Config รายตัว (เดิมมีแค่ list/create/import/
   # simulate/approve/reject)
@@ -399,7 +403,7 @@ paths:
         "403":
           description: ไม่มีสิทธิ์แก้ไข Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "404":
-          description: ไม่พบ Config นี้
+          description: ไม่พบ Config นี้ · **(v3.97)** หรือไม่พบรุ่นอุปกรณ์ตาม `modelId` ที่ส่งมา
         "409":
           description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงแก้ไขไม่ได้ หรือชื่อใหม่ซ้ำกับ Config อื่น
     delete:
@@ -447,7 +451,9 @@ paths:
         27 ต.ค. 2569) หรือ `fields` คีย์แบบมีจุดแบบเดิม (ไฟล์ที่ export ไว้ก่อน
         v3.67 ยังใช้ import ได้ปกติ) — backend แปลง `settings` เป็น `fields`
         ภายในก่อน validate เสมอ (`flattenFields()`) ไม่มีผลต่อ flow
-        ทดสอบ/อนุมัติถัดไป
+        ทดสอบ/อนุมัติถัดไป · **(v3.97)** ระบุรุ่นด้วย `modelId` (id ของรุ่น
+        อุปกรณ์) เหมือน createConfig · ไฟล์ที่ระบุรุ่นด้วยชื่อ (`deviceModel`
+        รูปแบบเดิม) -> 400 พร้อมข้อความบอกให้ใช้ `modelId`
       requestBody:
         required: true
         content:
@@ -472,7 +478,8 @@ paths:
           description: >-
             ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น
             DeviceConfigDraft ไม่สำเร็จ (รวมถึงไฟล์ไม่มี field name, มีทั้ง
-            `fields`/`settings` พร้อมกัน, หรือ `settings` ไม่ใช่ object — v3.67)
+            `fields`/`settings` พร้อมกัน, หรือ `settings` ไม่ใช่ object — v3.67 ·
+            ไฟล์ใช้ `deviceModel` แทน `modelId` — v3.97)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -5937,8 +5944,26 @@ components:
           type: string
           description: ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review ข้อ 4)
           example: GT06N · ตั้งค่ามาตรฐานภาคกลาง
+        idMaster:
+          type: string
+          format: uuid
+          readOnly: true
+          description: >-
+            (v3.97) รหัสกลางของ Config สำหรับเชื่อมกับระบบอื่น — ฐานข้อมูลสร้างให้เอง
+            ตอนสร้าง Config (คอลัมน์ `id_master`) ไม่ซ้ำทั้งระบบ ไม่เปลี่ยนตลอดอายุ
+            Config และไม่มี API ให้แก้ · Config ที่โคลนได้ค่าใหม่ของตัวเอง
+        modelId:
+          type: string
+          format: uuid
+          description: >-
+            (v3.97) รุ่นอุปกรณ์ของ Config = `DeviceModel.id` (FK) — Config ผูกรุ่นด้วย
+            id แทนชื่อรุ่นตั้งแต่ v3.97
         deviceModel:
           type: string
+          readOnly: true
+          description: >-
+            ชื่อรุ่นอุปกรณ์ — **(v3.97)** คำนวณจาก `DeviceModel.name` ของ `modelId`
+            ไม่ได้เก็บในตาราง Config แล้ว และไม่รับเป็น input
         protocol:
           type: string
           example: TCP
@@ -6586,9 +6611,11 @@ components:
     ConfigWriteInput:
       type: object
       description: >-
-        Request body สำหรับ createConfig/updateConfig — ไม่มี id/status (server
-        กำหนดเอง) createConfig ต้องส่ง name/deviceModel/protocol/fields ครบ,
-        updateConfig ส่งเฉพาะ field ที่จะแก้ (ทุกตัว optional)
+        Request body สำหรับ createConfig/updateConfig — ไม่มี id/status/idMaster
+        (server กำหนดเอง) createConfig ต้องส่ง name/modelId/protocol/fields ครบ,
+        updateConfig ส่งเฉพาะ field ที่จะแก้ (ทุกตัว optional) · **(v3.97)**
+        ระบุรุ่นด้วย `modelId` แทน `deviceModel` (ชื่อรุ่น) — ส่ง `deviceModel` มา
+        -> 400 (field ที่ไม่รู้จัก)
       properties:
         name:
           type: string
@@ -6597,8 +6624,12 @@ components:
             ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review
             ข้อ 4) ชื่อซ้ำกับ Config อื่น -> 409
           example: GT06N · ตั้งค่ามาตรฐานภาคกลาง
-        deviceModel:
+        modelId:
           type: string
+          format: uuid
+          description: >-
+            (v3.97) id ของรุ่นอุปกรณ์ (`GET /device-models`) · ไม่พบ -> 404 ·
+            protocol ต้องอยู่ใน `supportedProtocols` ของรุ่นนั้น (400)
         protocol:
           type: string
           example: TCP
