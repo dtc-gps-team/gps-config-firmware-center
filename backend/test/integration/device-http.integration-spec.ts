@@ -3625,6 +3625,66 @@ describe('DeviceController test-connection (integration — real postgres + guar
         await request(app.getHttpServer()).get(url).expect(401);
       });
 
+      it('GET /tasks/:taskId/config-apply-requests/history (v3.96) — แบ่งหน้าไม่ซ้ำไม่ข้าม · กรองกลุ่มผล · cursor ผิด 400 · คนอื่น 404', async () => {
+        const { configId, stTok, stId } =
+          await setupCentralDevice('DCO-C-HIST');
+        const actor = { id: stId, role: 'ST' };
+        const { task } = await app
+          .get(TaskService)
+          .start({ deviceId: 'DCO-C-HIST' }, actor);
+        const service = app.get(ConfigApplyRequestService);
+        // เครื่องเปิดคำขอได้ทีละ 1 — ยกเลิกตัวแรกก่อนขอตัวที่สอง
+        const first = await service.create(
+          task.id,
+          { configId, direct: true },
+          actor,
+        );
+        await service.cancel(first.id, actor);
+        const second = await service.create(
+          task.id,
+          { configId, direct: true },
+          actor,
+        );
+        const base = `/api/v1/tasks/${task.id}/config-apply-requests/history`;
+        const get = (query: string, tok = stTok) =>
+          request(app.getHttpServer())
+            .get(`${base}${query}`)
+            .set('Authorization', `Bearer ${tok}`);
+
+        type HistoryPage = {
+          items: { id: string; maxAttempts: number }[];
+          nextCursor: string | null;
+        };
+        const page = async (query: string) =>
+          (await get(query).expect(200)).body as HistoryPage;
+        const ids = (p: HistoryPage) => p.items.map((r) => r.id);
+
+        const page1 = await page('?limit=1');
+        expect(ids(page1)).toEqual([second.id]);
+        expect(page1.items[0]).toMatchObject({
+          status: 'approved',
+          attemptCount: 0,
+        });
+        expect(page1.items[0].maxAttempts).toBeGreaterThanOrEqual(1);
+        expect(page1.items[0]).not.toHaveProperty('rollout');
+        expect(page1.nextCursor).toEqual(expect.any(String));
+
+        const page2 = await page(
+          `?limit=1&before=${encodeURIComponent(page1.nextCursor ?? '')}`,
+        );
+        expect(ids(page2)).toEqual([first.id]);
+        expect(page2.nextCursor).toBeNull();
+
+        expect(ids(await page('?result=open'))).toEqual([second.id]);
+        expect((await page('?kind=firmware')).items).toEqual([]);
+
+        await get('?before=not-a-cursor').expect(400);
+        await get('?limit=51').expect(400);
+        const other = await makeUser(prisma, { role: 'ST' });
+        await get('', tokenFor(other.id, 'ST')).expect(404);
+        await request(app.getHttpServer()).get(base).expect(401);
+      });
+
       it('เลือก Config อื่นแล้วแก้ค่า (configId) -> Override + คำขอ pending ผูกกับ Config ที่เลือก', async () => {
         const { stTok } = await setupCentralDevice('DCO-C-PICK');
         const otherConfig = await makeConfig('approved');

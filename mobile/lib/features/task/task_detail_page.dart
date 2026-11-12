@@ -883,8 +883,10 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                 ),
               ),
             ],
-            const SizedBox(height: 12),
-            TaskTimelineSection(taskId: task.id, canAddNote: canAddNote),
+            if (ref.watch(taskTimelineEnabledProvider)) ...[
+              const SizedBox(height: 12),
+              TaskTimelineSection(taskId: task.id, canAddNote: canAddNote),
+            ],
           ],
         ),
         // ย้ายปุ่ม action หลักมาไว้ที่ bottom bar (แทนต่อท้ายเนื้อหาใน ListView)

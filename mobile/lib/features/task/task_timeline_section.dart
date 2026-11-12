@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/config/app_config.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
@@ -16,6 +17,12 @@ String _formatDate(DateTime dt) {
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
 }
+
+/// เปิด/ปิดการ์ดประวัติงานทั้งการ์ด ([AppConfig.taskTimelineEnabled]) — เป็น
+/// provider ให้เทสสั่งเปิดได้โดยไม่ต้อง build ด้วย dart-define
+final taskTimelineEnabledProvider = Provider<bool>(
+  (ref) => AppConfig.taskTimelineEnabled,
+);
 
 /// Same limit as the backend `CreateTaskNoteDto`.
 const _noteMaxLength = 2000;

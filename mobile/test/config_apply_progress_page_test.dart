@@ -179,6 +179,28 @@ void main() {
     },
   );
 
+  testWidgets('สำเร็จ -> ติ๊กถูกวาดชั้นหน้า ไม่ถูกวงกลมกลางบัง', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      () => _progress(
+        status: ConfigApplyRequestStatus.succeeded,
+        central: false,
+        completedAt: _released.add(const Duration(seconds: 30)),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    final paints = tester.widgetList<CustomPaint>(
+      find.descendant(
+        of: find.byKey(const Key('apply_progress_scene')),
+        matching: find.byType(CustomPaint),
+      ),
+    );
+    expect(paints.where((p) => p.foregroundPainter != null), isNotEmpty);
+    await _unmount(tester);
+  });
+
   testWidgets('เวลาของแต่ละขั้นเป็นเวลาเครื่อง ไม่ใช่ UTC', (tester) async {
     final at = DateTime.utc(2026, 11, 4, 3, 53, 25);
     await _pump(
@@ -648,5 +670,415 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('apply_progress_retry_load')), findsOneWidget);
     await _unmount(tester);
+  });
+
+  // กล่องรายงานว่าย้อนกลับก่อน backend เห็นผลและตั้งรอบใหม่ราว 1–4 วินาที ช่วงนั้น
+  // ขั้นตอนจากกล่องจบที่ "ย้อนกลับ" แต่คำขอยัง sending — เดิมหน้านี้ถือว่าจบแล้ว
+  // เลิกถาม และขึ้นปุ่มส่งใหม่ ทั้งที่ระบบยังลองรอบ 2/3 เอง (ทดสอบ BOX-0001 12 พ.ย.)
+  group('ช่วงระหว่างรอบ: กล่องย้อนกลับแต่คำขอยังไม่จบ', () {
+    List<ConfigApplyProgressStep> rolledBackSteps() => [
+      _s(ConfigApplyProgressStepKey.delivered),
+      _s(ConfigApplyProgressStepKey.downloading, progress: 100),
+      _s(ConfigApplyProgressStepKey.validating, seconds: 9),
+      _s(ConfigApplyProgressStepKey.installing, seconds: 9),
+      _s(ConfigApplyProgressStepKey.rebooting, seconds: 9),
+      _s(ConfigApplyProgressStepKey.rolledBack, seconds: 18),
+    ];
+
+    testWidgets(
+      'ยังมีรอบเหลือ -> ไม่จบ ไม่มีปุ่มส่งใหม่ ถามต่อ แล้วเดินไปรอบ 2 จนสำเร็จ',
+      (tester) async {
+        var phase = 0;
+        ConfigApplyRequestProgress next() => switch (phase) {
+          // กล่องเพิ่งย้อนกลับ backend ยังไม่ปิดรอบที่ 1
+          0 => _progress(
+            steps: rolledBackSteps(),
+            retry: ConfigApplyRetry(
+              attemptNo: 1,
+              maxAttempts: 3,
+              attempts: [_attempt(1, ConfigApplyAttemptStatus.sending)],
+            ),
+          ),
+          // backend ปิดรอบ 1 แล้ว ตั้งเวลารอบใหม่ (ไม่มีคำสั่งกลางระหว่างรอ)
+          1 => _progress(
+            central: false,
+            retry: ConfigApplyRetry(
+              attemptNo: 1,
+              maxAttempts: 3,
+              nextRetryAt: DateTime.now().toUtc().add(
+                const Duration(seconds: 20),
+              ),
+              attempts: [
+                _attempt(
+                  1,
+                  ConfigApplyAttemptStatus.failed,
+                  errorCode: 'NEW_FIRMWARE_FAILED_HEALTH_CHECK',
+                  endSeconds: 20,
+                ),
+              ],
+            ),
+          ),
+          _ => _progress(
+            status: ConfigApplyRequestStatus.succeeded,
+            completedAt: _released.add(const Duration(seconds: 96)),
+            steps: [
+              _s(ConfigApplyProgressStepKey.delivered, seconds: 80),
+              _s(ConfigApplyProgressStepKey.succeeded, seconds: 96),
+            ],
+            retry: ConfigApplyRetry(
+              attemptNo: 2,
+              maxAttempts: 3,
+              attempts: [
+                _attempt(1, ConfigApplyAttemptStatus.failed, endSeconds: 20),
+                _attempt(
+                  2,
+                  ConfigApplyAttemptStatus.succeeded,
+                  startSeconds: 40,
+                  endSeconds: 96,
+                ),
+              ],
+            ),
+          ),
+        };
+        final repo = await _pump(tester, next);
+
+        expect(find.text('กล่องย้อนกลับ กำลังเตรียมลองใหม่'), findsOneWidget);
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsNothing);
+        expect(
+          find.byKey(const Key('apply_progress_result_bad')),
+          findsNothing,
+        );
+        expect(find.text('ส่งต่อเบื้องหลัง กลับไปหน้างาน'), findsOneWidget);
+
+        // ยังถามต่อ
+        phase = 1;
+        await tester.pump(progressPollInterval);
+        await tester.pump();
+        expect(repo.progressCalls, 2);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const Key('apply_progress_headline')))
+              .data,
+          startsWith('จะลองใหม่ในอีก'),
+        );
+        expect(find.text('รอบ 2/3'), findsOneWidget);
+
+        phase = 2;
+        await tester.pump(progressPollInterval);
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('ติดตั้งสำเร็จ'), findsWidgets);
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsNothing);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets(
+      'รอบสุดท้ายย้อนกลับ -> กำลังสรุปผล จนคำขอจบจริงจึงขึ้นผลและปุ่มส่งใหม่',
+      (tester) async {
+        var closed = false;
+        final retry = ConfigApplyRetry(
+          attemptNo: 3,
+          maxAttempts: 3,
+          attempts: [
+            _attempt(1, ConfigApplyAttemptStatus.failed, endSeconds: 20),
+            _attempt(2, ConfigApplyAttemptStatus.failed, endSeconds: 60),
+            _attempt(3, ConfigApplyAttemptStatus.sending, startSeconds: 80),
+          ],
+        );
+        await _pump(
+          tester,
+          () => _progress(
+            status: closed
+                ? ConfigApplyRequestStatus.failed
+                : ConfigApplyRequestStatus.sending,
+            completedAt: closed
+                ? _released.add(const Duration(seconds: 100))
+                : null,
+            steps: rolledBackSteps(),
+            retry: retry,
+          ),
+        );
+        expect(find.text('กำลังสรุปผล'), findsOneWidget);
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsNothing);
+
+        closed = true;
+        await tester.pump(progressPollInterval);
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('กล่องย้อนกลับเวอร์ชันเดิม'), findsOneWidget);
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsOneWidget);
+        await _unmount(tester);
+      },
+    );
+  });
+
+  // ล้มจริงแล้ว ปุ่มส่งใหม่ยื่นคำขอใหม่ด้วยของชิ้นเดิมทันที แล้วติดตามต่อในหน้านี้
+  // ไม่พาไปหน้าเลือกใหม่ · ยกเว้นที่ส่งของเดิมซ้ำไม่ได้ (Override ใช้ได้ครั้งเดียว,
+  // Operation ไม่อนุมัติ ฯลฯ) ยังไปหน้าเลือกเหมือนเดิม
+  group('ปุ่มส่งใหม่อีกครั้ง', () {
+    ConfigApplyRequestProgress fromRequest(ConfigApplyRequest r) =>
+        ConfigApplyRequestProgress(
+          requestId: r.id,
+          kind: r.kind,
+          status: r.status,
+          fromVersion: r.fromFirmwareVersion,
+          toVersion: r.firmwareVersion,
+          isDowngrade: r.isDowngrade,
+          releasedAt: r.releasedAt,
+          completedAt: r.completedAt,
+        );
+
+    Future<FakeConfigApplyRequestRepository> pumpFailed(
+      WidgetTester tester,
+      ConfigApplyRequest source, {
+      List<ConfigApplyRequest> newer = const [],
+    }) async {
+      tester.view.physicalSize = const Size(1080, 4200);
+      tester.view.devicePixelRatio = 2.625;
+      addTearDown(tester.view.reset);
+      final repo = FakeConfigApplyRequestRepository(
+        requests: [...newer, source],
+        progressOverride: (r) => r.id == source.id
+            ? _progress(
+                kind: source.kind,
+                status: source.status,
+                central: false,
+                completedAt: _released.add(const Duration(seconds: 30)),
+              )
+            : fromRequest(r),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            configApplyRequestRepositoryProvider.overrideWithValue(repo),
+            taskDetailProvider.overrideWith(
+              (ref, id) async => Task(
+                id: id,
+                title: 'BOX-0001',
+                assignedTo: 'u1',
+                status: TaskStatus.inProgress,
+                createdAt: DateTime(2026, 11, 12),
+                updatedAt: DateTime(2026, 11, 12),
+                deviceId: 'BOX-0001',
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: ConfigApplyProgressPage(taskId: 't1', requestId: source.id),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      return repo;
+    }
+
+    Future<void> tapBottom(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('apply_progress_bottom')));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets(
+      'Firmware -> ขออนุมัติใหม่ด้วยรุ่นเดิม รอ Operation แล้วกดส่งเข้ากล่องในหน้านี้',
+      (tester) async {
+        final repo = await pumpFailed(
+          tester,
+          fakeApplyRequest(
+            kind: FieldApplyKind.firmware,
+            firmwareVersion: '1.2.9',
+            status: ConfigApplyRequestStatus.failed,
+            releasedAt: _released,
+          ),
+        );
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsOneWidget);
+
+        await tapBottom(tester);
+        expect(repo.createCalls, 1);
+        expect(repo.lastCreateFirmwareId, 'fw-1.2.9');
+        expect(repo.lastCreateConfigId, isNull);
+        expect(repo.lastCreateDirect, isFalse);
+        expect(repo.releaseCalls, 0);
+        expect(find.text('รอ Operation อนุมัติ'), findsOneWidget);
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsNothing);
+        // ยังไม่ได้ส่ง = ขั้น "ส่งถึงกล่อง" ยังไม่ติ๊ก และไม่นับเวลา
+        expect(
+          find.descendant(
+            of: _step(ConfigApplyProgressStepKey.delivered),
+            matching: find.byIcon(Icons.check),
+          ),
+          findsNothing,
+        );
+        expect(find.byKey(const Key('apply_progress_elapsed')), findsNothing);
+
+        // Operation อนุมัติ -> ปุ่มส่งเข้ากล่อง
+        repo.requests[0] = fakeApplyRequest(
+          id: 'car-new-1',
+          kind: FieldApplyKind.firmware,
+          firmwareVersion: '1.2.9',
+          status: ConfigApplyRequestStatus.approved,
+        );
+        await tester.pump(progressPollInterval);
+        await tester.pump();
+        expect(find.text('อนุมัติแล้ว กดส่งเข้ากล่องได้เลย'), findsOneWidget);
+        expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
+
+        await tapBottom(tester);
+        expect(repo.releaseCalls, 1);
+        expect(repo.lastReleaseId, 'car-new-1');
+        expect(find.text('กล่องกำลังติดตั้ง'), findsWidgets);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets(
+      'Config ไม่มีค่าแก้ -> ส่งตรงด้วย Config เดิมแล้วส่งเข้ากล่องทันที',
+      (tester) async {
+        final repo = await pumpFailed(
+          tester,
+          fakeApplyRequest(
+            configId: 'cfg-7',
+            status: ConfigApplyRequestStatus.failed,
+            releasedAt: _released,
+          ),
+        );
+        await tapBottom(tester);
+        expect(repo.lastCreateConfigId, 'cfg-7');
+        expect(repo.lastCreateDirect, isTrue);
+        expect(repo.releaseCalls, 1);
+        expect(repo.lastReleaseId, 'car-new-1');
+        expect(find.text('กล่องกำลังรับค่าใหม่'), findsWidgets);
+        expect(find.text('ส่งใหม่อีกครั้ง'), findsNothing);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets('Config ที่มีค่าแก้เฉพาะเครื่อง -> ไม่ยื่นคำขอเอง', (
+      tester,
+    ) async {
+      final repo = await pumpFailed(
+        tester,
+        fakeApplyRequest(
+          status: ConfigApplyRequestStatus.failed,
+          releasedAt: _released,
+          override: const ApplyRequestOverride(
+            id: 'ovr-1',
+            fields: {'speed_limit': 80},
+            reason: 'ลูกค้าขอ',
+          ),
+        ),
+      );
+      await tapBottom(tester);
+      expect(repo.createCalls, 0);
+      await _unmount(tester);
+    });
+
+    testWidgets('Operation ไม่อนุมัติ -> หัวข้อบอกชัด และไม่ยื่นคำขอเดิมซ้ำ', (
+      tester,
+    ) async {
+      final repo = await pumpFailed(
+        tester,
+        fakeApplyRequest(
+          kind: FieldApplyKind.firmware,
+          firmwareVersion: '1.2.9',
+          status: ConfigApplyRequestStatus.rejected,
+        ),
+      );
+      expect(find.text('Operation ไม่อนุมัติ'), findsWidgets);
+      await tapBottom(tester);
+      expect(repo.createCalls, 0);
+      await _unmount(tester);
+    });
+
+    testWidgets('เปิดคำขอเก่าจากประวัติ (มีคำขอใหม่กว่า) -> ไม่มีปุ่มส่งใหม่', (
+      tester,
+    ) async {
+      final repo = await pumpFailed(
+        tester,
+        fakeApplyRequest(
+          kind: FieldApplyKind.firmware,
+          firmwareVersion: '1.2.9',
+          status: ConfigApplyRequestStatus.failed,
+          releasedAt: _released,
+        ),
+        newer: [
+          fakeApplyRequest(
+            id: 'car-9',
+            kind: FieldApplyKind.firmware,
+            firmwareVersion: '1.2.9',
+            status: ConfigApplyRequestStatus.succeeded,
+          ),
+        ],
+      );
+      expect(find.text('ส่งใหม่อีกครั้ง'), findsNothing);
+      expect(find.text('กลับไปหน้างาน'), findsOneWidget);
+      await tapBottom(tester);
+      expect(repo.createCalls, 0);
+      await _unmount(tester);
+    });
+  });
+
+  group('ประวัติรายรอบพับได้', () {
+    ConfigApplyRetry threeRounds({required bool succeeded}) => ConfigApplyRetry(
+      attemptNo: 3,
+      maxAttempts: 3,
+      attempts: [
+        _attempt(1, ConfigApplyAttemptStatus.failed, endSeconds: 20),
+        _attempt(2, ConfigApplyAttemptStatus.failed, endSeconds: 60),
+        _attempt(
+          3,
+          succeeded
+              ? ConfigApplyAttemptStatus.succeeded
+              : ConfigApplyAttemptStatus.failed,
+          startSeconds: 80,
+          endSeconds: 96,
+        ),
+      ],
+    );
+
+    testWidgets('สำเร็จหลายรอบ -> พับเป็นบรรทัดสรุป แตะแล้วกาง', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        () => _progress(
+          status: ConfigApplyRequestStatus.succeeded,
+          central: false,
+          completedAt: _released.add(const Duration(seconds: 96)),
+          retry: threeRounds(succeeded: true),
+        ),
+      );
+      final toggle = find.byKey(const Key('apply_progress_history_toggle'));
+      expect(
+        find.descendant(
+          of: toggle,
+          matching: find.text('ส่ง 3 รอบ สำเร็จรอบที่ 3'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('apply_progress_attempt_1')), findsNothing);
+
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      for (final n in [1, 2, 3]) {
+        expect(find.byKey(Key('apply_progress_attempt_$n')), findsOneWidget);
+      }
+      await _unmount(tester);
+    });
+
+    testWidgets('ล้มครบทุกรอบ -> กางไว้ตั้งแต่แรก', (tester) async {
+      await _pump(
+        tester,
+        () => _progress(
+          status: ConfigApplyRequestStatus.failed,
+          central: false,
+          completedAt: _released.add(const Duration(seconds: 96)),
+          retry: threeRounds(succeeded: false),
+        ),
+      );
+      for (final n in [1, 2, 3]) {
+        expect(find.byKey(Key('apply_progress_attempt_$n')), findsOneWidget);
+      }
+      await _unmount(tester);
+    });
   });
 }

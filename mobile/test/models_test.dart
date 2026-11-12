@@ -1398,6 +1398,55 @@ void _deviceStatusTests() {
     },
   );
 
+  group('ประวัติคำขอของงาน (v3.96)', () {
+    final request = {
+      'id': 'car-1',
+      'taskId': 't1',
+      'deviceId': 'BOX-0001',
+      'kind': 'firmware',
+      'configId': null,
+      'firmwareId': 'fw-1',
+      'firmware': {'id': 'fw-1', 'version': '1.2.9'},
+      'isDowngrade': false,
+      'status': 'succeeded',
+      'requestedAt': '2026-11-12T03:07:31.539Z',
+      'expiresAt': '2026-11-13T03:07:31.539Z',
+    };
+
+    test(
+      'อ่านจำนวนรอบ · ไม่มี field (response ของ create/release) = 0 / null',
+      () {
+        final withRounds = ConfigApplyRequest.fromJson({
+          ...request,
+          'attemptCount': 3,
+          'maxAttempts': 3,
+        });
+        expect(withRounds.attemptCount, 3);
+        expect(withRounds.maxAttempts, 3);
+
+        final plain = ConfigApplyRequest.fromJson(request);
+        expect(plain.attemptCount, 0);
+        expect(plain.maxAttempts, isNull);
+      },
+    );
+
+    test('หน้าประวัติ: รายการ + nextCursor', () {
+      final page = ConfigApplyRequestHistoryPage.fromJson({
+        'items': [request],
+        'nextCursor': '2026-11-12T03:07:31.539Z_car-1',
+      });
+      expect(page.items.single.firmwareVersion, '1.2.9');
+      expect(page.nextCursor, '2026-11-12T03:07:31.539Z_car-1');
+      expect(
+        ConfigApplyRequestHistoryPage.fromJson({
+          'items': <Object>[],
+          'nextCursor': null,
+        }).nextCursor,
+        isNull,
+      );
+    });
+  });
+
   group('ConfigApplyRequestProgress.retry (docs/31 R2, v3.87)', () {
     final base = {
       'requestId': 'car-1',
