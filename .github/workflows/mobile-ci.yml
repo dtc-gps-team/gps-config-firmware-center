@@ -23,6 +23,12 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
+          # ตรึงเวอร์ชันไว้ ไม่ใช้ stable ล่าสุดเสมอ: 3.50.0 (12 พ.ย. 2569) เลิกใช้
+          # package:flutter/material.dart (ย้ายไป material_ui) ทำให้ flutter analyze
+          # ล้มด้วย info deprecated_member_use 102 จุด ทั้งที่โค้ดไม่ได้เปลี่ยน ·
+          # 3.47.9 = เวอร์ชันที่ main ผ่านล่าสุด (วิเคราะห์โดย A ใน #476) · ขยับเมื่อ
+          # ทีมอัป Flutter ในเครื่องและย้ายโค้ดตามเวอร์ชันใหม่แล้ว
+          flutter-version: "3.47.9"
           channel: "stable"
           cache: true
 
