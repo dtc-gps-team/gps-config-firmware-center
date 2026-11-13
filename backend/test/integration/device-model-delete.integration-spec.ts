@@ -386,6 +386,8 @@ describe('DELETE /device-models/:id (integration — real postgres + guard chain
       const res = await creating;
 
       expect(res.status).toBe(409);
+      // ข้อความบอกชื่อรุ่น ไม่ใช่ id (ข้อสังเกต A ข้อ 3 บน #481)
+      expect((res.body as { message: string }).message).toContain('DM-RACE2');
       expect(await prisma.config.count({ where: { modelId: m.id } })).toBe(0);
     });
   });

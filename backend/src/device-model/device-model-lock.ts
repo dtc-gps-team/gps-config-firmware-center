@@ -13,16 +13,20 @@ import { Prisma } from '@prisma/client';
  *   ทะเบียนตั้งแต่ต้น (เป็น string อิสระ) จึงไม่มีสัญญา "ต้องมีรุ่นนี้อยู่" ให้ล็อกปกป้อง — ถูกนับเป็นตัวบล็อกการลบเท่านั้น
  */
 
-/** ฝั่งสร้าง/แก้ Config - ล็อกร่วม (FOR SHARE) หลายคนพร้อมกันได้ แต่รอผู้ลบ · รุ่นหาย -> 409 */
+/**
+ * ฝั่งสร้าง/แก้ Config - ล็อกร่วม (FOR SHARE) หลายคนพร้อมกันได้ แต่รอผู้ลบ · รุ่นหาย -> 409
+ * `modelName` = ชื่อที่ผู้เรียกอ่านมาก่อนล็อก ใช้ในข้อความ (แถวถูกลบไปแล้วจึงอ่านชื่อจากฐานไม่ได้อีก)
+ */
 export async function lockDeviceModelForUse(
   tx: Prisma.TransactionClient,
   modelId: string,
+  modelName: string,
 ): Promise<void> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM "DeviceModel" WHERE id = ${modelId} FOR SHARE`;
   if (rows.length === 0) {
     throw new ConflictException(
-      `รุ่นอุปกรณ์ id ${modelId} ถูกลบออกจากทะเบียนไปแล้ว - ตรวจรายการรุ่นแล้วลองใหม่`,
+      `รุ่นอุปกรณ์ "${modelName}" ถูกลบออกจากทะเบียนไปแล้ว - ตรวจรายการรุ่นแล้วลองใหม่`,
     );
   }
 }

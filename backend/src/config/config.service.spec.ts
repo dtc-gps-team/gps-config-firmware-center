@@ -106,7 +106,7 @@ describe('ConfigService', () => {
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
   let configSyncQueue: { enqueueConfigSync: jest.Mock };
-  let deviceModelService: { findOne: jest.Mock };
+  let deviceModelService: { findOne: jest.Mock; findByName: jest.Mock };
 
   beforeEach(async () => {
     config = {
@@ -155,6 +155,8 @@ describe('ConfigService', () => {
     // เทสเดิมทั้งหมดไม่เกี่ยวกับ issue #209 ข้อ 4 โดยตรง จึงให้ผ่านเสมอ
     // describe ที่เกี่ยวกับ validateDeviceModelProtocol โดยตรงจะ override เอง
     deviceModelService = {
+      // import ที่ระบุรุ่นด้วยชื่อ — default ไม่พบ เทสที่ใช้จะ mock เอง
+      findByName: jest.fn().mockResolvedValue(null),
       findOne: jest.fn().mockResolvedValue({
         id: MODEL_ID,
         name: 'GT06N',
@@ -540,20 +542,73 @@ describe('ConfigService', () => {
       expect(config.create).not.toHaveBeenCalled();
     });
 
-    it('ไฟล์รูปแบบเดิมระบุรุ่นด้วยชื่อ (deviceModel) -> 400 บอกให้ใช้ modelId ไม่สร้าง Config', async () => {
-      const file = makeMulterFile(
-        JSON.stringify({
-          name: 'ไฟล์เก่า',
-          deviceModel: 'GT06N',
-          protocol: 'TCP',
-          fields: { APN1: 'internet' },
-        }),
-      );
+    describe('ไฟล์ระบุรุ่นด้วยชื่อ (deviceModel) แทน modelId — ใช้ข้ามฐานได้', () => {
+      function fileWith(model: Record<string, unknown>) {
+        return makeMulterFile(
+          JSON.stringify({
+            name: 'ไฟล์จากอีกฐาน',
+            ...model,
+            protocol: 'TCP',
+            fields: { APN1: 'internet' },
+          }),
+        );
+      }
 
-      await expect(
-        service.importFromJson(file, 'json', configEngineer),
-      ).rejects.toThrow('modelId');
-      expect(config.create).not.toHaveBeenCalled();
+      it('ชื่อรุ่นที่มีในทะเบียน -> แปลงเป็น modelId ของฐานนี้แล้วสร้าง Config', async () => {
+        deviceModelService.findByName.mockResolvedValue({
+          id: MODEL_ID,
+          name: 'GT06N',
+          supportedProtocols: ['TCP'],
+        });
+        config.create.mockResolvedValue(draftConfig);
+
+        await service.importFromJson(
+          fileWith({ deviceModel: 'GT06N' }),
+          'json',
+          configEngineer,
+        );
+
+        expect(deviceModelService.findByName).toHaveBeenCalledWith('GT06N');
+        expect(config.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ modelId: MODEL_ID }) as unknown,
+          }),
+        );
+      });
+
+      it('ไม่พบรุ่นชื่อนี้ -> 404 ไม่สร้าง Config', async () => {
+        await expect(
+          service.importFromJson(
+            fileWith({ deviceModel: 'NO-SUCH-MODEL' }),
+            'json',
+            configEngineer,
+          ),
+        ).rejects.toThrow(NotFoundException);
+        expect(config.create).not.toHaveBeenCalled();
+      });
+
+      it('ระบุทั้ง modelId และ deviceModel -> 400 (กำกวม) ไม่ค้นหารุ่น', async () => {
+        await expect(
+          service.importFromJson(
+            fileWith({ deviceModel: 'GT06N', modelId: MODEL_ID }),
+            'json',
+            configEngineer,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(deviceModelService.findByName).not.toHaveBeenCalled();
+        expect(config.create).not.toHaveBeenCalled();
+      });
+
+      it('deviceModel ไม่ใช่ข้อความ -> 400', async () => {
+        await expect(
+          service.importFromJson(
+            fileWith({ deviceModel: 123 }),
+            'json',
+            configEngineer,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(config.create).not.toHaveBeenCalled();
+      });
     });
 
     it('ไฟล์ parse เป็น JSON ไม่ได้ -> BadRequestException', async () => {
