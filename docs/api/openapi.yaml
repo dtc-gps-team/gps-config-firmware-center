@@ -4159,7 +4159,8 @@ paths:
         Campaign นี้กับ Incident ที่เพิ่งถูก `decide(outcome: promote)` (ต้อง
         เป็น `status: investigating` เท่านั้น ไม่งั้น 409) ผูกซ้ำ incident
         เดิมกับ Campaign อื่นไม่ได้ (unique — 409 ถ้าชนกัน) · **v3.90 (docs/31 §6):**
-        รับ `autoRetry` optional — ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ (สูงสุด 3 ครั้ง) ไม่ส่ง = เปิด
+        รับ `autoRetry` optional — ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ (สูงสุด 3 ครั้ง) ไม่ส่ง = เปิด ·
+        **v3.99:** บังคับ `modelId` — กลุ่มผูกได้รุ่นอุปกรณ์เดียว ทุกเครื่องใน `targets` ต้องเป็นรุ่นนี้ (ไม่ล็อก protocol)
       requestBody:
         required: true
         content:
@@ -4174,7 +4175,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Campaign"
         "400":
-          description: validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน)
+          description: >-
+            validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน, ไม่ส่ง modelId) · ไม่พบรุ่น `modelId` ·
+            มีเครื่องที่ไม่ใช่รุ่น `modelId` (v3.99)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -4372,7 +4375,9 @@ paths:
                 items:
                   $ref: "#/components/schemas/CampaignTarget"
         "400":
-          description: validation ไม่ผ่าน (targets ว่าง หรือ deviceId ซ้ำกันในคำขอ)
+          description: >-
+            validation ไม่ผ่าน (targets ว่าง หรือ deviceId ซ้ำกันในคำขอ) · กลุ่มมีรุ่น (`modelId`) แต่มีเครื่องรุ่นอื่น
+            (v3.99 — กลุ่มเดิมที่ `modelId` เป็น null เพิ่มเครื่องรุ่นไหนก็ได้)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -5433,6 +5438,14 @@ components:
             (v3.90, docs/31 §6) ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ สูงสุด 3 ครั้ง (รอ 20 วินาทีก่อนทุกรอบใหม่ ·
             เฉพาะโหมดส่งผ่าน Server กลาง) · Campaign ใหม่เปิดเป็นค่าเริ่มต้น แต่ Campaign ที่มีอยู่ก่อน v3.90
             เป็น `false` (ไม่เปลี่ยนสิ่งที่ Operation เคยอนุมัติไว้) · ปิด = เครื่องที่ส่งไม่สำเร็จนับเป็นล้มทันที
+        modelId:
+          type: string
+          nullable: true
+          format: uuid
+          description: >-
+            (v3.99) `DeviceModel.id` ของกลุ่ม — ทุกเครื่องในกลุ่มเป็นรุ่นนี้ หน้า Rollout แสดงแค่ Config/Firmware
+            ของรุ่นนี้ · `null` = กลุ่มเดิมก่อน v3.99 ที่มีหลายรุ่นปนกัน (กลุ่มเดิมที่มีรุ่นเดียวถูกเติมค่าให้ตอน
+            migration) หรือ Campaign ระบบของคำขอหน้างาน · ชื่อรุ่นหาจาก `listDeviceModels`
 
     CampaignTargetInput:
       type: object
@@ -5453,7 +5466,7 @@ components:
 
     CampaignCreateRequest:
       type: object
-      required: [name, targets]
+      required: [name, modelId, targets]
       description: >-
         **แก้ไข 2026-09-24:** ตัด payloadType/configId/firmwareId ออก — สร้าง
         กลุ่มเปล่าๆ เท่านั้น เลือก payload ทีหลังผ่าน `createCampaignRollout`
@@ -5463,6 +5476,11 @@ components:
           minLength: 1
         description:
           type: string
+        modelId:
+          type: string
+          format: uuid
+          description: >-
+            (v3.99) `DeviceModel.id` ของกลุ่ม — ทุกเครื่องใน `targets` ต้องเป็นรุ่นนี้ ไม่งั้น 400
         targets:
           type: array
           minItems: 1
@@ -7759,6 +7777,12 @@ components:
           example: DEV-0001
         simNumber:
           type: string
+        modelId:
+          type: string
+          format: uuid
+          description: >-
+            `DeviceModel.id` ของเครื่อง (backend คืนค่านี้มาตลอดแต่เพิ่งเขียนลง spec ใน v3.99 — หน้าสร้าง
+            Campaign ใช้กรองเครื่องตามรุ่นของกลุ่ม)
         deviceModel:
           type: string
           example: GT06N

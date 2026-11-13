@@ -239,15 +239,19 @@ export function DeleteCampaignButton({
   );
 }
 
-/** เพิ่มเครื่อง (installed ที่ยังไม่อยู่ในกลุ่ม) เข้ากลุ่ม */
+/** เพิ่มเครื่อง (installed ที่ยังไม่อยู่ในกลุ่ม) เข้ากลุ่ม · กลุ่มที่มีรุ่นแสดงแค่เครื่องรุ่นนั้น (backend ตอบ 400
+ * ถ้าต่างรุ่น) กลุ่มเดิมที่ไม่มีรุ่นเพิ่มได้ทุกรุ่นเหมือนเดิม */
 export function AddMembersButton({
   campaignId,
   memberDeviceIds,
+  modelId = null,
   disabledReason,
   onAdded,
 }: {
   campaignId: string;
   memberDeviceIds: string[];
+  /** `Campaign.modelId` — null = กลุ่มเดิมที่หลายรุ่นปนกัน */
+  modelId?: string | null;
   disabledReason: string | null;
   onAdded: () => void;
 }) {
@@ -265,12 +269,13 @@ export function AddMembersButton({
     return (devicesQuery.data ?? []).filter(
       (d) =>
         d.status === "installed" &&
+        (!modelId || d.modelId === modelId) &&
         !members.has(d.deviceId) &&
         (keyword === "" ||
           d.deviceId.toLowerCase().includes(keyword) ||
           d.deviceModel.toLowerCase().includes(keyword)),
     );
-  }, [devicesQuery.data, memberDeviceIds, search]);
+  }, [devicesQuery.data, memberDeviceIds, modelId, search]);
 
   function reset() {
     setSearch("");
@@ -325,6 +330,7 @@ export function AddMembersButton({
           <DialogTitle>เพิ่มเครื่องเข้ากลุ่ม</DialogTitle>
           <DialogDescription>
             เลือกได้เฉพาะเครื่องที่ติดตั้งแล้ว (installed) และยังไม่อยู่ในกลุ่มนี้
+            {modelId ? " เฉพาะโมเดลเดียวกับกลุ่ม" : ""}
           </DialogDescription>
         </DialogHeader>
         <Input

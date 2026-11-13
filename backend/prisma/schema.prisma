@@ -445,8 +445,9 @@ model DeviceModel {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  devices Device[]
-  configs Config[]
+  devices   Device[]
+  configs   Config[]
+  campaigns Campaign[]
 }
 
 model Device {
@@ -1301,16 +1302,25 @@ model Campaign {
   // Campaign ที่มีอยู่ก่อน migration เป็น false (ดู migration `..._add_campaign_auto_retry`) · Campaign ระบบของคำขอ
   // จากหน้างานไม่อ่านค่านี้ (ลองใหม่เสมอ) · โหมด central เท่านั้น
   autoRetry   Boolean  @default(true)
+  // รุ่นอุปกรณ์ของกลุ่ม (13 พ.ย. 2569) — Campaign ใหม่ผูกได้รุ่นเดียว ทุกเครื่องในกลุ่มต้องเป็นรุ่นนี้
+  // (CampaignService ตรวจตอนสร้าง/เพิ่มเครื่อง) หน้า Rollout จึงแสดงแค่ Config/Firmware ของรุ่นนี้ ไม่มี
+  // เครื่องไม่เข้ากันเพราะรุ่นปนกันอีก · ไม่ล็อก protocol (Firmware ไม่ขึ้นกับ protocol) · null ได้สำหรับ
+  // กลุ่มเดิมก่อน migration ที่มีหลายรุ่นปนกัน (เก็บไว้ตามเดิม ไม่ล้างทิ้ง กลุ่มเดิมที่มีรุ่นเดียวถูกเติมค่า
+  // ให้ใน migration) และ Campaign ระบบของคำขอหน้างาน (กลุ่มเดียวรับทุกรุ่น)
+  modelId     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   creator        User              @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
+  model          DeviceModel?      @relation(fields: [modelId], references: [id], onDelete: Restrict)
   sourceIncident Incident?         @relation("IncidentPromotedCampaign", fields: [sourceIncidentId], references: [id])
   targets        CampaignTarget[]
   rollouts       CampaignRollout[]
   // เปล่า ไม่มีอะไรเขียนเข้าจาก module นี้ (ดู comment เหนือ `Task.campaignId`)
   // — เหลือไว้เพราะ Prisma บังคับประกาศทั้ง 2 ฝั่งของ relation
   tasks          Task[]
+
+  @@index([modelId])
 }
 
 // CampaignTarget — สมาชิกกลุ่ม (deviceId เฉยๆ ไม่มี status) แยกจากผลของแต่ละ

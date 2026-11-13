@@ -38,6 +38,7 @@ function campaign(autoRetry: boolean): Campaign {
     name: "กลุ่มทดสอบ",
     description: null,
     autoRetry,
+    modelId: null,
     createdBy: "op-1",
     createdAt: "2026-11-09T00:00:00Z",
     updatedAt: "2026-11-09T00:00:00Z",

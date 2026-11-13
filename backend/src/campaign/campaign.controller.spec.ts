@@ -28,6 +28,7 @@ const sampleCampaign: Campaign = {
   createdBy: 'op-1',
   sourceIncidentId: null,
   autoRetry: true,
+  modelId: 'model-1',
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -136,6 +137,7 @@ describe('CampaignController', () => {
     service.create.mockResolvedValue(sampleCampaign);
     const dto: CreateCampaignDto = {
       name: 'กลุ่มทดสอบ',
+      modelId: 'model-1',
       targets: [{ deviceId: 'DEV-0001' }],
     };
 

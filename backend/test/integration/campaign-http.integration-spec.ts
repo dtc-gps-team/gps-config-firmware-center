@@ -116,6 +116,11 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     });
   }
 
+  /** รุ่นของกลุ่ม (Campaign ผูกได้รุ่นเดียว 13 พ.ย. 2569) — เครื่องจาก seedInstalledDevice() เป็น GT06N */
+  async function gt06nModelId(): Promise<string> {
+    return (await getOrCreateDeviceModel(prisma, 'GT06N')).id;
+  }
+
   describe('POST /campaigns', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
       await request(app.getHttpServer())
@@ -147,6 +152,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .set('Authorization', `Bearer ${token}`)
         .send({
           name: 'กลุ่มทดสอบ',
+          modelId: await gt06nModelId(),
           targets: [
             { deviceId: deviceA.deviceId },
             { deviceId: deviceB.deviceId },
@@ -182,7 +188,11 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: device.deviceId }] })
+        .send({
+          name: 'กลุ่มทดสอบ',
+          modelId: await gt06nModelId(),
+          targets: [{ deviceId: device.deviceId }],
+        })
         .expect(201);
 
       const logs = await prisma.auditLog.findMany({
@@ -200,7 +210,11 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: 'DEV-NOT-EXIST' }] })
+        .send({
+          name: 'กลุ่มทดสอบ',
+          modelId: await gt06nModelId(),
+          targets: [{ deviceId: 'DEV-NOT-EXIST' }],
+        })
         .expect(409);
 
       expect(await prisma.campaign.count()).toBe(0);
@@ -215,7 +229,11 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: device.deviceId }] })
+        .send({
+          name: 'กลุ่มทดสอบ',
+          modelId: await gt06nModelId(),
+          targets: [{ deviceId: device.deviceId }],
+        })
         .expect(409);
 
       expect(await prisma.campaign.count()).toBe(0);
@@ -232,11 +250,45 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .set('Authorization', `Bearer ${token}`)
         .send({
           name: 'กลุ่มทดสอบ',
+          modelId: await gt06nModelId(),
           targets: [
             { deviceId: device.deviceId },
             { deviceId: device.deviceId },
           ],
         })
+        .expect(400);
+    });
+
+    it('มีเครื่องต่างรุ่นจากรุ่นของกลุ่ม -> 400, ไม่มี Campaign ถูกสร้าง', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const gt06n = await seedInstalledDevice();
+      const gt06l = await seedInstalledDevice({ deviceModel: 'GT06L' });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'กลุ่มทดสอบ',
+          modelId: await gt06nModelId(),
+          targets: [{ deviceId: gt06n.deviceId }, { deviceId: gt06l.deviceId }],
+        })
+        .expect(400);
+
+      expect(await prisma.campaign.count()).toBe(0);
+    });
+
+    it('ไม่ส่ง modelId -> 400 (validation)', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: device.deviceId }] })
         .expect(400);
     });
 
@@ -277,6 +329,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           .set('Authorization', `Bearer ${token}`)
           .send({
             name: 'กลุ่มทดสอบ',
+            modelId: await gt06nModelId(),
             targets: [{ deviceId: device.deviceId }],
             sourceIncidentId: randomUUID(),
           })
@@ -297,6 +350,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           .set('Authorization', `Bearer ${token}`)
           .send({
             name: 'กลุ่มทดสอบ',
+            modelId: await gt06nModelId(),
             targets: [{ deviceId: device.deviceId }],
             sourceIncidentId: incidentId,
           })
@@ -317,6 +371,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           .set('Authorization', `Bearer ${token}`)
           .send({
             name: 'กลุ่มทดสอบ',
+            modelId: await gt06nModelId(),
             targets: [{ deviceId: device.deviceId }],
             sourceIncidentId: incidentId,
           })
