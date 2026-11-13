@@ -66,6 +66,12 @@ export class DeviceModelService {
     return model;
   }
 
+  /** หารุ่นจากชื่อ (`name` unique) — ใช้ตอน import Config จากไฟล์ที่ระบุรุ่นด้วยชื่อ
+   * (`ConfigService.importFromJson`) · ไม่พบคืน `null` ให้ผู้เรียกเลือกข้อความเอง */
+  findByName(name: string): Promise<DeviceModel | null> {
+    return this.prisma.deviceModel.findUnique({ where: { name } });
+  }
+
   /**
    * เขียน AuditLog ในทรานแซกชันเดียวกับการเปลี่ยนข้อมูลเสมอ (ไม่ใช่ never-throw)
    * — บันทึกไม่สำเร็จ = การสร้าง/แก้ล้มตามไปด้วย ไม่มีทางที่ข้อมูลเปลี่ยนโดยไม่มี

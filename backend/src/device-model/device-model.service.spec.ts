@@ -110,6 +110,21 @@ describe('DeviceModelService', () => {
     });
   });
 
+  describe('findByName', () => {
+    it('เจอ -> คืนรุ่นนั้น (ค้นด้วยชื่อ unique)', async () => {
+      findUnique.mockResolvedValue(gt06n);
+
+      await expect(service.findByName('GT06N')).resolves.toEqual(gt06n);
+      expect(findUnique).toHaveBeenCalledWith({ where: { name: 'GT06N' } });
+    });
+
+    it('ไม่เจอ -> null ให้ผู้เรียกเลือกข้อความเอง', async () => {
+      findUnique.mockResolvedValue(null);
+
+      await expect(service.findByName('UNKNOWN')).resolves.toBeNull();
+    });
+  });
+
   describe('create', () => {
     it('สร้างรุ่นใหม่พร้อม field ที่ระบุ', async () => {
       create.mockResolvedValue(gt06n);

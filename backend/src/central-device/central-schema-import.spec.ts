@@ -2,6 +2,7 @@ import {
   type CentralSchemaDoc,
   mapCentralParameter,
   planCentralSchemaImport,
+  resolveImportTargetModel,
 } from './central-schema-import';
 
 // schema เวอร์ชัน 1 จริงของกล่อง (ESP32-DEVKIT-V1 firmware 1.0.0)
@@ -232,5 +233,46 @@ describe('planCentralSchemaImport', () => {
     expect(plan.skipped).toEqual([
       { key: 'a.c', reason: 'ไม่รู้จักชนิดข้อมูล "unknown"' },
     ]);
+  });
+});
+
+describe('resolveImportTargetModel', () => {
+  it('ระบุ --as ที่มีอยู่แล้ว -> ผูกกับรุ่นนั้น ไม่สร้างใหม่ (ชื่อในระบบต่างจากชื่อบอร์ดได้)', () => {
+    expect(
+      resolveImportTargetModel('ESP32-DEVKIT-V1', 'GPS-BOX-V1', [
+        'GPS-BOX-V1',
+        'GPS-BOX-TEST',
+      ]),
+    ).toEqual({ name: 'GPS-BOX-V1', create: false });
+  });
+
+  it('ระบุ --as ที่ยังไม่มี -> สร้างรุ่นชื่อนั้น', () => {
+    expect(resolveImportTargetModel('ESP32-DEVKIT-V1', 'NEW-BOX', [])).toEqual({
+      name: 'NEW-BOX',
+      create: true,
+    });
+  });
+
+  it('ไม่ระบุ --as และมีรุ่นชื่อเดียวกับบอร์ด -> ใช้รุ่นนั้นเหมือนเดิม', () => {
+    expect(
+      resolveImportTargetModel('ESP32-DEVKIT-V1', undefined, [
+        'ESP32-DEVKIT-V1',
+      ]),
+    ).toEqual({ name: 'ESP32-DEVKIT-V1', create: false });
+  });
+
+  it('ไม่ระบุ --as และไม่มีรุ่นชื่อบอร์ด -> หยุดพร้อมบอกรุ่นที่มีและวิธีใช้ --as (ไม่สร้างรุ่นซ้ำเงียบๆ)', () => {
+    const result = resolveImportTargetModel('ESP32-DEVKIT-V1', undefined, [
+      'GPS-BOX-V1',
+    ]);
+    expect(result).toHaveProperty('error');
+    expect((result as { error: string }).error).toContain('GPS-BOX-V1');
+    expect((result as { error: string }).error).toContain('--as');
+  });
+
+  it('--as เป็นช่องว่าง -> ถือว่าไม่ได้ระบุ', () => {
+    expect(
+      resolveImportTargetModel('ESP32-DEVKIT-V1', '  ', ['GPS-BOX-V1']),
+    ).toHaveProperty('error');
   });
 });

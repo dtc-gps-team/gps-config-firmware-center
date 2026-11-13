@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   type CentralSchemaDoc,
   planCentralSchemaImport,
+  resolveImportTargetModel,
 } from '../src/central-device/central-schema-import';
 
 // รันผ่าน plain `ts-node` (ไม่ผ่าน prisma.config.ts) จึงต้องโหลด root .env เอง เหมือน seed-demo.ts
@@ -14,16 +15,19 @@ loadEnv({ path: path.resolve(__dirname, '../../.env'), quiet: true });
  * นำ schema ของกล่องจาก Server กลาง (ESP32 Central Management) เข้า Parameter Library ของเรา
  * เพื่อสร้าง Config สำหรับกล่องด้วยชื่อพารามิเตอร์ตัวเดียวกับที่ Server กลางรับ
  *
- *   npm run import:central-schema -- --model ESP32-DEVKIT-V1 --version 3
- *   npm run import:central-schema -- --file ../mentor/delivery-server/schemas/ESP32-DEVKIT-V1/1.json
+ *   npm run import:central-schema -- --model ESP32-DEVKIT-V1 --version 3 --as GPS-BOX-V1
+ *   npm run import:central-schema -- --file ../mentor/delivery-server/schemas/ESP32-DEVKIT-V1/1.json --as GPS-BOX-V1
  *
  * - ดึงจาก Server กลางจริงด้วย `CENTRAL_BASE_URL` / `CENTRAL_ADMIN_USERNAME` / `CENTRAL_ADMIN_PASSWORD`
  *   (ค่าเดียวกับที่ backend ใช้ · อ่านอย่างเดียว ไม่สั่งอะไรกับกล่อง) หรืออ่านจากไฟล์ด้วย `--file`
- * - สร้าง `DeviceModel` (ชื่อ = hardware_model, โปรโตคอลเดียวคือ `--protocol` ค่าเริ่มต้น HTTP)
- *   และ `ConfigFieldDefinition` ของทุกพารามิเตอร์ พร้อมผูกกับโมเดลนั้น
+ * - `--model` คือชื่อบอร์ดที่ Server กลางใช้ (`hardware_model`) · `--as` คือชื่อรุ่นในทะเบียนของเรา
+ *   ที่จะผูกพารามิเตอร์ (ชื่อต่างกันได้ เช่นบอร์ด ESP32-DEVKIT-V1 = รุ่น GPS-BOX-V1 ในฐานที่ใช้ร่วมกัน)
+ *   ไม่ระบุ `--as` -> ใช้รุ่นชื่อเดียวกับบอร์ด ถ้าไม่มีรุ่นชื่อนั้นสคริปต์จะหยุด ไม่สร้างรุ่นซ้ำเงียบๆ
+ *   (ดู `resolveImportTargetModel()`) · รุ่นที่ยังไม่มีถูกสร้างด้วยโปรโตคอลเดียวคือ `--protocol`
+ *   (ค่าเริ่มต้น HTTP) แล้วผูก `ConfigFieldDefinition` ของทุกพารามิเตอร์กับรุ่นนั้น
  * - รันซ้ำได้: พารามิเตอร์ที่มีอยู่แล้วอัปเดตป้าย/ค่าเริ่มต้น/ตัวเลือก ไม่สร้างซ้ำ ไม่ลบของเดิม
  *   และไม่แตะบัญชีหรือข้อมูลอื่น · เวอร์ชัน schema ที่สูงกว่ามีพารามิเตอร์เพิ่ม รันอีกครั้งด้วยเวอร์ชันใหม่ได้
- * - ใช้ `--dry-run` เพื่อดูแผนโดยไม่เขียนฐานข้อมูล
+ * - ใช้ `--dry-run` เพื่อดูแผนและรุ่นที่จะผูกโดยไม่เขียนฐานข้อมูล (ยังอ่านรายชื่อรุ่นจากฐาน)
  * - `min`/`max` ของพารามิเตอร์ตัวเลขเก็บเป็น `minValue`/`maxValue` (docs/30) ให้ระบบตรวจขอบเขตตั้งแต่ตอนกรอก
  * - `--st-overridable a,b` เปิดให้ช่างแก้ field เหล่านั้นผ่าน Override (ไม่ระบุ = ไม่แตะค่าเดิม)
  */
@@ -95,22 +99,35 @@ async function main(): Promise<void> {
     `schema ${schema.hardware_model} เวอร์ชัน ${schema.schema_version}: นำเข้า ${plan.definitions.length} พารามิเตอร์`,
   );
   for (const s of plan.skipped) console.log(`  ข้าม ${s.key}: ${s.reason}`);
-  if (flag('dry-run')) {
-    for (const d of plan.definitions) {
-      console.log(
-        `  ${d.fieldName} (${d.dataType}${d.unit ? `, ${d.unit}` : ''})`,
-      );
-    }
-    console.log('dry-run: ไม่ได้เขียนฐานข้อมูล');
-    return;
-  }
-
   const prisma = new PrismaClient();
   try {
+    const existing = await prisma.deviceModel.findMany({
+      select: { name: true },
+    });
+    const target = resolveImportTargetModel(
+      schema.hardware_model,
+      arg('as'),
+      existing.map((m) => m.name),
+    );
+    if ('error' in target) throw new Error(target.error);
+    console.log(
+      `ผูกกับรุ่น ${target.name}${target.create ? ' (สร้างใหม่)' : ''}`,
+    );
+
+    if (flag('dry-run')) {
+      for (const d of plan.definitions) {
+        console.log(
+          `  ${d.fieldName} (${d.dataType}${d.unit ? `, ${d.unit}` : ''})`,
+        );
+      }
+      console.log('dry-run: ไม่ได้เขียนฐานข้อมูล');
+      return;
+    }
+
     const model = await prisma.deviceModel.upsert({
-      where: { name: schema.hardware_model },
+      where: { name: target.name },
       update: {},
-      create: { name: schema.hardware_model, supportedProtocols: [protocol] },
+      create: { name: target.name, supportedProtocols: [protocol] },
     });
     console.log(
       `โมเดล ${model.name} (โปรโตคอล ${model.supportedProtocols.join(', ')})`,

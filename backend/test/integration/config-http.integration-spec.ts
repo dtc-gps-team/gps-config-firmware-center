@@ -693,6 +693,60 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     expect(body.deviceModel).toBe('GT06N');
   });
 
+  // ไฟล์ระบุรุ่นด้วยชื่อ ใช้ข้ามฐานได้ (id ของรุ่นสุ่มต่างกันในแต่ละฐาน — ข้อสังเกต A ข้อ 1 บน #481)
+  describe('POST /config/import ระบุรุ่นด้วยชื่อ (deviceModel)', () => {
+    async function engineerToken(): Promise<string> {
+      const ce = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Create);
+      await seedApn1();
+      return tokenFor(ce.id, 'ConfigEngineer');
+    }
+
+    function importAs(token: string, model: Record<string, unknown>) {
+      return request(app.getHttpServer())
+        .post('/api/v1/config/import')
+        .set('Authorization', `Bearer ${token}`)
+        .field('format', 'json')
+        .attach(
+          'file',
+          Buffer.from(
+            JSON.stringify({
+              name: `cfg-${randomUUID()}`,
+              ...model,
+              protocol: 'TCP',
+              fields: { APN1: 'internet' },
+            }),
+          ),
+          'config.json',
+        );
+    }
+
+    it('ชื่อรุ่นที่มีในทะเบียน -> 201 ผูกกับ id ของรุ่นนั้นในฐานนี้', async () => {
+      const res = await importAs(await engineerToken(), {
+        deviceModel: 'GT06N',
+      }).expect(201);
+
+      const body = res.body as { modelId: string; deviceModel: string };
+      expect(body.modelId).toBe(gt06nId);
+      expect(body.deviceModel).toBe('GT06N');
+    });
+
+    it('ไม่พบรุ่นชื่อนี้ -> 404 ไม่สร้าง Config', async () => {
+      await importAs(await engineerToken(), {
+        deviceModel: 'NO-SUCH-MODEL',
+      }).expect(404);
+      expect(await prisma.config.count()).toBe(0);
+    });
+
+    it('ระบุทั้ง modelId และ deviceModel -> 400 ไม่สร้าง Config', async () => {
+      await importAs(await engineerToken(), {
+        deviceModel: 'GT06N',
+        modelId: gt06nId,
+      }).expect(400);
+      expect(await prisma.config.count()).toBe(0);
+    });
+  });
+
   it('POST /config/import ไฟล์ format ใหม่ "settings" ซ้อนชั้น -> 201 (v3.67, รีวิวพี่เลี้ยง 27 ต.ค. — JSON export ต้องตรงกับที่ Server กลางรับจริง)', async () => {
     const configEngineerUser = await makeUser(prisma, {
       role: 'ConfigEngineer',

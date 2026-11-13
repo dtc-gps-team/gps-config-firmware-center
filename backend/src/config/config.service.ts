@@ -125,6 +125,35 @@ export class ConfigService {
   }
 
   /**
+   * ไฟล์ import ที่ระบุรุ่นด้วยชื่อ (`deviceModel`) -> แปลงเป็น `modelId` ของรุ่นชื่อนั้นในฐานนี้
+   * (ไฟล์ที่ใช้ `modelId` อยู่แล้วคืนตามเดิม) · ระบุทั้งสองอย่าง = กำกวม 400 · ชื่อไม่ใช่ข้อความ
+   * 400 · ไม่พบรุ่นชื่อนี้ 404 (เหมือน `modelId` ที่ไม่พบ)
+   */
+  private async resolveImportModel(
+    file: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    if (!Object.hasOwn(file, 'deviceModel')) return file;
+    if (Object.hasOwn(file, 'modelId')) {
+      throw new BadRequestException(
+        'ไฟล์ import ระบุรุ่นได้อย่างใดอย่างหนึ่ง: "modelId" หรือ "deviceModel" (ชื่อรุ่น) ไม่ใช่ทั้งคู่',
+      );
+    }
+    const { deviceModel, ...rest } = file;
+    if (typeof deviceModel !== 'string' || deviceModel.trim() === '') {
+      throw new BadRequestException(
+        '"deviceModel" ในไฟล์ import ต้องเป็นชื่อรุ่นอุปกรณ์ (ข้อความ)',
+      );
+    }
+    const model = await this.deviceModelService.findByName(deviceModel);
+    if (!model) {
+      throw new NotFoundException(
+        `ไม่พบรุ่นอุปกรณ์ "${deviceModel}" ในทะเบียน — เพิ่มรุ่นนี้ในหน้า Device Model ก่อน หรือแก้ชื่อในไฟล์`,
+      );
+    }
+    return { ...rest, modelId: model.id };
+  }
+
+  /**
    * Prisma P2002 (unique constraint) บน `Config.name` -> 409 พร้อมระบุชื่อที่ชน
    * (มติ Sprint 1 review ข้อ 4 — ชื่อ Config ต้อง unique ทั้งระบบ) error อื่น
    * โยนต่อตามเดิม `meta.target` เป็นได้ทั้ง string (constraint name) หรือ
@@ -198,7 +227,7 @@ export class ConfigService {
       // จากคลังแทรกระหว่าง validate กับสร้าง (Parameter Library ลบได้ เฉพาะ field ที่ไม่มี Config ใช้)
       created = await this.prisma.$transaction(async (tx) => {
         // ล็อกรุ่นอุปกรณ์ (FOR SHARE) กันรุ่นถูกลบแทรก — ได้ 409 อ่านรู้เรื่องแทน FK error
-        await lockDeviceModelForUse(tx, dto.modelId);
+        await lockDeviceModelForUse(tx, dto.modelId, model.name);
         await lockFieldsForUse(tx, Object.keys(dto.fields));
         const row = await tx.config.create({
           data: {
@@ -315,17 +344,15 @@ export class ConfigService {
       };
     }
 
+    // ไฟล์ระบุรุ่นได้ 2 แบบ (อย่างใดอย่างหนึ่ง): `modelId` (id ของรุ่นในฐานนี้) หรือ
+    // `deviceModel` (ชื่อรุ่น) — id เป็น UUID ที่แต่ละฐานสุ่มเอง ไฟล์จากฐานหนึ่งจึงใช้กับอีก
+    // ฐานไม่ได้ ชื่อรุ่นทำให้ไฟล์ใช้ข้ามฐานได้ (ข้อสังเกต A ข้อ 1 บน #481) · แปลงชื่อเป็น id
+    // ตรงนี้ก่อนเข้า DTO เดียวกับฟอร์ม ฟอร์มสร้าง/แก้ยังรับแค่ `modelId`
+    normalized = await this.resolveImportModel(normalized);
+
     // `clonedFromId` ใช้ได้เฉพาะตอนสร้างจากฟอร์มโคลน (POST /config) ไม่รับผ่าน
     // import — DTO ตัวเดียวกันกับ createConfig จึง whitelist field นี้ไว้ ต้องดัก
     // เองตรงนี้ ไม่งั้นไฟล์ import จะอ้างต้นทางได้ทั้งที่ไม่ได้ผ่านฟอร์มโคลน
-    // ไฟล์รูปแบบเดิมระบุรุ่นด้วยชื่อ (`deviceModel`) — ตั้งแต่ Config ผูกรุ่นด้วย id ต้องใช้
-    // `modelId` แทน บอกให้ชัดแทน error "property should not exist" ของ whitelist
-    if ('deviceModel' in normalized) {
-      throw new BadRequestException(
-        'ไฟล์ import ต้องระบุรุ่นด้วย "modelId" (id ของรุ่นอุปกรณ์) แทน "deviceModel"',
-      );
-    }
-
     if ('clonedFromId' in normalized) {
       throw new BadRequestException(
         'ไฟล์ import ใส่ clonedFromId ไม่ได้ (ระบุต้นทางได้เฉพาะตอนโคลน Config จากหน้าเว็บ)',
@@ -726,7 +753,7 @@ export class ConfigService {
     try {
       updated = await this.prisma.$transaction(async (tx) => {
         // ล็อกรุ่นอุปกรณ์ของค่าที่จะเป็นจริงหลังแก้ (FOR SHARE) เหตุผลเดียวกับ create()
-        await lockDeviceModelForUse(tx, modelId);
+        await lockDeviceModelForUse(tx, modelId, model.name);
         // ล็อกนิยาม field ของค่าที่จะเป็นจริงหลังแก้ (FOR SHARE) เหตุผลเดียวกับ create()
         await lockFieldsForUse(
           tx,

@@ -151,3 +151,38 @@ export function planCentralSchemaImport(schema: CentralSchemaDoc): ImportPlan {
   }
   return { definitions: [...byKey.values()], skipped };
 }
+
+/** รุ่นในทะเบียนของเราที่จะผูกพารามิเตอร์ของ schema นี้ — หรือเหตุผลที่ต้องหยุด */
+export type ImportTargetModel =
+  { name: string; create: boolean } | { error: string };
+
+/**
+ * เลือกรุ่นในทะเบียนของเรา (`DeviceModel.name`) ที่จะผูกพารามิเตอร์ของ schema
+ *
+ * ชื่อรุ่นในระบบเรากับชื่อบอร์ดที่ Server กลางใช้ (`hardware_model`) ไม่จำเป็นต้องตรงกัน เช่น
+ * ฐานที่ใช้ร่วมกันตั้งชื่อ `GPS-BOX-V1` ให้บอร์ด `ESP32-DEVKIT-V1` (12 พ.ย. 2569) เดิมสคริปต์ใช้
+ * `hardware_model` เป็นชื่อรุ่นตรงๆ และสร้างรุ่นใหม่ถ้าไม่เจอ จึงได้รุ่นซ้ำเงียบๆ:
+ * - ระบุ `--as` -> ใช้ชื่อนั้น (ยังไม่มีก็สร้าง — ผู้ใช้เลือกเองแล้ว)
+ * - ไม่ระบุ และมีรุ่นชื่อเดียวกับ `hardware_model` -> ใช้รุ่นนั้น (พฤติกรรมเดิม)
+ * - ไม่ระบุ และไม่มีรุ่นชื่อนั้น -> หยุด ให้ผู้ใช้เลือกด้วย `--as` ว่าจะผูกรุ่นไหน (หรือสร้างใหม่)
+ */
+export function resolveImportTargetModel(
+  hardwareModel: string,
+  asName: string | undefined,
+  existingNames: readonly string[],
+): ImportTargetModel {
+  const target = asName?.trim();
+  if (target) {
+    return { name: target, create: !existingNames.includes(target) };
+  }
+  if (existingNames.includes(hardwareModel)) {
+    return { name: hardwareModel, create: false };
+  }
+  const known = existingNames.length ? existingNames.join(', ') : '(ยังไม่มี)';
+  return {
+    error:
+      `ไม่มีรุ่นชื่อ "${hardwareModel}" ในทะเบียน (รุ่นที่มี: ${known}) — ` +
+      `ระบุรุ่นที่จะผูกด้วย --as <ชื่อรุ่น> เช่น --as GPS-BOX-V1 ` +
+      `หรือ --as ${hardwareModel} ถ้าต้องการสร้างรุ่นชื่อนี้ใหม่`,
+  };
+}

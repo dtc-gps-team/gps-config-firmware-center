@@ -452,8 +452,11 @@ paths:
         v3.67 ยังใช้ import ได้ปกติ) — backend แปลง `settings` เป็น `fields`
         ภายในก่อน validate เสมอ (`flattenFields()`) ไม่มีผลต่อ flow
         ทดสอบ/อนุมัติถัดไป · **(v3.97)** ระบุรุ่นด้วย `modelId` (id ของรุ่น
-        อุปกรณ์) เหมือน createConfig · ไฟล์ที่ระบุรุ่นด้วยชื่อ (`deviceModel`
-        รูปแบบเดิม) -> 400 พร้อมข้อความบอกให้ใช้ `modelId`
+        อุปกรณ์) เหมือน createConfig · **(v3.98)** หรือระบุด้วยชื่อรุ่น
+        (`deviceModel`) แทนก็ได้ backend แปลงเป็น `modelId` ของรุ่นชื่อนั้นในฐานนี้
+        ให้เอง ไฟล์จึงใช้ข้ามฐานได้ (id ของรุ่นสุ่มต่างกันในแต่ละฐาน) · ระบุได้
+        อย่างใดอย่างหนึ่ง ทั้งคู่ -> 400 · ไม่พบรุ่นชื่อนั้น -> 404 · createConfig
+        และ updateConfig ยังรับแค่ `modelId`
       requestBody:
         required: true
         content:
@@ -479,11 +482,15 @@ paths:
             ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น
             DeviceConfigDraft ไม่สำเร็จ (รวมถึงไฟล์ไม่มี field name, มีทั้ง
             `fields`/`settings` พร้อมกัน, หรือ `settings` ไม่ใช่ object — v3.67 ·
-            ไฟล์ใช้ `deviceModel` แทน `modelId` — v3.97)
+            **v3.98:** ระบุทั้ง `modelId` และ `deviceModel`, หรือ `deviceModel`
+            ไม่ใช่ข้อความ)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role ConfigEngineer เท่านั้น
+        "404":
+          description: >-
+            **(v3.98)** ไม่พบรุ่นอุปกรณ์ตาม `modelId` หรือตามชื่อ `deviceModel` ในไฟล์
         "409":
           description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
         "413":
