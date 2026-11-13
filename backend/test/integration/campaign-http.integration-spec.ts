@@ -395,6 +395,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           .set('Authorization', `Bearer ${token}`)
           .send({
             name: 'กลุ่มแรก',
+            modelId: await gt06nModelId(),
             targets: [{ deviceId: deviceA.deviceId }],
             sourceIncidentId: incidentId,
           })
@@ -408,6 +409,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           .set('Authorization', `Bearer ${token}`)
           .send({
             name: 'กลุ่มที่สอง',
+            modelId: await gt06nModelId(),
             targets: [{ deviceId: deviceB.deviceId }],
             sourceIncidentId: incidentId,
           })
