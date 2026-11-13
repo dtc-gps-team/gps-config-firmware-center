@@ -53,12 +53,17 @@ vi.mock("@/hooks/use-incident", () => ({
     id === null ? { data: null, isLoading: false, error: null } : incidentState,
 }));
 
-function device(deviceId: string, status: Device["status"] = "installed") {
+function device(
+  deviceId: string,
+  status: Device["status"] = "installed",
+  model: { id: string; name: string } = { id: "m-gt06n", name: "GT06N" },
+) {
   return {
     id: `id-${deviceId}`,
     deviceId,
     simNumber: "0800000000",
-    deviceModel: "GT06N",
+    modelId: model.id,
+    deviceModel: model.name,
     protocol: "TCP",
     hardwareRevisionCode: null,
     imei: null,
@@ -112,7 +117,7 @@ describe("CampaignCreateForm: มาจาก ส่งต่อเป็น Cam
     expect(screen.getByLabelText("ชื่อกลุ่ม")).toHaveValue(
       "แก้ไขปัญหา: เครื่องรีบูตเองทุก 10 นาที",
     );
-    expect(screen.getByText(/เลือกแล้ว 1/)).toBeInTheDocument();
+    expect(screen.getByTestId("selected-count")).toHaveTextContent(/เลือกแล้ว 1 /);
     expect(
       screen.getByText(/เลือกอุปกรณ์ที่รายงานไว้ให้แล้ว/),
     ).toBeInTheDocument();
@@ -127,6 +132,7 @@ describe("CampaignCreateForm: มาจาก ส่งต่อเป็น Cam
     await waitFor(() => expect(createCampaign).toHaveBeenCalledTimes(1));
     expect(createCampaign).toHaveBeenCalledWith("tok", {
       name: "แก้ไขปัญหา: เครื่องรีบูตเองทุก 10 นาที",
+      modelId: "m-gt06n",
       targets: [{ deviceId: "DEV-0124" }],
       autoRetry: true,
       sourceIncidentId: "inc-1",
@@ -169,7 +175,7 @@ describe("CampaignCreateForm: มาจาก ส่งต่อเป็น Cam
 
     render(<CampaignCreateForm sourceIncidentId="inc-1" />);
 
-    expect(screen.getByText(/เลือกแล้ว 0/)).toBeInTheDocument();
+    expect(screen.getByTestId("selected-count")).toHaveTextContent(/เลือกแล้ว 0 /);
     expect(
       screen.getByText(/ยังไม่ติดตั้ง จึงเลือกให้ไม่ได้/),
     ).toBeInTheDocument();
@@ -216,7 +222,82 @@ describe("CampaignCreateForm: มาจาก ส่งต่อเป็น Cam
     render(<CampaignCreateForm />);
 
     expect(screen.getByLabelText("ชื่อกลุ่ม")).toHaveValue("");
-    expect(screen.getByText(/เลือกแล้ว 0/)).toBeInTheDocument();
+    expect(screen.getByTestId("selected-count")).toHaveTextContent(/เลือกแล้ว 0 /);
     expect(screen.queryByText(/สร้างจากรายงานปัญหา/)).not.toBeInTheDocument();
+  });
+});
+
+describe("CampaignCreateForm: กลุ่มผูกได้รุ่นเดียว", () => {
+  const GT06L = { id: "m-gt06l", name: "GT06L" };
+
+  beforeEach(() => {
+    createCampaign.mockReset();
+    createCampaign.mockResolvedValue({ id: "c1", name: "x" });
+    devicesState.data = [
+      device("DEV-0001"),
+      device("DEV-0002"),
+      device("DEV-0101", "installed", GT06L),
+    ];
+    incidentState.data = null;
+    incidentState.error = null;
+  });
+
+  it("มีหลายรุ่น: ยังไม่เลือกรุ่น ไม่แสดงรายชื่อเครื่อง และสร้างไม่ได้", async () => {
+    const user = userEvent.setup();
+    render(<CampaignCreateForm />);
+
+    expect(screen.getByText(/เลือกโมเดลก่อน/)).toBeInTheDocument();
+    expect(screen.queryByText("DEV-0001")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("ชื่อกลุ่ม"), "กลุ่ม");
+    await user.click(screen.getByRole("button", { name: "สร้างกลุ่ม" }));
+
+    expect(
+      screen.getByText("เลือกโมเดลของกลุ่มก่อน"),
+    ).toBeInTheDocument();
+    expect(createCampaign).not.toHaveBeenCalled();
+  });
+
+  it("เลือกรุ่นแล้ว: ตารางแสดงแค่เครื่องรุ่นนั้น และส่ง modelId ไปกับคำขอ", async () => {
+    const user = userEvent.setup();
+    render(<CampaignCreateForm />);
+
+    await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
+    await user.click(
+      await screen.findByRole("option", { name: /GT06L \(1 เครื่อง\)/ }),
+    );
+
+    expect(screen.getByText("DEV-0101")).toBeInTheDocument();
+    expect(screen.queryByText("DEV-0001")).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("ชื่อกลุ่ม"), "กลุ่ม GT06L");
+    await user.click(screen.getByText("DEV-0101"));
+    await user.click(screen.getByRole("button", { name: "สร้างกลุ่ม" }));
+
+    await waitFor(() => expect(createCampaign).toHaveBeenCalled());
+    expect(createCampaign.mock.calls[0][1]).toMatchObject({
+      modelId: "m-gt06l",
+      targets: [{ deviceId: "DEV-0101" }],
+    });
+  });
+
+  it("เปลี่ยนรุ่น: ล้างเครื่องที่เลือกไว้", async () => {
+    const user = userEvent.setup();
+    render(<CampaignCreateForm />);
+
+    await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
+    await user.click(await screen.findByRole("option", { name: /GT06N/ }));
+    await user.click(screen.getByText("DEV-0001"));
+    expect(screen.getByTestId("selected-count")).toHaveTextContent(/เลือกแล้ว 1 /);
+
+    await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
+    await user.click(await screen.findByRole("option", { name: /GT06L/ }));
+
+    expect(screen.getByTestId("selected-count")).toHaveTextContent(/เลือกแล้ว 0 /);
+    expect(
+      screen.getByText(/ล้างเครื่องโมเดล GT06N ที่เลือกไว้ 1 เครื่องแล้ว/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByText("DEV-0101"));
+    expect(screen.queryByText(/ล้างเครื่องโมเดล/)).not.toBeInTheDocument();
   });
 });

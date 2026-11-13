@@ -46,6 +46,7 @@ import {
   summarizeRolloutTargets,
 } from "@/lib/rollout-target-display";
 import { DeviceHistorySheet } from "../devices/device-history-sheet";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
@@ -92,6 +93,8 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
     campaignId,
     latestRollout?.id ?? null,
   );
+  // ชื่อรุ่นของกลุ่ม (Campaign เก็บแค่ modelId)
+  const deviceModelsQuery = useDeviceModels();
 
   if (isLoading && !data) {
     return (
@@ -122,6 +125,11 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
     );
   }
 
+  // โมเดลของกลุ่ม แสดงที่หัวกล่องสมาชิก (ไม่ใส่ในแถวข้อมูลใต้ชื่อ เพราะแถวยาวขึ้นจนปุ่มด้านขวาตกลงไปอีกบรรทัด)
+  // กลุ่มเดิมก่อน 13 พ.ย. 2569 ที่ไม่มีโมเดล = มีหลายโมเดลปนกัน
+  const groupModelLabel = data.modelId
+    ? (deviceModelsQuery.data?.find((m) => m.id === data.modelId)?.name ?? null)
+    : "หลายโมเดล";
   const rollouts = rolloutsQuery.data ?? [];
   const members = targetsQuery.data ?? [];
   const hasOpenRollout = rollouts.some((r) =>
@@ -381,8 +389,18 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             </section>
           </div>
           <aside className="flex flex-col gap-3 lg:col-span-4 lg:sticky lg:top-20">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-base font-semibold">สมาชิกกลุ่ม</h2>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-col">
+                <h2 className="text-base font-semibold">สมาชิกกลุ่ม</h2>
+                {groupModelLabel && (
+                  <p className="text-xs text-muted-foreground">
+                    โมเดล{" "}
+                    <span className="font-medium text-foreground">
+                      {groupModelLabel}
+                    </span>
+                  </p>
+                )}
+              </div>
               <span className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground tabular-nums">
                   {members.length} เครื่อง
@@ -391,6 +409,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                   <AddMembersButton
                     campaignId={campaignId}
                     memberDeviceIds={members.map((m) => m.deviceId)}
+                    modelId={data.modelId}
                     disabledReason={openRolloutReason}
                     onAdded={() => void targetsQuery.refetch()}
                   />
