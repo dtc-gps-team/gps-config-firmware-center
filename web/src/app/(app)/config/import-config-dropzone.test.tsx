@@ -1,10 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ImportConfigForm } from "./import-config-form";
 
 const importConfig = vi.hoisted(() => vi.fn());
+const modelsState = vi.hoisted(() => ({
+  data: null as
+    | { id: string; name: string; supportedProtocols: string[] }[]
+    | null,
+}));
 vi.mock("@/lib/config-api", async (orig) => ({
   ...(await orig<typeof import("@/lib/config-api")>()),
   importConfig,
@@ -15,7 +20,7 @@ vi.mock("@/components/auth/auth-provider", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/use-device-models", () => ({
   useDeviceModels: () => ({
-    data: [{ id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP"] }],
+    data: modelsState.data,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -40,6 +45,10 @@ function jsonFile(body: object, name = "cfg.json") {
 }
 
 describe("ImportConfigForm dropzone", () => {
+  beforeEach(() => {
+    modelsState.data = [{ id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP"] }];
+  });
+
   it("accepts a dropped file, shows its name and a ready preview, then imports", async () => {
     importConfig.mockResolvedValue({ id: "c1", name: "x" });
     const onImported = vi.fn();
@@ -62,7 +71,7 @@ describe("ImportConfigForm dropzone", () => {
     await waitFor(() => expect(onImported).toHaveBeenCalled());
   });
 
-  it("ไฟล์รูปแบบเดิมที่ใช้ deviceModel: บอกว่ายังไม่ครบและให้เปลี่ยนเป็น modelId", async () => {
+  it("ไฟล์ระบุโมเดลด้วยชื่อ (deviceModel): พร้อมนำเข้า และแสดงชื่อโมเดล", async () => {
     render(<ImportConfigForm onImported={vi.fn()} />);
     const zone = screen.getByText("ไฟล์ Config (.json)").closest("div")!;
 
@@ -72,8 +81,50 @@ describe("ImportConfigForm dropzone", () => {
       },
     });
 
+    expect(await screen.findByText("ไฟล์พร้อมนำเข้า")).toBeInTheDocument();
+    expect(screen.getByText("GT06N")).toBeInTheDocument();
+  });
+
+  it("ชื่อโมเดลไม่อยู่ในทะเบียน: บอกว่าไม่พบ", async () => {
+    render(<ImportConfigForm onImported={vi.fn()} />);
+    const zone = screen.getByText("ไฟล์ Config (.json)").closest("div")!;
+
+    fireEvent.drop(zone, {
+      dataTransfer: {
+        files: [jsonFile({ name: "A", deviceModel: "XYZ", protocol: "TCP", settings: { APN1: "x" } })],
+      },
+    });
+
+    expect(await screen.findByText("XYZ (ไม่พบโมเดลนี้ในระบบ)")).toBeInTheDocument();
+  });
+
+  it("ทะเบียนโมเดลยังโหลดไม่เสร็จ: แสดงชื่อจากไฟล์ ไม่บอกว่าไม่พบ", async () => {
+    modelsState.data = null;
+    render(<ImportConfigForm onImported={vi.fn()} />);
+    const zone = screen.getByText("ไฟล์ Config (.json)").closest("div")!;
+
+    fireEvent.drop(zone, {
+      dataTransfer: {
+        files: [jsonFile({ name: "A", deviceModel: "XYZ", protocol: "TCP", settings: { APN1: "x" } })],
+      },
+    });
+
+    expect(await screen.findByText("XYZ")).toBeInTheDocument();
+    expect(screen.queryByText(/ไม่พบโมเดล/)).not.toBeInTheDocument();
+  });
+
+  it("ระบุทั้ง deviceModel และ modelId: บอกให้เหลืออย่างเดียว", async () => {
+    render(<ImportConfigForm onImported={vi.fn()} />);
+    const zone = screen.getByText("ไฟล์ Config (.json)").closest("div")!;
+
+    fireEvent.drop(zone, {
+      dataTransfer: {
+        files: [jsonFile({ name: "A", deviceModel: "GT06N", modelId: "m-gt06n", protocol: "TCP", settings: { APN1: "x" } })],
+      },
+    });
+
     expect(await screen.findByText("ไฟล์ยังไม่ครบ")).toBeInTheDocument();
-    expect(screen.getByText(/ให้เปลี่ยนเป็น/)).toBeInTheDocument();
+    expect(screen.getByText(/ให้เหลืออย่างใดอย่างหนึ่ง/)).toBeInTheDocument();
   });
 
   it("warns when required keys are missing and keeps import disabled for bad JSON", async () => {

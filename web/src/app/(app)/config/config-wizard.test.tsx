@@ -29,13 +29,15 @@ vi.mock("@/hooks/use-config-definitions", () => ({
 // ทะเบียนโมเดล (`GET /device-models`) — โปรโตคอลที่เลือกได้ในหน้า step 1 ล็อก
 // ตาม `supportedProtocols` ของรุ่นในทะเบียน (เหมือนหน้าลงทะเบียนอุปกรณ์)
 const registryState = vi.hoisted(() => ({
-  data: [] as { id: string; name: string; supportedProtocols: string[] }[],
+  data: [] as { id: string; name: string; supportedProtocols: string[] }[] | null,
+  isLoading: false,
+  error: null as string | null,
 }));
 vi.mock("@/hooks/use-device-models", () => ({
   useDeviceModels: () => ({
     data: registryState.data,
-    isLoading: false,
-    error: null,
+    isLoading: registryState.isLoading,
+    error: registryState.error,
     refetch: vi.fn(),
   }),
 }));
@@ -98,6 +100,8 @@ async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   registryState.data = [{ id: "m-gt06n", name: "GT06N", supportedProtocols: ["TCP"] }];
+  registryState.isLoading = false;
+  registryState.error = null;
 });
 
 describe("ConfigWizard — โหมดโคลนบันทึกต้นทาง (clonedFromId)", () => {
@@ -137,6 +141,20 @@ describe("ConfigWizard — โหมดโคลนบันทึกต้น�
     expect(createConfig.mock.calls[0][1].clonedFromId).toBe(source.id);
   });
 
+  it("โคลนโดยยังใช้โมเดลเดิม: ส่ง modelId ของต้นทาง ไม่ต้องหาในทะเบียนโมเดล", async () => {
+    registryState.data = [
+      { id: "m-gt06n-other-db", name: "GT06N", supportedProtocols: ["TCP"] },
+    ];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create", cloneFrom: source }} />);
+
+    await user.click(screen.getByRole("button", { name: /ถัดไป/ }));
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    await waitFor(() => expect(createConfig).toHaveBeenCalled());
+    expect(createConfig.mock.calls[0][1].modelId).toBe(source.modelId);
+  });
+
   it("สร้างใหม่ตั้งแต่ต้น (ไม่ได้โคลน): ไม่ส่ง clonedFromId", async () => {
     const user = userEvent.setup();
     render(<ConfigWizard mode={{ kind: "create" }} />);
@@ -174,7 +192,40 @@ describe("ConfigWizard — โหมดโคลนบันทึกต้น�
     await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
 
     expect(
-      await screen.findByText(/ไม่พบรุ่น "GT06N" ในทะเบียนรุ่นอุปกรณ์/),
+      await screen.findByText(/ไม่พบโมเดล "GT06N" ในทะเบียนโมเดลอุปกรณ์/),
+    ).toBeInTheDocument();
+    expect(createConfig).not.toHaveBeenCalled();
+  });
+
+  it("ทะเบียนโมเดลยังโหลดไม่เสร็จ: บอกให้รอ ไม่บอกว่าไม่พบ (ข้อสังเกต B ใน #482)", async () => {
+    registryState.data = null;
+    registryState.isLoading = true;
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+    await user.click(screen.getByRole("button", { name: /APN1/ }));
+    await user.type(document.getElementById("field-APN1")!, "internet");
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    expect(
+      await screen.findByText(/กำลังโหลดรายการโมเดล/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/ไม่พบโมเดล/)).not.toBeInTheDocument();
+    expect(createConfig).not.toHaveBeenCalled();
+  });
+
+  it("ทะเบียนโมเดลโหลดไม่สำเร็จ: บอกว่าโหลดไม่สำเร็จ ไม่บอกว่าไม่พบ", async () => {
+    registryState.data = null;
+    registryState.error = "เครือข่ายขัดข้อง";
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+    await user.click(screen.getByRole("button", { name: /APN1/ }));
+    await user.type(document.getElementById("field-APN1")!, "internet");
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    expect(
+      await screen.findByText(/โหลดรายการโมเดลไม่สำเร็จ \(เครือข่ายขัดข้อง\)/),
     ).toBeInTheDocument();
     expect(createConfig).not.toHaveBeenCalled();
   });

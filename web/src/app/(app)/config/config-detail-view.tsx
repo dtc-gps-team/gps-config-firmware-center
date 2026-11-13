@@ -78,8 +78,9 @@ function buildImportPayload(config: Config, fields: Record<string, unknown>) {
   return {
     name: config.name,
     ...(config.description ? { description: config.description } : {}),
-    // import ระบุรุ่นด้วย id (v3.97) ไม่รับชื่อรุ่น (`deviceModel`) แล้ว
-    modelId: config.modelId,
+    // ระบุรุ่นด้วยชื่อ: import หา id ของรุ่นชื่อนี้ในฐานที่นำเข้าให้เอง ไฟล์จึงใช้ข้ามฐานได้ (#483)
+    // และคนอ่าน JSON เข้าใจ ไม่ต้องเห็น id ยาวๆ
+    deviceModel: config.deviceModel,
     protocol: config.protocol,
     settings: nestFields(fields),
   };

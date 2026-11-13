@@ -104,22 +104,20 @@ describe(
       expect(result.preview.missing).toContain("settings");
     });
 
-    it("ขาด name/modelId/protocol -> preview.missing บอกครบทุกตัวที่ขาด", () => {
+    it("ขาด name/โมเดล/protocol -> preview.missing บอกครบตามลำดับ (โมเดลนับเป็น deviceModel)", () => {
       const result = parsePreview(
         JSON.stringify({ settings: { gps: { enabled: true } } }),
       );
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.preview.missing).toEqual(
-        expect.arrayContaining(["name", "modelId", "protocol"]),
-      );
+      expect(result.preview.missing).toEqual(["name", "deviceModel", "protocol"]);
     });
 
-    it('ไฟล์รูปแบบเดิมที่ระบุรุ่นด้วย "deviceModel" -> เตือน (backend ไม่รับแล้ว v3.97) และนับว่าขาด modelId', () => {
+    it('ระบุโมเดลด้วยชื่อ "deviceModel" -> ครบ ไม่ต้องมี modelId (#483 backend หา id ให้)', () => {
       const result = parsePreview(
         JSON.stringify({
-          name: "ไฟล์เก่า",
+          name: "ใช้ชื่อโมเดล",
           deviceModel: "GT06N",
           protocol: "TCP",
           settings: { APN1: "internet" },
@@ -128,8 +126,25 @@ describe(
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.preview.hasLegacyDeviceModel).toBe(true);
-      expect(result.preview.missing).toContain("modelId");
+      expect(result.preview.deviceModel).toBe("GT06N");
+      expect(result.preview.hasBothModelKeys).toBe(false);
+      expect(result.preview.missing).toEqual([]);
+    });
+
+    it('ระบุทั้ง "deviceModel" และ "modelId" -> เตือนว่ากำกวม (backend ตอบ 400)', () => {
+      const result = parsePreview(
+        JSON.stringify({
+          name: "กำกวม",
+          deviceModel: "GT06N",
+          modelId: "22222222-2222-4222-8222-222222222222",
+          protocol: "TCP",
+          settings: { APN1: "internet" },
+        }),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.preview.hasBothModelKeys).toBe(true);
     });
 
     it("JSON parse ไม่ผ่าน -> ok:false", () => {
@@ -144,28 +159,17 @@ describe(
   },
 );
 
-describe("buildTemplate — ไฟล์ตัวอย่างใช้ modelId ของรุ่นในระบบนี้ (v3.97)", () => {
-  const model = (id: string, name: string) => ({
-    id,
-    name,
-    manufacturer: null,
-    supportedProtocols: ["TCP"],
-    status: "active" as const,
-    warrantyMonths: null,
-    endOfSupportDate: null,
-    notes: null,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
+describe("buildTemplate — ไฟล์ตัวอย่างระบุโมเดลด้วยชื่อ (#483)", () => {
+  it("ใช้ deviceModel เป็นชื่อโมเดล ไม่มี modelId", () => {
+    const template = buildTemplate();
+    expect(template.deviceModel).toBe("SMARTEYEPLUS");
+    expect(template).not.toHaveProperty("modelId");
   });
 
-  it("มีรุ่น SMARTEYEPLUS ในทะเบียน -> ใส่ id ของรุ่นนั้น ไม่มี deviceModel", () => {
-    const template = buildTemplate([model("m-1", "GT06N"), model("m-2", "SMARTEYEPLUS")]);
-    expect(template.modelId).toBe("m-2");
-    expect(template).not.toHaveProperty("deviceModel");
-  });
-
-  it("ยังไม่มีรุ่น SMARTEYEPLUS หรือทะเบียนยังไม่โหลด -> ใส่ข้อความบอกให้กรอก id เอง", () => {
-    expect(buildTemplate([model("m-1", "GT06N")]).modelId).toContain("ใส่ id");
-    expect(buildTemplate(null).modelId).toContain("ใส่ id");
+  it("ไฟล์ตัวอย่างผ่าน preview ครบทุกช่อง", () => {
+    const result = parsePreview(JSON.stringify(buildTemplate()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.preview.missing).toEqual([]);
   });
 });
