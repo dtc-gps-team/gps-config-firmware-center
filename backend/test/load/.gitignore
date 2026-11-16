@@ -1,0 +1,3 @@
+# log ของ backend ทดสอบ และ output ข้อความของ k6 (S3 เดียวเกิน 50 MB) — เก็บแค่ summary JSON + สถิติ CSV
+*.log
+results/*-k6.txt
