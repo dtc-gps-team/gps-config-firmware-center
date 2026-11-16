@@ -1,3 +1,5 @@
+-- ⚠️⚠️ ห้ามรันกับฐานจริงหรือฐานที่ใช้ร่วมกันเด็ดขาด ⚠️⚠️
+-- telemetry key ของกล่องจำลองเดาได้ (k6key-<เลข>) — รันกับฐานจริง = ได้กล่องที่ใครก็ส่งข้อมูลแทนได้
 -- สร้างกล่องจำลองสำหรับทดสอบโหลด — รันกับฐาน gps_config_firmware_loadtest เท่านั้น
 -- deviceId = LT-00001..LT-06000, telemetry key = k6key-<เลข> (เก็บ SHA-256 hex ตาม TelemetryKeyGuard)
 INSERT INTO "Device" (id, "deviceId", "simNumber", "deviceModel", protocol, status, "modelId", "telemetryKeyHash")

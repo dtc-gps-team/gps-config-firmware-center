@@ -75,6 +75,10 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 ## Team Ownership
 
+> **ส่งมอบแล้ว (18 พ.ย. 2569)** — ทีม A/B ด้านล่างคือทีมเดิมช่วงสหกิจศึกษา ใช้ดูว่าใครเคยดูแลส่วนไหน ·
+> ทีมที่รับช่วงต่ออ่าน [`docs/HANDOVER.md`](docs/HANDOVER.md) และ [`CONTRIBUTING.md`](CONTRIBUTING.md)
+> (กฎในไฟล์นี้ยังใช้ทั้งหมด — CONTRIBUTING คือฉบับสรุปสำหรับคนที่ไม่ได้ใช้ Claude Code)
+
 - **A (`paveekornkwork-dev`)** — Web (Next.js) + backend module: `auth`, `config`,
   `firmware`, `campaign`, `incident`, `audit`, `device-status`, `customer`
   (เพิ่ม `customer` หลัง PR #153 — module ทั้งหมดเป็นงาน A ล้วน ไม่ใช่ cross-cutting

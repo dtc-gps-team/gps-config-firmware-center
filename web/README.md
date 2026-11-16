@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# web — เว็บสำหรับเจ้าหน้าที่ (Next.js)
 
-## Getting Started
+Next.js 16 (App Router) + React 19 + shadcn/ui + Tailwind · คุยกับ backend ผ่าน REST เท่านั้น
+type ใน `src/lib/*-api.ts` ต้องตรงกับ [`docs/api/openapi.yaml`](../docs/api/openapi.yaml)
 
-First, run the development server:
+## รัน
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# backend ต้องรันอยู่ (ดู backend/README.md)
+cd web
+echo NEXT_PUBLIC_API_BASE_URL=http://localhost:3001/api/v1 > .env.local
+npm ci
+npm run dev                     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| env | ค่า |
+|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | ที่อยู่ API · ไม่ตั้ง = `/api/v1` ของ origin เดียวกัน (แบบที่ใช้หลัง Caddy ใน `docker compose --profile app`) · ฝังตอน build |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+login ด้วยบัญชีทดสอบ `*.test` (รายชื่อ [HANDOVER §4](../docs/HANDOVER.md#4-บัญชีทดสอบ)) · backend ต้องอนุญาต origin ของเว็บใน `WEB_ORIGIN`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+build: `npm run build` (ได้ `output: "standalone"` → `node .next/standalone/server.js` แบบที่ `web/Dockerfile` ใช้)
 
-## Learn More
+## โครงสร้าง (`src/`)
 
-To learn more about Next.js, take a look at the following resources:
+| ที่ | อะไร |
+|---|---|
+| `app/(auth)/` | หน้า login |
+| `app/(app)/` | หน้าหลังล็อกอิน: Dashboard (`page.tsx` + `dashboard-*.tsx`), `approvals` (Approval Center), `config`, `parameters`, `firmware`, `devices`, `device-models`, `customers`, `campaigns`, `incidents`, `audit-log`, `users` |
+| `lib/*-api.ts` | เรียก API แต่ละหมวด (ผ่าน `lib/api.ts` — ใส่ token, จัดการ 401 → กลับหน้า login) |
+| `lib/permissions.ts` | เงื่อนไขแสดงปุ่ม/หน้าตามบทบาท (ต้องตรงกับ RBAC ฝั่ง backend — backend คือตัวตัดสินจริง) |
+| `lib/nav.ts` | เมนูตามบทบาท |
+| `hooks/use-*.ts` | ดึงข้อมูล + polling (หน้าเว็บอัปเดตด้วยการ poll ไม่มี push) |
+| `components/ui/` | shadcn/ui · `components/` อื่นคือ component ร่วมของระบบ |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+ระบบดีไซน์ของเว็บ: [`docs/ui-renovation/DESIGN.md`](../docs/ui-renovation/DESIGN.md)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## เทส
 
-## Deploy on Vercel
+```bash
+npm run lint
+npx tsc --noEmit
+npm test            # vitest (*.test.ts / *.test.tsx อยู่ข้างไฟล์ที่ทดสอบ)
+npm run build
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+CI (`web-ci.yml`) รันทั้ง 4 คำสั่งทุก PR

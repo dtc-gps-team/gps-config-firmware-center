@@ -1,5 +1,5 @@
 // S2 ใช้งานปนกัน / S5 Soak — telemetry จากกล่อง + เจ้าหน้าที่เปิดหน้าต่างๆ พร้อมกัน (docs/32 §4)
-//   k6 run -e BOXES=300 -e DURATION=5m -e PASSWORD=... mixed.js
+//   PASSWORD=... k6 run -e BOXES=300 -e DURATION=5m mixed.js   (รหัสผ่านทาง env ไม่ใส่ในอาร์กิวเมนต์)
 import http from 'k6/http';
 import exec from 'k6/execution';
 import { check, sleep } from 'k6';

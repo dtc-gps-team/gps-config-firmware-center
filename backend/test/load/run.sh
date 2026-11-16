@@ -8,7 +8,9 @@ NAME="$1"; SCRIPT="$2"; shift 2
 mkdir -p "$D/results"
 # .env ของ repo (โฟลเดอร์บนสุด) — เปลี่ยนได้ด้วย ENV_FILE=...
 ENV_FILE="${ENV_FILE:-$D/../../../.env}"
-PASSWORD=$(grep -E '^TEST_USERS_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"\r')
+# ส่งรหัสผ่านผู้ใช้ทดสอบให้ k6 ทาง env (k6 อ่านเป็น __ENV.PASSWORD) ไม่ใส่ในอาร์กิวเมนต์
+# ที่คนอื่นบนเครื่องเดียวกันเห็นได้จากรายการ process
+export PASSWORD=$(grep -E '^TEST_USERS_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"\r')
 PID=$(netstat -ano | grep -E ':3002 .*LISTENING' | awk '{print $NF}' | head -1)
 # sampler: ทุก 5 วิ — CPU% ของ postgres (docker) + CPU วินาทีสะสม/RAM ของ node backend
 (
@@ -21,7 +23,7 @@ PID=$(netstat -ano | grep -E ':3002 .*LISTENING' | awk '{print $NF}' | head -1)
   done
 ) &
 SAMPLER=$!
-"${K6:-k6}" run --quiet -e PASSWORD="$PASSWORD" --summary-export "$D/results/$NAME-summary.json" "$@" "$D/$SCRIPT" > "$D/results/$NAME-k6.txt" 2>&1
+"${K6:-k6}" run --quiet --summary-export "$D/results/$NAME-summary.json" "$@" "$D/$SCRIPT" > "$D/results/$NAME-k6.txt" 2>&1
 RC=$?
 kill $SAMPLER 2>/dev/null
 echo "k6 exit=$RC  ผล: results/$NAME-k6.txt"
