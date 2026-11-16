@@ -1,0 +1,42 @@
+{
+  "hardware_model": "ESP32-DEVKIT-V1",
+  "firmware_version": "1.2.0",
+  "schema_version": 3,
+  "inherits": "1.1.0",
+  "additional_parameters": [
+    {
+      "key": "geofence.enabled",
+      "label": "เปิดแจ้งเตือนออกนอกพื้นที่",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "geofence.center_lat",
+      "label": "ละติจูดจุดศูนย์กลาง",
+      "type": "number",
+      "min": -90,
+      "max": 90,
+      "default": 13.7563,
+      "visible_when": { "geofence.enabled": true }
+    },
+    {
+      "key": "geofence.center_lng",
+      "label": "ลองจิจูดจุดศูนย์กลาง",
+      "type": "number",
+      "min": -180,
+      "max": 180,
+      "default": 100.5018,
+      "visible_when": { "geofence.enabled": true }
+    },
+    {
+      "key": "geofence.radius_m",
+      "label": "รัศมีพื้นที่ (เมตร)",
+      "type": "integer",
+      "min": 50,
+      "max": 100000,
+      "default": 500,
+      "unit": "m",
+      "visible_when": { "geofence.enabled": true }
+    }
+  ]
+}

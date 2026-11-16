@@ -13,6 +13,7 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 | `web/` | Next.js + shadcn/ui |
 | `backend/` | NestJS + Prisma + PostgreSQL |
 | `mobile/` | Flutter |
+| `arduino_gps/` | Server กลาง (Node.js: `delivery-server` + `ws-gateway`) + firmware กล่อง ESP32 — แยกโปรเจกต์ ไม่ใช้ Prisma/DB ร่วม · backend เรียกผ่าน HTTP (`CENTRAL_MODE=real`) ดู `arduino_gps/README.md` |
 
 เอกสารหลัก: `docs/planning/01_GPS_Build_Reference.md`, `docs/planning/02_GPS_Development_Plan.md`,
 `docs/planning/03_GPS_Detailed_Build_Steps.md`, `docs/planning/00_Sprint0_Setup_Guide.md`,

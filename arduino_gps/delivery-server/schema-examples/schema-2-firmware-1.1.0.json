@@ -1,0 +1,24 @@
+{
+  "hardware_model": "ESP32-DEVKIT-V1",
+  "firmware_version": "1.1.0",
+  "schema_version": 2,
+  "inherits": "1.0.0",
+  "additional_parameters": [
+    {
+      "key": "speed_limit.enabled",
+      "label": "เปิดตรวจสอบความเร็วเกิน",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "speed_limit.max_kmh",
+      "label": "ความเร็วสูงสุดที่อนุญาต (กม./ชม.)",
+      "type": "number",
+      "min": 1,
+      "max": 200,
+      "default": 80,
+      "unit": "km/h",
+      "visible_when": { "speed_limit.enabled": true }
+    }
+  ]
+}

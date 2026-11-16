@@ -1,0 +1,19 @@
+{
+  "name": "esp32-ws-gateway",
+  "version": "1.0.0",
+  "description": "WebSocket Gateway (WSS) สำหรับส่งคำสั่งและรับสถานะจากกล่อง ESP32",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/firmware-readiness.test.js test/command-delete.test.js && node scripts/test-disconnect.js",
+    "test:disconnect": "node scripts/test-disconnect.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}
