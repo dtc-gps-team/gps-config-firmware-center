@@ -7,7 +7,6 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { canCreateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { importConfig, type Config } from "@/lib/config-api";
-import type { DeviceModel } from "@/lib/device-model-api";
 import { useDeviceModels } from "@/hooks/use-device-models";
 import { flattenFields } from "@/lib/config-fields";
 import { Button } from "@/components/ui/button";
@@ -27,28 +26,23 @@ const MAX_FILE_BYTES = 1024 * 1024;
 /** field ที่ backend (`CreateConfigDto`) บังคับ — ใช้เตือนฝั่ง client ก่อนส่ง
  *  ตัว validate จริง (รวม semantic เทียบ ConfigFieldDefinition) อยู่ที่ backend
  *  · ไม่รวม `fields`/`settings` เพราะมีได้แค่อย่างใดอย่างหนึ่ง (เช็คแยกด้านล่าง
- *  — backend v3.67 รองรับทั้งสอง format, รีวิวพี่เลี้ยง 27 ต.ค. 2569) */
-const REQUIRED_KEYS = ["name", "modelId", "protocol"] as const;
+ *  — backend v3.67 รองรับทั้งสอง format, รีวิวพี่เลี้ยง 27 ต.ค. 2569) · ไม่รวมโมเดล เพราะระบุได้
+ *  2 แบบ (`deviceModel` ชื่อ หรือ `modelId`) เช็คแยกด้านล่าง */
+const REQUIRED_KEYS = ["name", "protocol"] as const;
 
 const TEMPLATE_MODEL_NAME = "SMARTEYEPLUS";
-
-/** ใส่แทน `modelId` ในไฟล์ตัวอย่างเมื่อระบบนี้ยังไม่มีรุ่น SMARTEYEPLUS · หน้า Device Model
- *  ไม่แสดง id ทางที่ผู้ใช้หา id ได้ตอนนี้คือ JSON ที่คัดลอกจาก Config ของรุ่นเดียวกัน */
-const TEMPLATE_MODEL_PLACEHOLDER =
-  'ใส่ id ของรุ่น (คัดลอกค่า "modelId" จากปุ่ม "คัดลอก JSON" ในหน้า Config ที่ใช้รุ่นเดียวกัน)';
 
 /** ไฟล์ตัวอย่างให้ดาวน์โหลด — โครงเดียวกับที่หน้า Config Detail export ให้
  *  ตั้งแต่ v3.67 (`settings` ซ้อนชั้น ตรงกับ JSON ที่ส่งเข้า Server กลางจริง) —
  *  รุ่นนี้ key ไม่มีจุดอยู่แล้ว (SMARTEYEPLUS) จึงซ้อนชั้นแบบไม่มีผล (no-op)
  *  เหมือนไฟล์เดิม ไฟล์เก่าที่ใช้ `fields` แบนยังนำเข้าได้ปกติ
  *
- *  ระบุรุ่นด้วย `modelId` (v3.97) ซึ่งเป็น id ของรุ่นในฐานข้อมูลนี้ จึงสร้างไฟล์จาก
- *  ทะเบียนรุ่นตอนกดดาวน์โหลด ไม่ฝังค่าตายตัว */
-export function buildTemplate(models: DeviceModel[] | null) {
-  const model = (models ?? []).find((m) => m.name === TEMPLATE_MODEL_NAME);
+ *  ระบุรุ่นด้วยชื่อ (`deviceModel`) — backend หา id ของรุ่นชื่อนี้ในฐานที่นำเข้าให้เอง (#483)
+ *  ไฟล์จึงใช้ข้ามฐานได้ ไม่ต้องรู้ id (ยังรับ `modelId` ได้ แต่ระบุได้อย่างใดอย่างหนึ่ง) */
+export function buildTemplate() {
   return {
     name: `ตัวอย่าง Config ${TEMPLATE_MODEL_NAME}`,
-    modelId: model?.id ?? TEMPLATE_MODEL_PLACEHOLDER,
+    deviceModel: TEMPLATE_MODEL_NAME,
     protocol: "TCP",
     description: "อธิบายสั้น ๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ)",
     settings: { APN1: "internet", MTYP: "1", SIM1: "0812345678" },
@@ -57,9 +51,12 @@ export function buildTemplate(models: DeviceModel[] | null) {
 
 type Preview = {
   name: string | null;
+  /** ชื่อรุ่นจาก `deviceModel` (แบบที่ไฟล์ตัวอย่าง/ปุ่มคัดลอกใช้) */
+  deviceModel: string | null;
+  /** id ของรุ่นจาก `modelId` (ไฟล์ที่คัดลอกช่วง v3.97 ยังนำเข้าได้) */
   modelId: string | null;
-  /** ไฟล์รูปแบบเดิมระบุรุ่นด้วยชื่อ (`deviceModel`) ซึ่ง backend ไม่รับแล้ว (v3.97) */
-  hasLegacyDeviceModel: boolean;
+  /** ระบุทั้ง `deviceModel` และ `modelId` = กำกวม backend ตอบ 400 */
+  hasBothModelKeys: boolean;
   protocol: string | null;
   fieldCount: number | null;
   missing: string[];
@@ -102,17 +99,25 @@ export function parsePreview(text: string): ParseResult {
     rawFields !== null &&
     !Array.isArray(rawFields);
 
+  const deviceModel = asText(obj.deviceModel);
+  const modelId = asText(obj.modelId);
   const missing: string[] = REQUIRED_KEYS.filter(
     (k) => asText(obj[k]) === null,
   );
+  // ไม่มีโมเดลเลยสักแบบ -> ขาด "deviceModel" (แบบที่แนะนำ) ต่อจาก name ให้อ่านตามลำดับในไฟล์
+  if (deviceModel === null && modelId === null) {
+    missing.splice(missing[0] === "name" ? 1 : 0, 0, "deviceModel");
+  }
   if (!fieldsIsObject) missing.push(hasSettings ? "settings" : "fields");
 
   return {
     ok: true,
     preview: {
       name: asText(obj.name),
-      modelId: asText(obj.modelId),
-      hasLegacyDeviceModel: Object.hasOwn(obj, "deviceModel"),
+      deviceModel,
+      modelId,
+      hasBothModelKeys:
+        Object.hasOwn(obj, "deviceModel") && Object.hasOwn(obj, "modelId"),
       protocol: asText(obj.protocol),
       fieldCount: fieldsIsObject
         ? Object.keys(
@@ -124,8 +129,8 @@ export function parsePreview(text: string): ParseResult {
   };
 }
 
-function downloadTemplate(models: DeviceModel[] | null) {
-  const blob = new Blob([JSON.stringify(buildTemplate(models), null, 2)], {
+function downloadTemplate() {
+  const blob = new Blob([JSON.stringify(buildTemplate(), null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
@@ -233,9 +238,18 @@ export function ImportConfigForm({
   }
 
   const preview = parse?.ok ? parse.preview : null;
-  const previewModel = preview?.modelId
-    ? (models ?? []).find((m) => m.id === preview.modelId) ?? null
-    : null;
+  // ชื่อโมเดลที่แสดงใน preview: หาในทะเบียนด้วยชื่อหรือ id · ยังโหลดทะเบียนไม่เสร็จ/โหลดไม่สำเร็จ
+  // (models เป็น null) แสดงค่าจากไฟล์ตรงๆ ไม่บอกว่า "ไม่พบ" (ข้อสังเกต B ใน #482)
+  const previewModelText = (() => {
+    if (!preview) return "-";
+    const key = preview.deviceModel ?? preview.modelId;
+    if (key === null) return "-";
+    if (!models) return key;
+    const found = preview.deviceModel
+      ? models.find((m) => m.name === preview.deviceModel)
+      : models.find((m) => m.id === preview.modelId);
+    return found ? found.name : `${key} (ไม่พบโมเดลนี้ในระบบ)`;
+  })();
   const canSubmit = file !== null && parse?.ok === true && !submitting;
 
   return (
@@ -262,7 +276,7 @@ export function ImportConfigForm({
           variant="ghost"
           size="sm"
           className="self-start"
-          onClick={() => downloadTemplate(models)}
+          onClick={downloadTemplate}
         >
           <DownloadIcon />
           ดาวน์โหลดไฟล์ตัวอย่าง
@@ -282,7 +296,7 @@ export function ImportConfigForm({
       {preview && (
         <div className="flex flex-col gap-3 rounded-lg border bg-surface-sunken p-4 text-sm">
           <p className="flex items-center gap-2 font-medium">
-            {preview.missing.length === 0 && !preview.hasLegacyDeviceModel ? (
+            {preview.missing.length === 0 && !preview.hasBothModelKeys ? (
               <>
                 <CircleCheckIcon className="size-4 text-success" />
                 ไฟล์พร้อมนำเข้า
@@ -299,13 +313,7 @@ export function ImportConfigForm({
             <dd className="text-foreground">{preview.name ?? "-"}</dd>
             <dt>โมเดล</dt>
             <dd className="font-instrument text-foreground">
-              {previewModel
-                ? previewModel.name
-                : preview.modelId
-                  ? models
-                    ? "ไม่พบรุ่นนี้ในระบบ"
-                    : preview.modelId
-                  : "-"}
+              {previewModelText}
             </dd>
             <dt>โปรโตคอล</dt>
             <dd className="font-instrument text-foreground">{preview.protocol ?? "-"}</dd>
@@ -314,10 +322,10 @@ export function ImportConfigForm({
               {preview.fieldCount ?? "-"}
             </dd>
           </dl>
-          {preview.hasLegacyDeviceModel && (
+          {preview.hasBothModelKeys && (
             <p className="text-destructive">
-              ไฟล์ระบุรุ่นด้วย &quot;deviceModel&quot; (ชื่อรุ่น) ซึ่งใช้ไม่ได้แล้ว ให้เปลี่ยนเป็น
-              &quot;modelId&quot; (คัดลอกได้จากปุ่ม &quot;คัดลอก JSON&quot; ในหน้า Config ที่ใช้รุ่นเดียวกัน)
+              ไฟล์ระบุโมเดลทั้ง &quot;deviceModel&quot; และ &quot;modelId&quot;
+              ให้เหลืออย่างใดอย่างหนึ่ง (แนะนำ &quot;deviceModel&quot; ที่เป็นชื่อโมเดล)
             </p>
           )}
           {preview.missing.length > 0 && (
