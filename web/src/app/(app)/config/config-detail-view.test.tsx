@@ -179,6 +179,17 @@ describe("ConfigDetailView — JSON ที่คัดลอกได้เป�
     expect(parsed.fields).toBeUndefined();
   });
 
+  it("ระบุโมเดลด้วยชื่อ (deviceModel) ไม่ใช่ id ยาวๆ (#483 import รับชื่อได้)", () => {
+    definitionsState.data = [];
+    definitionsState.isLoading = false;
+
+    const { container } = render(<ConfigDetailView configId="c1" />);
+
+    const parsed = JSON.parse(container.querySelector("pre code")?.textContent ?? "");
+    expect(parsed.deviceModel).toBe("GT06N");
+    expect(parsed).not.toHaveProperty("modelId");
+  });
+
   it("รุ่นที่ key ไม่มีจุด (เช่น GT06N) -> settings แบนเหมือนเดิม (no-op)", () => {
     configState.data = {
       ...baseConfig,

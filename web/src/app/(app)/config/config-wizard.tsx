@@ -151,7 +151,11 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const { session } = useAuth();
   const { data: defs, isLoading, error: defsError, refetch } =
     useConfigDefinitions();
-  const { data: registeredModels } = useDeviceModels();
+  const {
+    data: registeredModels,
+    isLoading: modelsLoading,
+    error: modelsError,
+  } = useDeviceModels();
 
   const editing = mode.kind === "edit" ? mode.config : null;
   const cloneFrom = mode.kind === "create" ? mode.cloneFrom ?? null : null;
@@ -556,14 +560,22 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
     if (!session?.accessToken) return;
     // backend ผูก Config กับรุ่นด้วย id (v3.97) ตัวเลือกในฟอร์มยังเป็นชื่อรุ่น จึงหา id
-    // จากทะเบียนรุ่นตอนสร้าง (โหมดแก้ไม่ส่งรุ่น เพราะรุ่นถูกล็อกอยู่แล้ว)
+    // จากทะเบียนรุ่นตอนสร้าง (โหมดแก้ไม่ส่งรุ่น เพราะรุ่นถูกล็อกอยู่แล้ว) · โหมดโคลนที่ยังใช้
+    // รุ่นเดิมใช้ id ของต้นทางได้เลย ไม่ต้องรอทะเบียนรุ่น (ข้อสังเกต B ใน #482)
     const modelId = editing
       ? null
-      : (registeredModels ?? []).find((m) => m.name === deviceModel)?.id;
+      : cloneFrom && cloneFrom.deviceModel === deviceModel
+        ? cloneFrom.modelId
+        : (registeredModels ?? []).find((m) => m.name === deviceModel)?.id;
     if (!editing && !modelId) {
       setStep(1);
+      // ทะเบียนรุ่นยังโหลดไม่เสร็จหรือโหลดไม่สำเร็จ ไม่ใช่ "ไม่พบ" (ข้อสังเกต B ใน #482)
       setFormError(
-        `ไม่พบรุ่น "${deviceModel}" ในทะเบียนรุ่นอุปกรณ์ ต้องเพิ่มรุ่นนี้ในหน้า Device Model ก่อน`,
+        registeredModels === null && modelsLoading
+          ? "กำลังโหลดรายการโมเดล รอสักครู่แล้วกดบันทึกอีกครั้ง"
+          : registeredModels === null && modelsError
+            ? `โหลดรายการโมเดลไม่สำเร็จ (${modelsError}) ลองโหลดหน้าใหม่แล้วบันทึกอีกครั้ง`
+            : `ไม่พบโมเดล "${deviceModel}" ในทะเบียนโมเดลอุปกรณ์ ต้องเพิ่มโมเดลนี้ในหน้า Device Model ก่อน`,
       );
       return;
     }
