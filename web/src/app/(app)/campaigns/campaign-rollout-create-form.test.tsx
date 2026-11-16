@@ -97,6 +97,8 @@ const hookState = vi.hoisted(() => ({
   targets: [] as { deviceId: string }[],
   devices: [] as unknown[],
   configs: [] as unknown[],
+  firmware: [] as unknown[],
+  deviceModels: [] as { id: string; name: string }[],
   campaign: { autoRetry: true } as {
     autoRetry: boolean;
     modelId?: string | null;
@@ -120,7 +122,10 @@ vi.mock("@/hooks/use-configs", () => ({
   useConfigs: () => queryState(hookState.configs),
 }));
 vi.mock("@/hooks/use-firmware", () => ({
-  useFirmwareList: () => queryState([]),
+  useFirmwareList: () => queryState(hookState.firmware),
+}));
+vi.mock("@/hooks/use-device-models", () => ({
+  useDeviceModels: () => queryState(hookState.deviceModels),
 }));
 
 async function selectConfig(
@@ -399,6 +404,8 @@ describe("CampaignRolloutCreateForm: กลุ่มที่มีรุ่น"
     hookState.targets = [{ deviceId: "DEV-0001" }, { deviceId: "DEV-0002" }];
     hookState.devices = devices;
     hookState.configs = [gt06nConfig, vt300Config];
+    hookState.firmware = [];
+    hookState.deviceModels = [];
   });
 
   it("ตัวเลือก Config มีแค่ของรุ่นกลุ่ม", async () => {
@@ -457,5 +464,37 @@ describe("CampaignRolloutCreateForm: กลุ่มที่มีรุ่น"
       screen.getByText(/โปรโตคอล HTTP ไม่ตรงกับ Config นี้/),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /ถัดไป/ })).toBeDisabled();
+  });
+
+  it("หาชื่อโมเดลจากทะเบียนโมเดล: เครื่องโมเดลนี้ไม่อยู่ในรายการเครื่องแล้ว (ปลดระวางหมด) ก็ยังกรอง Firmware ได้", async () => {
+    hookState.devices = [];
+    hookState.deviceModels = [{ id: "model-GT06N", name: "GT06N" }];
+    hookState.firmware = [
+      {
+        id: "fw-gt06n",
+        version: "1.0.0",
+        uploadStatus: "stored",
+        deviceModelCompatibility: ["GT06N"],
+      },
+      {
+        id: "fw-vt300",
+        version: "2.0.0",
+        uploadStatus: "stored",
+        deviceModelCompatibility: ["VT300"],
+      },
+    ];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await user.click(screen.getByRole("radio", { name: /Firmware/ }));
+    await user.click(screen.getByRole("combobox", { name: "Firmware" }));
+
+    expect(
+      await screen.findByRole("option", { name: /v1\.0\.0/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /v2\.0\.0/ }),
+    ).not.toBeInTheDocument();
   });
 });

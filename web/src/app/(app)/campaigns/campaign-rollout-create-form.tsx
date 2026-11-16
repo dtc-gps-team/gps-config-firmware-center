@@ -45,6 +45,7 @@ import { useCampaign } from "@/hooks/use-campaign";
 import { useCampaignTargets } from "@/hooks/use-campaign-targets";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { ErrorState } from "@/components/error-state";
@@ -276,6 +277,7 @@ export function CampaignRolloutCreateForm({
   const targetsQuery = useCampaignTargets(campaignId);
   const campaignQuery = useCampaign(campaignId);
   const devicesQuery = useDevices();
+  const deviceModelsQuery = useDeviceModels();
   const configsQuery = useConfigs();
   const firmwareQuery = useFirmwareList();
 
@@ -295,15 +297,17 @@ export function CampaignRolloutCreateForm({
 
   // รุ่นของกลุ่ม: null = กลุ่มเดิมที่หลายรุ่นปนกัน หรือโหลดกลุ่มไม่สำเร็จ (แสดงทุกตัวแบบเดิม ขั้นตรวจยังกันไว้)
   const campaignModelId = campaignQuery.data?.modelId ?? null;
-  // Firmware อ้างรุ่นด้วยชื่อ (`deviceModelCompatibility`) หาชื่อจากเครื่องรุ่นนี้
-  const campaignModelName = useMemo(
-    () =>
-      campaignModelId
-        ? ((devicesQuery.data ?? []).find((d) => d.modelId === campaignModelId)
-            ?.deviceModel ?? null)
-        : null,
-    [campaignModelId, devicesQuery.data],
-  );
+  // Firmware อ้างรุ่นด้วยชื่อ (`deviceModelCompatibility`) หาชื่อจากทะเบียนโมเดล (เครื่องของโมเดลนี้อาจ
+  // ถูกปลดระวางหมดจนไม่อยู่ในรายการเครื่อง ข้อสังเกต B ใน #484) ทะเบียนโหลดไม่สำเร็จค่อยหาจากเครื่อง
+  const campaignModelName = useMemo(() => {
+    if (!campaignModelId) return null;
+    return (
+      deviceModelsQuery.data?.find((m) => m.id === campaignModelId)?.name ??
+      (devicesQuery.data ?? []).find((d) => d.modelId === campaignModelId)
+        ?.deviceModel ??
+      null
+    );
+  }, [campaignModelId, deviceModelsQuery.data, devicesQuery.data]);
 
   const eligibleConfigs = useMemo(
     () =>
@@ -505,7 +509,12 @@ export function CampaignRolloutCreateForm({
     (configsQuery.isLoading && !configsQuery.data) ||
     (firmwareQuery.isLoading && !firmwareQuery.data) ||
     // รอรู้รุ่นของกลุ่มก่อน ไม่งั้นตัวเลือก Config/Firmware จะกระพริบจากทั้งหมดเหลือแค่รุ่นนี้
-    (campaignQuery.isLoading && !campaignQuery.data && !campaignQuery.error);
+    (campaignQuery.isLoading && !campaignQuery.data && !campaignQuery.error) ||
+    // กลุ่มมีโมเดล: รอชื่อโมเดลจากทะเบียนก่อน ไม่งั้นรายการ Firmware จะแสดงทุกตัวชั่วขณะ
+    (campaignModelId !== null &&
+      deviceModelsQuery.isLoading &&
+      !deviceModelsQuery.data &&
+      !deviceModelsQuery.error);
   const loadError =
     targetsQuery.error ??
     devicesQuery.error ??
