@@ -12,12 +12,11 @@ import { FCM_SENDER, type FcmSender } from './fcm-sender';
 export type NotificationMode = 'mock' | 'fcm';
 
 /**
- * ขอบเขต Phase นี้ (PR B) — เปิด push จริงให้แค่ type เดียวก่อน `task_assigned`
- * เป็น type ที่ B คุมเองทั้ง flow (สร้างจาก `TaskService` ตอนมอบหมายงาน) จึง
- * ทดสอบ end-to-end ได้ครบวงจรโดยไม่ต้องรอ module อื่น ส่วน type ที่เหลือ
- * (`config_approved`/`config_rejected`/`firmware_ready`/`incident_alert` —
- * ของ A) จะเปิดทีละตัวใน PR ถัดไปหลังยืนยันกับ A ว่าข้อความที่ mobile
- * แสดงผลของแต่ละ type พร้อมแล้ว
+ * type ที่ส่ง push จริงในโหมด `fcm` — เฉพาะ type ที่ mobile มีหน้าปลายทางให้เปิดจาก push
+ * แล้ว (ดู `resolvePushDeepLink()` ใน mobile) และผู้รับใช้แอปจริง (ช่าง ST/OT, ผู้รายงาน
+ * Incident) · type ที่ไปหา Operation ให้ตัดสินบน Web (`*_pending`) และ type ของ Web
+ * (`config_approved`/`config_rejected`/`firmware_ready`/`incident_alert`) ยังไม่เปิด
+ * type ที่ไม่อยู่ในรายการนี้ยังบันทึกลงตาราง Notification ตามปกติ แค่ไม่ยิง push
  */
 export const FCM_ENABLED_NOTIFICATION_TYPES: readonly NotificationType[] = [
   'task_assigned',
@@ -36,6 +35,14 @@ export const FCM_ENABLED_NOTIFICATION_TYPES: readonly NotificationType[] = [
   // docs/31 — ส่งไม่สำเร็จ ระบบกำลังลองใหม่ · mobile รู้จัก type นี้แล้ว (แอปรุ่นเก่า
   // ได้หัวข้อทั่วไปจาก push handler ไม่พัง)
   'config_apply_retrying',
+  // ผลคำขอแก้ค่าเฉพาะเครื่อง แจ้งช่างผู้ขอ · mobile เปิดหน้าอุปกรณ์จาก push ได้แล้ว ·
+  // ไม่เปิด `*_override_pending` เพราะไปหา Operation ที่ตัดสินบน Web (เหมือน
+  // `config_apply_pending`) · Config Override ที่ผูกคำขอส่งเข้ากล่อง (docs/30 โหมด
+  // central) แจ้งผลผ่าน `config_apply_*` แทน จึงไม่ได้ push ซ้ำสองครั้ง
+  'config_override_approved',
+  'config_override_rejected',
+  'firmware_override_approved',
+  'firmware_override_rejected',
 ];
 
 export interface SendNotificationInput {

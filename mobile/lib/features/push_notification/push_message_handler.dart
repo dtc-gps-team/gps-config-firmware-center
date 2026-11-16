@@ -25,53 +25,43 @@ const _androidChannelName = 'การแจ้งเตือน';
 const _androidChannelDescription =
     'แจ้งเตือนงานที่ได้รับมอบหมายและอัปเดตจากระบบ';
 
-/// Notification types whose payload carries an `incidentId` and deep-link to
-/// the incident detail page.
-const _incidentPushTypes = {
-  'incident_report_pending',
-  'incident_report_resolved',
-  'incident_report_dismissed',
-  'incident_report_promoted',
-};
-
-/// Notification types whose payload carries a `taskId` and deep-link to the
-/// task detail page (`task_assigned` + ผลของคำขอส่ง Config — docs/25 §3.6) ·
-/// `config_apply_pending` ไปหาผู้อนุมัติ (Operation) ซึ่งตัดสินบน Web ไม่ใช่
-/// ในแอป จึงไม่อยู่ในนี้
-const _taskPushTypes = {
-  'task_assigned',
-  'config_apply_approved',
-  'config_apply_rejected',
-  'config_apply_succeeded',
-  'config_apply_failed',
-  'config_apply_expired',
-};
-
 /// The route to open for an FCM `data` payload (`{'type': ..., 'payload': ...}`).
 ///
-/// Pure + total: never throws, never touches an SDK. [_taskPushTypes] with a
-/// non-empty string `taskId` deep-links to the task, `incident_report_*` with a
-/// non-empty string `incidentId` deep-links to the incident; anything else
-/// (unknown type, malformed/missing payload, missing id) falls back to the
-/// notification list. `payload` is normally a JSON string (FCM `data` values
-/// are always strings) but an already-decoded map is accepted too.
+/// ใช้กฎเดียวกับการแตะการ์ดในหน้ารายการแจ้งเตือน ([NotificationTypeStyle.route])
+/// เสมอ — เดิมสองที่เขียนแยกกันแล้วไม่ตรงกัน (`config_apply_retrying` แตะในรายการไป
+/// หน้างาน แต่ push ตกไปหน้ารายการ) · งาน/ผลคำขอส่งเข้ากล่อง -> หน้างาน (`taskId`),
+/// `incident_report_*` -> หน้า Incident (`incidentId`), ผลคำขอแก้ค่าเฉพาะเครื่อง ->
+/// หน้าอุปกรณ์ (`deviceId`)
+///
+/// Pure + total: never throws, never touches an SDK. Unknown type, malformed/
+/// missing payload or a missing id falls back to the notification list.
+/// `payload` is normally a JSON string (FCM `data` values are always strings)
+/// but an already-decoded map is accepted too.
 String resolvePushDeepLink(Map<String, dynamic> data) {
-  final type = data['type'];
-  final payload = _decodePayload(data['payload']);
+  final notification = _notificationOf(data);
+  if (notification == null) return AppRoutes.notifications;
+  return NotificationTypeStyle.route(notification) ?? AppRoutes.notifications;
+}
 
-  if (_taskPushTypes.contains(type)) {
-    final taskId = _nonEmptyString(payload['taskId']);
-    return taskId == null
-        ? AppRoutes.notifications
-        : AppRoutes.taskDetail(taskId);
+/// FCM `data` -> [AppNotification] (สำหรับใช้กฎเดียวกับหน้ารายการ) · null เมื่อ
+/// `type` ไม่ใช่ข้อความหรือเป็นชนิดที่แอปรุ่นนี้ไม่รู้จัก
+AppNotification? _notificationOf(Map<String, dynamic> data) {
+  final type = data['type'];
+  if (type is! String) return null;
+  final NotificationType parsed;
+  try {
+    parsed = NotificationType.fromWire(type);
+  } catch (_) {
+    return null;
   }
-  if (_incidentPushTypes.contains(type)) {
-    final incidentId = _nonEmptyString(payload['incidentId']);
-    return incidentId == null
-        ? AppRoutes.notifications
-        : AppRoutes.incidentDetail(incidentId);
-  }
-  return AppRoutes.notifications;
+  return AppNotification(
+    id: '',
+    userId: '',
+    type: parsed,
+    payload: _decodePayload(data['payload']),
+    read: false,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+  );
 }
 
 /// แท็บที่เป็นฐานของหน้าปลายทางจาก push (docs/22 §7.2) — กด back จากหน้าปลายทาง
@@ -125,24 +115,9 @@ Map<String, dynamic> _decodePayload(Object? raw) {
 /// (found on a real-box test 10/11/2026). Unknown types / a broken payload get
 /// a generic title or the type's label rather than throwing.
 String resolvePushTitle(Map<String, dynamic> data) {
-  final type = data['type'];
-  if (type is! String) return _genericPushTitle;
-  final NotificationType parsed;
-  try {
-    parsed = NotificationType.fromWire(type);
-  } catch (_) {
-    return _genericPushTitle;
-  }
-  return NotificationTypeStyle.labelOf(
-    AppNotification(
-      id: '',
-      userId: '',
-      type: parsed,
-      payload: _decodePayload(data['payload']),
-      read: false,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
-    ),
-  );
+  final notification = _notificationOf(data);
+  if (notification == null) return _genericPushTitle;
+  return NotificationTypeStyle.labelOf(notification);
 }
 
 const _genericPushTitle = 'การแจ้งเตือนใหม่';
