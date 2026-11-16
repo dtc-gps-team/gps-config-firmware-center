@@ -89,6 +89,16 @@ export class CampaignService {
       );
     }
 
+    const model = await this.prisma.deviceModel.findUnique({
+      where: { id: dto.modelId },
+      select: { id: true, name: true },
+    });
+    if (!model) {
+      throw new BadRequestException(
+        `ไม่พบโมเดล id ${dto.modelId} ในทะเบียนโมเดลอุปกรณ์`,
+      );
+    }
+
     const devices = await this.loadTargetDevices(dto.targets);
     const problems = this.collectUnavailableDeviceProblems(
       dto.targets,
@@ -97,6 +107,7 @@ export class CampaignService {
     if (problems.length > 0) {
       throw new ConflictException(problems.join(' · '));
     }
+    this.assertSameModel(dto.targets, devices, model);
 
     // Field Incident Report (issue #236) — ตรวจก่อนว่า incident ที่อ้างถึง
     // มีจริง + อยู่ในสถานะที่เพิ่งถูก promote (investigating) เท่านั้น
@@ -130,6 +141,7 @@ export class CampaignService {
             createdBy: actor.id,
             sourceIncidentId: dto.sourceIncidentId,
             autoRetry: dto.autoRetry,
+            modelId: model.id,
           },
         });
 
@@ -225,6 +237,14 @@ export class CampaignService {
     );
     if (problems.length > 0) {
       throw new ConflictException(problems.join(' · '));
+    }
+    // กลุ่มเดิมก่อน 13 พ.ย. 2569 ที่ไม่มีรุ่น (หลายรุ่นปนกัน) เพิ่มเครื่องรุ่นไหนก็ได้เหมือนเดิม
+    if (campaign.modelId) {
+      const model = await this.prisma.deviceModel.findUnique({
+        where: { id: campaign.modelId },
+        select: { id: true, name: true },
+      });
+      if (model) this.assertSameModel(dto.targets, devices, model);
     }
 
     try {
@@ -405,6 +425,25 @@ export class CampaignService {
       where: { deviceId: { in: targets.map((t) => t.deviceId) } },
     });
     return new Map(devices.map((d) => [d.deviceId, d]));
+  }
+
+  /** ทุกเครื่องต้องเป็นรุ่นของกลุ่ม (Campaign ผูกได้รุ่นเดียว 13 พ.ย. 2569) — 400 พร้อมรายชื่อเครื่องที่ต่างรุ่น
+   * (เรียกหลัง `collectUnavailableDeviceProblems` ผ่านแล้ว จึงเจอ Device ครบทุกตัว) */
+  private assertSameModel(
+    targets: { deviceId: string }[],
+    deviceByDeviceId: Map<string, Device>,
+    model: { id: string; name: string },
+  ): void {
+    const mismatched = targets
+      .map((t) => deviceByDeviceId.get(t.deviceId))
+      .filter((d): d is Device => !!d && d.modelId !== model.id);
+    if (mismatched.length > 0) {
+      throw new BadRequestException(
+        `กลุ่มนี้รับเฉพาะโมเดล ${model.name} เครื่องต่อไปนี้เป็นโมเดลอื่น: ${mismatched
+          .map((d) => `${d.deviceId} (${d.deviceModel})`)
+          .join(', ')}`,
+      );
+    }
   }
 
   private collectUnavailableDeviceProblems(

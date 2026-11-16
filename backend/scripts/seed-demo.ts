@@ -626,10 +626,18 @@ async function main(): Promise<void> {
   ) {
     const found = await prisma.campaign.findFirst({ where: { name } });
     if (found) return null;
+    // กลุ่มผูกได้รุ่นเดียว (13 พ.ย. 2569) — ใส่รุ่นให้เมื่อทุกเครื่องเป็นรุ่นเดียวกัน (กลุ่มที่ปนหลายรุ่นว่างไว้แบบกลุ่มเดิม)
+    const memberModels = await prisma.device.findMany({
+      where: { deviceId: { in: deviceIds } },
+      select: { modelId: true },
+      distinct: ['modelId'],
+    });
     const c = await prisma.campaign.create({
       data: {
         name,
         description,
+        modelId:
+          memberModels.length === 1 ? memberModels[0].modelId : undefined,
         createdBy: U.op,
         createdAt: ago(createdDays),
         updatedAt: ago(createdDays),

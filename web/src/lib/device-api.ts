@@ -22,6 +22,8 @@ export type Device = {
   /** เลขเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (unique) */
   deviceId: string;
   simNumber: string;
+  /** `DeviceModel.id` ของเครื่อง (openapi v3.99) — ใช้กรองเครื่องตามรุ่นของ Campaign */
+  modelId: string;
   deviceModel: string;
   protocol: string;
   /** รหัสรุ่นย่อย/hardware revision (เช่น "RevA") — มีมาตั้งแต่ issue #209

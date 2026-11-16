@@ -36,9 +36,10 @@ vi.mock("@/hooks/use-devices", () => ({
   useDevices: () => ({
     isLoading: false,
     data: [
-      { deviceId: "DEV-0001", deviceModel: "GT06N", status: "installed" },
-      { deviceId: "DEV-0002", deviceModel: "GT06N", status: "installed" },
-      { deviceId: "DEV-0003", deviceModel: "GT06N", status: "registered" },
+      { deviceId: "DEV-0001", modelId: "m-gt06n", deviceModel: "GT06N", status: "installed" },
+      { deviceId: "DEV-0002", modelId: "m-gt06n", deviceModel: "GT06N", status: "installed" },
+      { deviceId: "DEV-0003", modelId: "m-gt06n", deviceModel: "GT06N", status: "registered" },
+      { deviceId: "DEV-0004", modelId: "m-gt06l", deviceModel: "GT06L", status: "installed" },
     ],
   }),
 }));
@@ -48,6 +49,7 @@ const campaign: Campaign = {
   name: "กลุ่มทดสอบ",
   description: null,
   autoRetry: true,
+  modelId: null,
   createdBy: "op-1",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -173,6 +175,40 @@ describe("AddMembersButton", () => {
     expect(addMock).toHaveBeenCalledWith("tok", "campaign-1", [
       { deviceId: "DEV-0002" },
     ]);
+  });
+
+  it("กลุ่มที่มีรุ่น: แสดงแค่เครื่องรุ่นเดียวกับกลุ่ม", async () => {
+    const user = userEvent.setup();
+    render(
+      <AddMembersButton
+        campaignId="campaign-1"
+        memberDeviceIds={[]}
+        modelId="m-gt06n"
+        disabledReason={null}
+        onAdded={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /เพิ่มเครื่อง/ }));
+
+    expect(screen.getByText("DEV-0001")).toBeInTheDocument();
+    expect(screen.queryByText("DEV-0004")).not.toBeInTheDocument();
+  });
+
+  it("กลุ่มเดิมที่ไม่มีรุ่น: เพิ่มเครื่องได้ทุกรุ่นเหมือนเดิม", async () => {
+    const user = userEvent.setup();
+    render(
+      <AddMembersButton
+        campaignId="campaign-1"
+        memberDeviceIds={[]}
+        disabledReason={null}
+        onAdded={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /เพิ่มเครื่อง/ }));
+
+    expect(screen.getByText("DEV-0004")).toBeInTheDocument();
   });
 
   it("มี Rollout ค้าง -> ปุ่มกดไม่ได้", () => {
