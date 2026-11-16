@@ -39,9 +39,10 @@ build: `npm run build` (ได้ `output: "standalone"` → `node .next/standal
 
 ```bash
 npm run lint
+npm run build       # ต้องมาก่อน tsc — Next.js สร้าง type ของ route (เช่น LayoutProps) ตอน build
 npx tsc --noEmit
 npm test            # vitest (*.test.ts / *.test.tsx อยู่ข้างไฟล์ที่ทดสอบ)
-npm run build
 ```
 
-CI (`web-ci.yml`) รันทั้ง 4 คำสั่งทุก PR
+CI (`web-ci.yml`) รันทั้ง 4 คำสั่งตามลำดับนี้ทุก PR · บนเครื่องใหม่ถ้ารัน `tsc` ก่อน build จะเจอ `Cannot find name 'LayoutProps'`
+(ไม่ใช่โค้ดเสีย) — หรือสร้าง type อย่างเดียวด้วย `npx next typegen` แล้วค่อย `tsc`
