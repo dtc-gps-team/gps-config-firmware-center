@@ -63,6 +63,8 @@ cd arduino_gps/ws-gateway      && npm test   # unit + จำลองกล่�
 | `delivery-server/.env` | `ADMIN_TOKEN`, `ADMIN_USERNAME` / `ADMIN_PASSWORD` (`admin` / `admin123`) | สุ่มค่ายาวๆ ใหม่ · บัญชีนี้มีสิทธิ์เต็ม (ลงทะเบียนกล่อง, อัปโหลด firmware, ส่ง config) |
 | `ws-gateway/.env` | `ADMIN_TOKEN` | สุ่มใหม่ ให้ตรงกับ `GATEWAY_ADMIN_TOKEN` ของ delivery-server |
 | `delivery-server/keys/` | สร้างด้วย `npm run keygen` (ไม่อยู่ใน repo) | private key เซ็น firmware — **ห้ามหลุด** ใครมีก็ทำ firmware ที่กล่องยอมรับได้ · public key คู่กันอยู่ใน `firmware/esp32_gps_box/signing_key.h` (สร้างกุญแจใหม่ = แก้ไฟล์นี้แล้วแฟลชผ่าน USB ใหม่ทุกกล่อง) |
+| `delivery-server/.env` + `ws-gateway/.env` `AUTO_REGISTER_TOKEN` | `1234` | กล่องที่ยังไม่มีในระบบแต่ใช้ token นี้จะถูกเพิ่มให้เอง — ใครรู้ค่านี้ลงทะเบียนกล่องปลอมได้ · ปล่อยว่าง = ปิดการลงทะเบียนอัตโนมัติ (ลงทะเบียนทีละกล่องในหน้า `/admin`) · ต้องเปลี่ยนคู่กับข้อถัดไปและ build firmware ใหม่ (เปลี่ยนแค่ฝั่ง server กล่องที่แฟลชค่าเดิมจะลงทะเบียนไม่ได้) · ตั้ง `MIN_DEVICE_TOKEN_LENGTH` ให้ยาวขึ้นด้วย (ตัวอย่าง = 4) |
+| `firmware/esp32_gps_box/bootstrap_defaults.h` `DEFAULT_DEVICE_TOKEN` | `"1234"` | token ตั้งต้นที่แฟลชลงกล่อง — ต้องตรงกับ `AUTO_REGISTER_TOKEN` |
 | `firmware/esp32_gps_box/globals.h` | `AP_PASS = "12345678"` | รหัส WiFi ของกล่องตอนเข้าโหมดตั้งค่า — เปลี่ยนก่อน build firmware สำหรับกล่องจริง |
 | `firmware/esp32_gps_box/bootstrap_defaults.h` | `192.168.1.100` | ค่าเริ่มต้นของ Gateway / Delivery URL ตอนแฟลชครั้งแรก แก้ทีหลังได้ในหน้าเว็บของกล่อง |
 | `delivery-server/.env` `DATA_SERVER_HOST_ALLOWLIST` | `data.example.com,192.168.1.100` | ปลายทางที่กล่องส่ง telemetry ได้ — ใส่ host ของ backend จริง |
