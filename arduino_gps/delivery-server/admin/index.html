@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ศูนย์จัดการกล่อง GPS</title>
+<style>
+* { box-sizing:border-box; }
+body { margin:0; font-family:Arial,Tahoma,sans-serif; background:#0f172a; color:#f8fafc; font-size:15px; }
+header { background:#1e293b; border-bottom:1px solid #334155; padding:14px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+header h1 { font-size:20px; color:#38bdf8; margin:0; flex:1; min-width:220px; }
+main { max-width:1100px; margin:auto; padding:20px 16px 60px; }
+.menu { display:flex; flex-wrap:wrap; gap:6px; }
+.menu button { width:auto; margin:0; padding:8px 14px; border-radius:999px; background:#0f172a; border:1px solid #334155; color:#94a3b8; font-weight:normal; }
+.menu button.active { background:#0284c7; border-color:#0284c7; color:#fff; }
+.card { background:#1e293b; border:1px solid #334155; padding:18px; border-radius:14px; margin-bottom:14px; }
+h2 { font-size:17px; margin:0 0 12px; }
+.small { color:#94a3b8; font-size:13px; }
+.green { color:#4ade80; } .red { color:#f87171; } .amber { color:#fbbf24; }
+.hide { display:none !important; }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #334155; vertical-align:middle; }
+th { color:#94a3b8; font-weight:normal; font-size:13px; }
+tr.click { cursor:pointer; } tr.click:hover { background:#273449; }
+.table-wrap { overflow-x:auto; }
+input, select, button { padding:9px 11px; border-radius:8px; font-size:14px; }
+input, select { background:#fff; color:#111827; border:0; }
+button { background:#0284c7; color:#fff; border:0; cursor:pointer; font-weight:bold; }
+button:disabled { opacity:.5; cursor:default; }
+button.ghost { background:#334155; } button.danger { background:#dc2626; } button.sm { padding:5px 10px; font-size:13px; }
+.row { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+.row > label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:#94a3b8; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:#64748b; }
+.dot.on { background:#4ade80; }
+.badge { display:inline-block; padding:3px 10px; border-radius:999px; background:#334155; font-size:12px; margin:2px; }
+.badge.done { background:#16a34a; } .badge.now { background:#f59e0b; } .badge.fail { background:#dc2626; } .badge.blue { background:#0284c7; }
+.bar { height:14px; background:#334155; border-radius:7px; overflow:hidden; margin:10px 0; }
+.bar > div { height:100%; width:0; background:#38bdf8; transition:width .4s; }
+.field { display:grid; grid-template-columns:240px 1fr; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid #334155; }
+.field .key { font-size:12px; color:#64748b; }
+.field input[type=checkbox] { width:20px; height:20px; }
+.msg { padding:10px 12px; border-radius:8px; margin:10px 0; background:#334155; white-space:pre-wrap; }
+.msg.err { background:#7f1d1d; } .msg.ok { background:#14532d; }
+pre { white-space:pre-wrap; font-size:12px; color:#cbd5e1; margin:0; }
+#login { max-width:420px; margin:80px auto; }
+@media (max-width:640px) { .field { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<div id="login" class="card hide">
+  <h2>เข้าสู่ระบบจัดการ</h2>
+  <p><input id="userInput" placeholder="ชื่อผู้ใช้" autocomplete="username" style="width:100%"></p>
+  <p><input id="passInput" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" style="width:100%"></p>
+  <div id="loginMsg"></div>
+  <p><button id="loginBtn" style="width:100%">เข้าสู่ระบบ</button></p>
+</div>
+
+<div id="app" class="hide">
+<header>
+  <h1>ศูนย์จัดการกล่อง GPS</h1>
+  <nav class="menu">
+    <button data-tab="devices">กล่อง</button>
+    <button data-tab="config">Config</button>
+    <button data-tab="firmware">Firmware</button>
+    <button data-tab="history">ประวัติคำสั่ง</button>
+  </nav>
+  <button class="ghost sm" id="logoutBtn">ออกจากระบบ</button>
+</header>
+
+<main>
+<div id="globalMsg"></div>
+
+<!-- ================= กล่อง ================= -->
+<section id="tab-devices">
+  <div class="card">
+    <h2>กล่องทั้งหมด</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Device ID</th><th>สถานะ</th><th>Firmware</th><th>Schema</th><th>Config (ตั้งไว้ / กล่องใช้)</th><th>เห็นล่าสุด</th><th>คำสั่งล่าสุด</th><th></th></tr></thead>
+      <tbody id="deviceRows"></tbody>
+    </table></div>
+    <p class="small" id="gwWarn"></p>
+  </div>
+  <p class="small">กล่องใหม่จะขึ้นในรายการเองเมื่อเปิดเครื่องและต่อ WiFi (ใช้รหัสร่วมที่ฝังใน firmware)</p>
+</section>
+
+<!-- ================= Config ================= -->
+<section id="tab-config" class="hide">
+  <div class="card">
+    <div class="row"><label>กล่อง<select class="devSel" id="cfgDev"></select></label><span class="small" id="cfgInfo"></span></div>
+  </div>
+  <div class="card">
+    <h2 id="cfgTitle">Config</h2>
+    <div id="cfgForm"></div>
+    <div id="cfgMsg"></div>
+    <p class="row">
+      <button id="cfgSave">บันทึกและส่งไปที่กล่อง</button>
+      <button id="cfgReset" class="ghost">รีเซ็ต config_version เป็น 1</button>
+    </p>
+  </div>
+  <div class="card hide" id="cfgJobCard"><div class="job" id="cfgJob"></div></div>
+</section>
+
+<!-- ================= Firmware ================= -->
+<section id="tab-firmware" class="hide">
+  <div class="card">
+    <h2>อัปเดต Firmware ให้กล่อง</h2>
+    <div class="row">
+      <label>กล่อง<select class="devSel" id="fwDev"></select></label>
+      <label>ไฟล์ .bin<input type="file" id="fwFile" accept=".bin"></label>
+      <label>เวอร์ชัน (ไม่บังคับ)<input id="fwFileVer" placeholder="ว่าง = อ่านจากไฟล์" size="14"></label>
+      <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="fwAllowDown"> อนุญาตย้อนเวอร์ชัน</label>
+      <button id="fwSendFile">ส่งให้กล่องทันที</button>
+    </div>
+    <p class="small">หรือเลือกเวอร์ชันที่เก็บไว้บน Server แล้ว:</p>
+    <div class="row">
+      <label>เวอร์ชัน<select id="fwVer"></select></label>
+      <button id="fwSend" class="ghost">อัปเดตเป็นเวอร์ชันนี้</button>
+    </div>
+    <p class="small" id="fwDevInfo"></p>
+    <p id="fwReady"></p>
+    <div id="fwMsg"></div>
+  </div>
+  <div class="card hide" id="fwJobCard"><div class="job" id="fwJob"></div></div>
+  <div class="card">
+    <h2>Firmware บน Server</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>เวอร์ชัน</th><th>Schema</th><th>ขนาด</th><th>SHA-256</th><th>ลายเซ็น</th><th>สถานะ</th><th></th></tr></thead>
+      <tbody id="relRows"></tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>อัปโหลด Firmware</h2>
+    <p class="small">ระบบอื่นอัปโหลดผ่าน API ได้เช่นกัน (Postman ข้อ 3.2) — ถ้าไม่ใส่ลายเซ็น Server จะเซ็นให้</p>
+    <div class="row">
+      <label>ไฟล์ .bin<input type="file" id="upFile" accept=".bin"></label>
+      <label>เวอร์ชัน<input id="upVer" placeholder="ว่าง = อ่านจากไฟล์" size="14"></label>
+      <label>Schema<select id="upSchema"></select></label>
+      <label>ลายเซ็น (ไม่บังคับ)<input id="upSig" placeholder="ว่าง = Server เซ็นให้" size="22"></label>
+      <label>ส่งให้กล่องทันที (ไม่บังคับ)<input id="upDeploy" placeholder="BOX-0001 หรือ all" size="14"></label>
+      <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="upReplace"> ทับเวอร์ชันเดิม</label>
+      <button id="upBtn">อัปโหลด</button>
+    </div>
+    <div id="upMsg"></div>
+  </div>
+  <div class="card">
+    <h2>Schema (ค่าที่ตั้งได้ของแต่ละ firmware)</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Schema</th><th>เริ่มใช้ที่ firmware</th><th>สืบต่อจาก</th><th>ค่าที่ตั้งได้</th></tr></thead>
+      <tbody id="schemaRows"></tbody>
+    </table></div>
+    <p class="small">firmware ที่ไม่มีค่าตั้งใหม่ (เช่น 1.2.1 แก้บั๊ก) ใช้ schema เดิมได้ — ถ้ามีค่าตั้งใหม่ ให้เพิ่ม schema ก่อน (Postman ข้อ 3.3 หรือวาง JSON ด้านล่าง)</p>
+    <details><summary class="small" style="cursor:pointer">เพิ่ม Schema ใหม่ (JSON)</summary>
+      <textarea id="schemaJson" rows="10" style="width:100%;margin-top:8px;font-family:monospace;font-size:12px;border-radius:8px;padding:8px"></textarea>
+      <p><button id="schemaBtn" class="sm">เพิ่ม Schema</button></p>
+      <div id="schemaMsg"></div>
+    </details>
+  </div>
+</section>
+
+<!-- ================= ประวัติคำสั่ง ================= -->
+<section id="tab-history" class="hide">
+  <div class="card">
+    <div class="row">
+      <label>กล่อง<select class="devSel" id="histDev"></select></label>
+      <button id="histClear" class="ghost">ลบประวัติที่จบแล้วทั้งหมด</button>
+    </div>
+    <div id="histMsg"></div>
+  </div>
+  <div class="card">
+    <h2>ประวัติคำสั่ง</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>คำสั่ง</th><th>ประเภท</th><th>เป้าหมาย</th><th>สถานะ</th><th>สร้างเมื่อ</th><th>จบเมื่อ</th><th></th></tr></thead>
+      <tbody id="histRows"></tbody>
+    </table></div>
+  </div>
+  <div class="card hide" id="histDetail"><h2 id="histDetailTitle"></h2><div class="job" id="histJob"></div><pre id="histEvents"></pre></div>
+</section>
+</main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MODEL = 'ESP32-DEVKIT-V1';
+const TERMINAL = ['SUCCESS', 'FAILED', 'ROLLED_BACK', 'EXPIRED'];
+const CANCELLABLE = ['PENDING', 'DELIVERED', 'ACKNOWLEDGED'];
+const FINISHED = ['SUCCESS', 'FAILED', 'ROLLED_BACK', 'EXPIRED'];
+const FW_STEPS = ['PENDING', 'DELIVERED', 'ACKNOWLEDGED', 'DOWNLOADING', 'VALIDATING', 'INSTALLING', 'REBOOTING', 'SUCCESS'];
+const CFG_STEPS = ['PENDING', 'DELIVERED', 'ACKNOWLEDGED', 'SUCCESS'];
+const STEP_TH = { PENDING: 'รอกล่องออนไลน์', DELIVERED: 'ส่งถึงกล่อง', ACKNOWLEDGED: 'กล่องรับคำสั่ง', DOWNLOADING: 'ดาวน์โหลด', VALIDATING: 'ตรวจลายเซ็น', INSTALLING: 'ติดตั้ง', REBOOTING: 'รีบูต', SUCCESS: 'สำเร็จ', FAILED: 'ล้มเหลว', ROLLED_BACK: 'ย้อนกลับเวอร์ชันเดิม', EXPIRED: 'หมดอายุ / ยกเลิก' };
+
+// ---------- token ----------
+let token = '';
+try { token = localStorage.getItem('adminToken') || ''; } catch (e) {}
+function saveToken(t) { token = t; try { t ? localStorage.setItem('adminToken', t) : localStorage.removeItem('adminToken'); } catch (e) {} }
+
+async function api(method, path, body) {
+  const opt = { method, headers: { Authorization: 'Bearer ' + token } };
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401) { showLogin('กรุณาเข้าสู่ระบบใหม่'); throw new Error('UNAUTHORIZED'); }
+  if (!r.ok) {
+    const e = new Error(data.message || data.error || 'HTTP ' + r.status);
+    e.status = r.status; e.data = data; throw e;
+  }
+  return data;
+}
+
+// ---------- helpers ----------
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined) e.append(c.nodeType ? c : String(c));
+  return e;
+}
+function msg(target, text, kind = '') { $(target).replaceChildren(text ? el('div', { class: 'msg ' + kind }, text) : ''); }
+function errText(e) {
+  const d = e.data && e.data.details;
+  if (Array.isArray(d)) return (e.message || '') + '\n' + d.map((x) => (typeof x === 'string' ? '• ' + x : '• ' + x.key + ': ' + x.message)).join('\n');
+  return e.message;
+}
+function ago(iso) {
+  if (!iso) return '-';
+  const s = Math.round((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return s + ' วินาทีที่แล้ว';
+  if (s < 3600) return Math.round(s / 60) + ' นาทีที่แล้ว';
+  if (s < 86400) return Math.round(s / 3600) + ' ชั่วโมงที่แล้ว';
+  return new Date(iso).toLocaleString('th-TH');
+}
+const time = (iso) => (iso ? new Date(iso).toLocaleString('th-TH') : '-');
+const kb = (n) => (n / 1024).toFixed(0) + ' KB';
+const statusBadge = (s) => el('span', { class: 'badge ' + (s === 'SUCCESS' ? 'done' : ['FAILED', 'ROLLED_BACK'].includes(s) ? 'fail' : s === 'EXPIRED' ? '' : 'now') }, STEP_TH[s] || s);
+
+// ---------- tabs ----------
+const TABS = ['devices', 'config', 'firmware', 'history'];
+let tab = 'devices';
+function showTab(t, deviceId) {
+  tab = TABS.includes(t) ? t : 'devices';
+  TABS.forEach((n) => $('tab-' + n).classList.toggle('hide', n !== tab));
+  document.querySelectorAll('.menu button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  if (deviceId) document.querySelectorAll('.devSel').forEach((s) => (s.value = deviceId));
+  history.replaceState(null, '', '#' + tab);
+  refresh();
+  if (tab === 'config') loadConfig();
+}
+document.querySelectorAll('.menu button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+// ---------- data ----------
+let devices = []; // รวมข้อมูลจาก delivery + gateway
+let gwOk = true;
+
+async function loadDevices() {
+  const [dl, gw] = await Promise.all([
+    api('GET', '/api/admin/devices'),
+    api('GET', '/api/gw/devices').then((x) => { gwOk = true; return x; }).catch((e) => { gwOk = false; $('gwWarn').textContent = 'ต่อ ws-gateway ไม่ได้: ' + e.message; return []; }),
+  ]);
+  if (gwOk) $('gwWarn').textContent = '';
+  const ids = [...new Set([...dl.map((d) => d.device_id), ...gw.map((d) => d.device_id)])].sort();
+  devices = ids.map((id) => {
+    const d = dl.find((x) => x.device_id === id) || {};
+    const g = gw.find((x) => x.device_id === id) || {};
+    return {
+      id,
+      online: !!g.online,
+      revoked: d.status === 'revoked' || g.status === 'revoked',
+      inDelivery: !!d.device_id,
+      inGateway: !!g.device_id,
+      firmware: g.firmware_version_reported || (d.reported && d.reported.firmware_version) || '-',
+      schema: (d.reported && d.reported.schema_version) || d.schema_version || g.schema_version_reported,
+      cfgDesired: d.config_version_desired,
+      cfgReported: g.config_version_reported ?? (d.reported && d.reported.config_version),
+      lastSeen: g.last_seen_at || d.last_report_at,
+      health: g.last_status,
+      lastCmd: g.last_command,
+    };
+  });
+  renderDevices();
+}
+
+function renderDevices() {
+  $('deviceRows').replaceChildren(...(devices.length ? devices.map((d) => el('tr', {},
+    el('td', {}, el('b', {}, d.id), d.revoked ? el('span', { class: 'badge fail' }, 'ระงับ') : null,
+      !d.inDelivery || !d.inGateway ? el('div', { class: 'small amber' }, 'ยังต่อไม่ครบ (' + (d.inDelivery ? 'ยังไม่ต่อ Gateway' : 'ยังไม่ส่ง report') + ')') : null),
+    el('td', {}, el('span', { class: 'dot' + (d.online ? ' on' : '') }), d.online ? 'ออนไลน์' : 'ออฟไลน์'),
+    el('td', {}, d.firmware === '-' ? '-' : 'v' + d.firmware),
+    el('td', {}, d.schema ?? '-'),
+    el('td', {}, (d.cfgDesired ?? '-') + ' / ' + (d.cfgReported ?? '-'),
+      d.cfgDesired != null && d.cfgDesired === d.cfgReported ? el('span', { class: 'badge done' }, 'ตรงกัน') : d.cfgDesired != null ? el('span', { class: 'badge now' }, 'ยังไม่ตรง') : null),
+    el('td', { class: 'small' }, ago(d.lastSeen)),
+    el('td', { class: 'small' }, d.lastCmd ? [el('span', {}, (d.lastCmd.action === 'UPDATE_FIRMWARE' ? 'Firmware v' : 'Config v') + d.lastCmd.target + ' '), statusBadge(d.lastCmd.status),
+      d.lastCmd.error_message ? el('div', { class: 'red' }, d.lastCmd.error_message) : null] : '-'),
+    el('td', {},
+      el('button', { class: 'sm ghost', onclick: () => showTab('config', d.id) }, 'Config'), ' ',
+      el('button', { class: 'sm ghost', onclick: () => showTab('firmware', d.id) }, 'Firmware'), ' ',
+      el('button', { class: 'sm ghost', onclick: () => showTab('history', d.id) }, 'ประวัติ'), ' ',
+      d.revoked ? null : el('button', { class: 'sm danger', onclick: () => revoke(d.id) }, 'ระงับ'))
+  )) : [el('tr', {}, el('td', { colspan: 8, class: 'small' }, 'ยังไม่มีกล่อง — เปิดกล่องแล้วรอสักครู่ กล่องจะขึ้นมาเอง'))]));
+
+  // ตัวเลือกกล่องในแท็บอื่น
+  document.querySelectorAll('.devSel').forEach((s) => {
+    const cur = s.value;
+    s.replaceChildren(...devices.filter((d) => !d.revoked).map((d) => el('option', { value: d.id }, d.id + (d.online ? ' (ออนไลน์)' : ' (ออฟไลน์)'))));
+    if (cur && devices.some((d) => d.id === cur)) s.value = cur;
+  });
+}
+
+async function revoke(id) {
+  if (!confirm('ระงับ ' + id + '? กล่องนี้จะเชื่อมต่อ Server ไม่ได้อีก')) return;
+  await Promise.allSettled([api('POST', '/api/admin/devices/' + id + '/revoke'), api('POST', '/api/gw/devices/' + id + '/revoke')]);
+  loadDevices();
+}
+
+// ---------- งาน (job) + แถบความคืบหน้า ----------
+const jobTimers = {};
+function percent(j) {
+  if (j.status === 'SUCCESS') return 100;
+  const steps = j.action === 'UPDATE_FIRMWARE' ? FW_STEPS : CFG_STEPS;
+  if (j.status === 'DOWNLOADING') {
+    const p = [...j.events].reverse().find((e) => e.progress !== null);
+    return 30 + (p ? p.progress : 0) * 0.45;
+  }
+  const i = steps.indexOf(j.status);
+  return i < 0 ? 0 : Math.round((i / (steps.length - 1)) * 100);
+}
+function renderJob(target, j) {
+  const isFw = j.action === 'UPDATE_FIRMWARE';
+  const steps = isFw ? FW_STEPS : CFG_STEPS;
+  const failed = ['FAILED', 'ROLLED_BACK', 'EXPIRED'].includes(j.status);
+  const idx = steps.indexOf(j.status);
+  const last = [...j.events].reverse().find((e) => e.progress !== null);
+  const bar = el('div', { class: 'bar' }, el('div', { style: 'width:' + percent(j) + '%;background:' + (failed ? '#f87171' : j.status === 'SUCCESS' ? '#4ade80' : '#38bdf8') }));
+  $(target).replaceChildren(
+    el('h2', { class: failed ? 'red' : j.status === 'SUCCESS' ? 'green' : '' },
+      j.command_id + ' · ' + (isFw ? 'อัปเดต Firmware → v' + j.target_firmware_version : 'ส่ง Config version ' + j.target_config_version) + ' · ' + j.device_id),
+    bar,
+    el('p', {}, steps.map((s, i) => el('span', { class: 'badge ' + (failed && i >= idx ? '' : i < idx || j.status === 'SUCCESS' ? 'done' : i === idx ? 'now' : '') },
+      STEP_TH[s] + (s === 'DOWNLOADING' && j.status === s && last ? ' ' + last.progress + '%' : '')))),
+    el('p', { class: failed ? 'red' : 'small' },
+      failed ? STEP_TH[j.status] + ' : ' + (j.error_message || j.error_code || '-') + (j.error_detail ? '  (รายละเอียด: ' + j.error_detail + ')' : '')
+        : j.status === 'PENDING' ? (j.waiting_reason || 'รอส่งคำสั่ง') + ' — ถ้ากล่องไม่ออนไลน์ภายในเวลาที่กำหนด ระบบจะแจ้งล้มเหลว'
+        : j.status === 'REBOOTING' ? 'กล่องกำลังรีบูตเข้า firmware ใหม่...'
+        : j.status === 'SUCCESS' ? 'เสร็จเรียบร้อย' : 'กำลังดำเนินการ...'),
+    CANCELLABLE.includes(j.status) ? el('button', { class: 'sm ghost', onclick: () => cancelJob(j.command_id) }, 'ยกเลิกคำสั่ง') : ''
+  );
+}
+function watchJob(target, card, id) {
+  clearInterval(jobTimers[target]);
+  if (card) $(card).classList.remove('hide');
+  const tick = async () => {
+    try {
+      const j = await api('GET', '/api/gw/jobs/' + id);
+      renderJob(target, j);
+      if (TERMINAL.includes(j.status)) { clearInterval(jobTimers[target]); loadDevices(); }
+    } catch (e) {}
+  };
+  tick();
+  jobTimers[target] = setInterval(tick, 1000);
+}
+async function cancelJob(id) {
+  try { await api('POST', '/api/gw/jobs/' + id + '/cancel'); } catch (e) { alert(errText(e)); }
+  refresh();
+}
+
+// ---------- Config ----------
+let cfgSchema = null;
+async function loadConfig() {
+  const id = $('cfgDev').value;
+  $('cfgForm').replaceChildren(); msg('cfgMsg', '');
+  if (!id) { $('cfgTitle').textContent = 'Config'; return; }
+  try {
+    const dev = await api('GET', '/api/admin/devices/' + id);
+    const sv = (dev.reported && dev.reported.schema_version) || dev.schema_version;
+    const [schema, cfg] = await Promise.all([api('GET', '/api/admin/schemas/' + MODEL + '/' + sv), api('GET', '/api/admin/devices/' + id + '/config')]);
+    cfgSchema = schema;
+    $('cfgTitle').textContent = 'Config ของ ' + id + ' (firmware v' + schema.firmware_version + ', schema ' + sv + ')';
+    $('cfgInfo').textContent = cfg.desired
+      ? 'ตั้งไว้ version ' + cfg.desired.config_version + ' · กล่องใช้ version ' + (cfg.reported && cfg.reported.config_version != null ? cfg.reported.config_version : '-') + (cfg.in_sync ? ' ✓ ตรงกัน' : ' (ยังไม่ตรง)')
+      : 'ยังไม่เคยตั้ง Config — ค่าด้านล่างเป็นค่าเริ่มต้น';
+    renderConfigForm(schema, (cfg.desired && cfg.desired.settings) || {});
+  } catch (e) { msg('cfgMsg', errText(e), 'err'); }
+}
+const getPath = (o, key) => key.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+function renderConfigForm(schema, settings) {
+  const rows = schema.parameters.map((p) => {
+    const v = getPath(settings, p.key) ?? p.default;
+    let input;
+    if (p.type === 'boolean') input = el('input', { type: 'checkbox', 'data-key': p.key, checked: !!v });
+    else if (p.type === 'enum') input = el('select', { 'data-key': p.key }, p.options.map((o) => el('option', { value: JSON.stringify(o), selected: JSON.stringify(o) === JSON.stringify(v) }, String(o))));
+    else if (p.type === 'integer' || p.type === 'number') input = el('input', { type: 'number', 'data-key': p.key, value: v ?? '', min: p.min, max: p.max, step: p.type === 'integer' ? 1 : 'any' });
+    else input = el('input', { type: 'text', 'data-key': p.key, value: v ?? '', placeholder: p.required ? 'จำเป็นต้องระบุ' : '' });
+    input.addEventListener('change', updateVisibility);
+    const hint = [p.min !== undefined ? 'ต่ำสุด ' + p.min : '', p.max !== undefined ? 'สูงสุด ' + p.max : '', p.unit || ''].filter(Boolean).join(' · ');
+    return el('div', { class: 'field', 'data-row': p.key },
+      el('div', {}, p.label || p.key, el('div', { class: 'key' }, p.key + (hint ? ' · ' + hint : ''))), el('div', {}, input));
+  });
+  $('cfgForm').replaceChildren(...rows);
+  updateVisibility();
+}
+function readForm() {
+  const flat = {};
+  for (const p of cfgSchema.parameters) {
+    const input = document.querySelector('[data-key="' + p.key + '"]');
+    if (!input) continue;
+    if (p.type === 'boolean') flat[p.key] = input.checked;
+    else if (p.type === 'enum') flat[p.key] = JSON.parse(input.value);
+    else if (p.type === 'integer' || p.type === 'number') { if (input.value !== '') flat[p.key] = Number(input.value); }
+    else if (p.type === 'hostname') flat[p.key] = input.value.trim();  // ว่าง = ปิดการส่งข้อมูล
+    else if (input.value.trim() !== '') flat[p.key] = input.value.trim();
+  }
+  return flat;
+}
+function updateVisibility() {
+  if (!cfgSchema) return;
+  const flat = readForm();
+  for (const p of cfgSchema.parameters) {
+    const show = Object.entries(p.visible_when || {}).every(([k, v]) => flat[k] === v);
+    document.querySelector('[data-row="' + p.key + '"]').classList.toggle('hide', !show);
+  }
+}
+$('cfgDev').addEventListener('change', loadConfig);
+$('cfgSave').addEventListener('click', async () => {
+  const id = $('cfgDev').value;
+  if (!id || !cfgSchema) return;
+  const settings = {};
+  for (const [k, v] of Object.entries(readForm())) {
+    const parts = k.split('.');
+    parts.slice(0, -1).reduce((o, p) => (o[p] ??= {}), settings)[parts.at(-1)] = v;
+  }
+  $('cfgSave').disabled = true;
+  try {
+    const saved = await api('PUT', '/api/admin/devices/' + id + '/config', { settings });
+    // บันทึกแล้ว server สั่งกล่องให้เอง (saved.command)
+    const cmd = saved.command || {};
+    if (cmd.command_id) {
+      msg('cfgMsg', 'บันทึก Config version ' + saved.config_version + ' แล้ว และส่งคำสั่งไปที่กล่อง', 'ok');
+      watchJob('cfgJob', 'cfgJobCard', cmd.command_id);
+    } else {
+      msg('cfgMsg', 'บันทึก Config version ' + saved.config_version + ' แล้ว แต่สั่งกล่องไม่ได้: ' + (cmd.message || cmd.error || '-'), 'err');
+    }
+    loadConfig();
+  } catch (e) { msg('cfgMsg', errText(e), 'err'); }
+  $('cfgSave').disabled = false;
+});
+$('cfgReset').addEventListener('click', async () => {
+  const id = $('cfgDev').value;
+  if (!id) return;
+  if (!confirm('รีเซ็ต config_version ของ ' + id + ' เป็น 1 และล้างประวัติ Config?\nค่าตั้งไม่เปลี่ยน แต่จะส่ง Config เข้ากล่องจริง 1 ครั้ง และกู้ประวัติคืนไม่ได้')) return;
+  $('cfgReset').disabled = true;
+  try {
+    const r = await api('POST', '/api/admin/devices/' + id + '/config/reset-version');
+    await loadConfig();
+    if (r.command) {
+      msg('cfgMsg', 'รีเซ็ตเป็น version 1 แล้ว และส่งคำสั่งไปที่กล่อง', 'ok');
+      watchJob('cfgJob', 'cfgJobCard', r.command.command_id);
+    } else msg('cfgMsg', 'เป็น version 1 อยู่แล้ว ล้างประวัติให้แล้ว', 'ok');
+  } catch (e) { msg('cfgMsg', errText(e), 'err'); }
+  $('cfgReset').disabled = false;
+});
+
+// ---------- Firmware ----------
+const READY_BADGE = { READY: 'done', SETTLING: 'now', QUEUED: 'now', BUSY: 'now', OFFLINE: 'fail' };
+const READY_LABEL = { READY: 'พร้อมอัปเดต', SETTLING: 'กำลังเตรียมพร้อม', QUEUED: 'รอส่ง', BUSY: 'กำลังอัปเดต', OFFLINE: 'กล่องออฟไลน์' };
+async function loadReadiness() {
+  const id = $('fwDev').value;
+  if (!id) return $('fwReady').replaceChildren();
+  let r;
+  try {
+    r = await api('GET', '/api/gw/devices/' + id + '/firmware-readiness');
+  } catch (e) {
+    return $('fwReady').replaceChildren(el('span', { class: 'badge fail' }, 'เช็คสถานะไม่ได้'), ' ต่อ ws-gateway ไม่ได้');
+  }
+  const progress = r.state === 'BUSY' && r.active.progress != null ? ' ' + r.active.progress + '%' : '';
+  $('fwReady').replaceChildren(
+    el('span', { class: 'badge ' + READY_BADGE[r.state] }, READY_LABEL[r.state] + progress),
+    r.state === 'READY' ? '' : ' ' + r.message);
+  const blocked = r.state === 'BUSY' || r.state === 'QUEUED';
+  $('fwSend').disabled = blocked;
+  $('fwSendFile').disabled = blocked;
+}
+let releases = [];
+async function loadFirmware() {
+  const [rel, schemaList] = await Promise.all([api('GET', '/api/admin/firmware'), api('GET', '/api/admin/schemas')]);
+  releases = rel.filter((r) => r.hardware_model === MODEL).sort((a, b) => a.version.localeCompare(b.version, undefined, { numeric: true }));
+  $('relRows').replaceChildren(...(releases.length ? releases.map((r) => el('tr', {},
+    el('td', {}, el('b', {}, 'v' + r.version)), el('td', {}, r.schema_version), el('td', {}, kb(r.size_bytes)),
+    el('td', { class: 'small' }, r.sha256.slice(0, 16) + '…'),
+    el('td', {}, r.signature ? el('span', { class: 'badge done' }, r.signed_by_server ? 'Server เซ็นให้' : 'มีลายเซ็น') : el('span', { class: 'badge fail' }, 'ไม่มี')),
+    el('td', {}, el('select', { onchange: (e) => setRollout(r.version, e.target.value) },
+      ['active', 'paused', 'revoked'].map((s) => el('option', { value: s, selected: s === r.rollout_status }, { active: 'เปิดใช้', paused: 'พักไว้', revoked: 'ยกเลิก' }[s])))),
+    el('td', {}, el('button', { class: 'sm danger', onclick: () => deleteRelease(r.version) }, 'ลบ'))
+  )) : [el('tr', {}, el('td', { colspan: 7, class: 'small' }, 'ยังไม่มี firmware บน Server — อัปโหลดด้านล่าง หรือให้ระบบอื่นอัปโหลดผ่าน API'))]));
+
+  const schemasSorted = schemaList.filter((s) => s.hardware_model === MODEL).sort((a, b) => a.schema_version - b.schema_version);
+  const details = await Promise.all(schemasSorted.map((s) => api('GET', '/api/admin/schemas/' + MODEL + '/' + s.schema_version).catch(() => ({ parameters: [] }))));
+  $('schemaRows').replaceChildren(...schemasSorted.map((s, i) => el('tr', {},
+    el('td', {}, el('b', {}, s.schema_version)), el('td', {}, 'v' + s.firmware_version), el('td', {}, s.inherits ? 'v' + s.inherits : '-'),
+    el('td', { class: 'small' }, details[i].parameters.map((p) => p.key).join(', ')))));
+  const curSchema = $('upSchema').value;
+  $('upSchema').replaceChildren(...schemasSorted.map((s) => el('option', { value: s.schema_version }, s.schema_version + ' (ตั้งแต่ v' + s.firmware_version + ')')));
+  $('upSchema').value = curSchema || (schemasSorted.length ? schemasSorted.at(-1).schema_version : '');
+  if (!$('schemaJson').value && schemasSorted.length) {
+    const last = schemasSorted.at(-1);
+    const [ma, mi] = last.firmware_version.split('.').map(Number);
+    $('schemaJson').value = JSON.stringify({
+      hardware_model: MODEL, firmware_version: ma + '.' + (mi + 1) + '.0', schema_version: last.schema_version + 1, inherits: last.firmware_version,
+      additional_parameters: [{ key: 'example.enabled', label: 'ตัวอย่างค่าตั้งใหม่', type: 'boolean', default: false }],
+    }, null, 2);
+  }
+
+  const cur = $('fwVer').value;
+  $('fwVer').replaceChildren(...releases.filter((r) => r.rollout_status === 'active').map((r) => el('option', { value: r.version }, 'v' + r.version)));
+  if (cur) $('fwVer').value = cur;
+  const d = devices.find((x) => x.id === $('fwDev').value);
+  $('fwDevInfo').textContent = d ? d.id + ' รัน firmware v' + d.firmware + (d.online ? ' · ออนไลน์' : ' · ออฟไลน์ (คำสั่งจะรอจนกล่องออนไลน์)') : '';
+}
+$('upBtn').addEventListener('click', async () => {
+  const file = $('upFile').files[0], ver = $('upVer').value.trim(), sv = $('upSchema').value, sig = $('upSig').value.trim();
+  if (!file) return msg('upMsg', 'เลือกไฟล์ .bin ก่อน', 'err');
+  $('upBtn').disabled = true;
+  try {
+    const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/octet-stream', 'X-Hardware-Model': MODEL, 'X-Schema-Version': sv };
+    if (ver) headers['X-Firmware-Version'] = ver;
+    if (sig) headers['X-Firmware-Signature'] = sig;
+    if ($('upDeploy').value.trim()) headers['X-Deploy-To'] = $('upDeploy').value.trim();
+    if ($('upReplace').checked) headers['X-Replace'] = 'true';
+    const r = await fetch('/api/admin/firmware', { method: 'POST', headers, body: file });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(data.message || data.error || 'HTTP ' + r.status); e.data = data; throw e; }
+    const dep = (data.deployments || []).map((d) => d.device_id + ': ' + (d.command_id ? 'สั่งอัปเดตแล้ว (' + d.command_id + ')' : 'ไม่สำเร็จ — ' + (d.message || d.error)));
+    msg('upMsg', 'อัปโหลด v' + data.version + ' แล้ว (' + (data.signed_by_server ? 'Server เซ็นให้' : 'ตรวจลายเซ็นผ่าน') + ')' + (dep.length ? '\n' + dep.join('\n') : ''), 'ok');
+    const first = (data.deployments || []).find((d) => d.command_id);
+    if (first) watchJob('fwJob', 'fwJobCard', first.command_id);
+    $('upFile').value = ''; $('upVer').value = ''; $('upSig').value = '';
+  } catch (e) { msg('upMsg', errText(e), 'err'); }
+  $('upBtn').disabled = false;
+  loadFirmware();
+});
+$('schemaBtn').addEventListener('click', async () => {
+  let body;
+  try { body = JSON.parse($('schemaJson').value); } catch (e) { return msg('schemaMsg', 'JSON ไม่ถูกต้อง: ' + e.message, 'err'); }
+  try {
+    const s = await api('POST', '/api/admin/schemas', body);
+    msg('schemaMsg', 'เพิ่ม schema ' + s.schema_version + ' (firmware v' + s.firmware_version + ') แล้ว', 'ok');
+    $('schemaJson').value = '';
+  } catch (e) { msg('schemaMsg', errText(e), 'err'); }
+  loadFirmware();
+});
+async function setRollout(version, status) {
+  try { await api('PATCH', '/api/admin/firmware/' + MODEL + '/' + version, { rollout_status: status }); } catch (e) { alert(errText(e)); }
+  loadFirmware();
+}
+async function deleteRelease(version) {
+  if (!confirm('ลบ firmware v' + version + ' ออกจาก Server?')) return;
+  try { await api('DELETE', '/api/admin/firmware/' + MODEL + '/' + version); } catch (e) { alert(errText(e)); }
+  loadFirmware();
+}
+$('fwDev').addEventListener('change', loadFirmware);
+// ส่งไฟล์ให้กล่องอัปเดตทันที (ไม่ต้องอัปโหลดก่อน)
+$('fwSendFile').addEventListener('click', async () => {
+  const id = $('fwDev').value, file = $('fwFile').files[0], ver = $('fwFileVer').value.trim();
+  if (!id || !file) return msg('fwMsg', 'เลือกกล่องและไฟล์ .bin ก่อน', 'err');
+  if (!confirm('ส่ง firmware ' + (ver ? 'v' + ver + ' ' : '') + '(' + file.name + ') ให้ ' + id + ' อัปเดตทันที?')) return;
+  $('fwSendFile').disabled = true;
+  try {
+    const r = await fetch('/api/admin/devices/' + id + '/firmware', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/octet-stream', ...(ver ? { 'X-Firmware-Version': ver } : {}), ...($('fwAllowDown').checked ? { 'X-Allow-Downgrade': 'true' } : {}) },
+      body: file,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (data.command && data.command.command_id) {
+      msg('fwMsg', 'v' + data.firmware.version + ': ' + data.message + (data.firmware.note ? '\n' + data.firmware.note : ''), 'ok');
+      watchJob('fwJob', 'fwJobCard', data.command.command_id);
+      $('fwFile').value = ''; $('fwFileVer').value = '';
+    } else {
+      const e = new Error(data.message || data.error || 'HTTP ' + r.status); e.data = data; throw e;
+    }
+  } catch (e) { msg('fwMsg', errText(e), 'err'); }
+  $('fwSendFile').disabled = false;
+  loadFirmware();
+});
+
+$('fwDev').addEventListener('change', loadReadiness);
+$('fwSend').addEventListener('click', async () => {
+  const id = $('fwDev').value, v = $('fwVer').value;
+  if (!id || !v) return msg('fwMsg', 'เลือกกล่องและเวอร์ชันก่อน', 'err');
+  if (!confirm('อัปเดต ' + id + ' เป็น firmware v' + v + '?')) return;
+  try {
+    const cmd = await api('POST', '/api/gw/devices/' + id + '/commands/firmware-update', { target_firmware_version: v });
+    msg('fwMsg', '');
+    watchJob('fwJob', 'fwJobCard', cmd.command_id);
+  } catch (e) { msg('fwMsg', e.data && e.data.error === 'FIRMWARE_UPDATE_IN_PROGRESS' ? 'กล่องนี้มีงานอัปเดต firmware ค้างอยู่ ดูที่แท็บประวัติคำสั่ง' : errText(e), 'err'); }
+});
+
+// ---------- ประวัติคำสั่ง ----------
+let histSelected = null;
+async function loadHistory() {
+  const id = $('histDev').value;
+  if (!id) return $('histRows').replaceChildren();
+  const list = await api('GET', '/api/gw/devices/' + id + '/commands').catch(() => []);
+  $('histRows').replaceChildren(...(list.length ? list.map((c) => el('tr', { class: 'click', onclick: () => { histSelected = c.command_id; showHistDetail(c); } },
+    el('td', {}, c.command_id), el('td', {}, c.action === 'UPDATE_FIRMWARE' ? 'Firmware' : 'Config'),
+    el('td', {}, c.target_firmware_version ? 'v' + c.target_firmware_version : 'version ' + c.target_config_version),
+    el('td', {}, statusBadge(c.status), c.error_code ? el('div', { class: 'small red' }, c.error_message || c.error_code) : null),
+    el('td', { class: 'small' }, time(c.created_at)), el('td', { class: 'small' }, time(c.completed_at)),
+    el('td', {},
+      CANCELLABLE.includes(c.status) ? el('button', { class: 'sm ghost', onclick: (e) => { e.stopPropagation(); cancelJob(c.command_id); } }, 'ยกเลิก') : '',
+      FINISHED.includes(c.status) ? el('button', { class: 'sm ghost', onclick: (e) => { e.stopPropagation(); deleteJob(c.command_id); } }, 'ลบ') : '')
+  )) : [el('tr', {}, el('td', { colspan: 7, class: 'small' }, 'ยังไม่มีคำสั่ง'))]));
+  const sel = list.find((c) => c.command_id === histSelected);
+  if (sel) showHistDetail(sel);
+}
+function showHistDetail(c) {
+  $('histDetail').classList.remove('hide');
+  $('histDetailTitle').textContent = 'รายละเอียด ' + c.command_id;
+  renderJob('histJob', c);
+  $('histEvents').textContent = c.events.map((e) => time(e.time) + '  ' + (STEP_TH[e.status] || e.status) + (e.progress !== null ? ' ' + e.progress + '%' : '') + (e.details && (e.details.error_code || e.details.reason) ? '  (' + (e.details.error_code || e.details.reason) + ')' : '')).join('\n');
+}
+function closeHistDetail() { histSelected = null; $('histDetail').classList.add('hide'); }
+async function deleteJob(id) {
+  if (!confirm('ลบ ' + id + ' ออกจากประวัติ? กู้คืนไม่ได้')) return;
+  try {
+    await api('DELETE', '/api/gw/jobs/' + id);
+    if (histSelected === id) closeHistDetail();
+    msg('histMsg', 'ลบ ' + id + ' แล้ว', 'ok');
+  } catch (e) { msg('histMsg', errText(e), 'err'); }
+  loadHistory();
+}
+$('histClear').addEventListener('click', async () => {
+  const id = $('histDev').value;
+  if (!id) return msg('histMsg', 'เลือกกล่องก่อน', 'err');
+  if (!confirm('ลบประวัติคำสั่งที่จบแล้วทั้งหมดของ ' + id + '? กู้คืนไม่ได้ คำสั่งที่ยังทำงานอยู่จะไม่ถูกลบ')) return;
+  try {
+    const r = await api('DELETE', '/api/gw/devices/' + id + '/commands');
+    closeHistDetail();
+    msg('histMsg', 'ลบแล้ว ' + r.deleted + ' รายการ', 'ok');
+  } catch (e) { msg('histMsg', errText(e), 'err'); }
+  loadHistory();
+});
+$('histDev').addEventListener('change', () => { closeHistDetail(); msg('histMsg', ''); loadHistory(); });
+
+// ---------- refresh ----------
+async function refresh() {
+  try {
+    await loadDevices();
+    if (tab === 'firmware') await Promise.all([loadFirmware(), loadReadiness()]);
+    if (tab === 'history') await loadHistory();
+  } catch (e) { if (e.message !== 'UNAUTHORIZED') msg('globalMsg', 'โหลดข้อมูลไม่ได้: ' + e.message, 'err'); return; }
+  msg('globalMsg', '');
+}
+
+// ---------- login ----------
+function showLogin(text) {
+  $('app').classList.add('hide');
+  $('login').classList.remove('hide');
+  msg('loginMsg', text || '', text ? 'err' : '');
+}
+async function start() {
+  try { await api('GET', '/api/admin/devices'); } catch (e) { return; }
+  $('login').classList.add('hide');
+  $('app').classList.remove('hide');
+  showTab(location.hash.slice(1));
+}
+$('loginBtn').addEventListener('click', async () => {
+  $('loginBtn').disabled = true;
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: $('userInput').value.trim(), password: $('passInput').value }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) msg('loginMsg', data.message || 'เข้าสู่ระบบไม่สำเร็จ', 'err');
+    else { saveToken(data.token); $('passInput').value = ''; await start(); }
+  } catch (e) { msg('loginMsg', 'ต่อ Server ไม่ได้', 'err'); }
+  $('loginBtn').disabled = false;
+});
+['userInput', 'passInput'].forEach((id) => $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); }));
+$('logoutBtn').addEventListener('click', () => { saveToken(''); showLogin(); });
+
+setInterval(() => { if (!$('app').classList.contains('hide')) refresh(); }, 3000);
+if (token) start(); else showLogin();
+</script>
+</body>
+</html>

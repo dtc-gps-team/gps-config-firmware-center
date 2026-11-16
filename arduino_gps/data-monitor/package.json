@@ -1,0 +1,16 @@
+{
+  "name": "esp32-data-monitor",
+  "version": "1.0.0",
+  "description": "Data Server จำลอง: รับข้อมูล GPS ที่กล่องส่งมา (/api/gps) และแสดงบนเว็บแบบ real-time",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

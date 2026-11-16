@@ -1,0 +1,19 @@
+{
+  "name": "esp32-delivery-server",
+  "version": "1.0.0",
+  "description": "HTTPS Firmware / Config Delivery สำหรับกล่อง ESP32",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/server.js",
+    "keygen": "node scripts/keygen.js",
+    "sign": "node scripts/sign-firmware.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

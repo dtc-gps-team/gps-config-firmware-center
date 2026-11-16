@@ -1,0 +1,1179 @@
+{
+  "info": {
+    "name": "ESP32 GPS — ศูนย์จัดการกล่อง",
+    "description": "ลำดับการใช้งาน\n1. เปิด server: ดับเบิลคลิก start-servers.bat\n2. โฟลเดอร์ 0 → Login\n3. โฟลเดอร์ 1 → ดูว่ากล่องออนไลน์\n4. โฟลเดอร์ 2 → ตั้ง Config (กล่องได้รับทันที)\n5. โฟลเดอร์ 3 → 3.1 ส่งไฟล์ firmware ให้กล่องอัปเดตทันที\n\nตัวแปรอยู่ที่ collection (คลิกชื่อ collection → Variables): device_id, firmware_version ฯลฯ\nทำแบบเดียวกันได้ในหน้าเว็บ http://localhost:3019/admin",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3019",
+      "type": "string",
+      "description": "Delivery Server (ใช้เรียกทุกอย่าง)"
+    },
+    {
+      "key": "gateway_url",
+      "value": "http://localhost:3018",
+      "type": "string",
+      "description": "Gateway (ใช้แค่เช็ค health และจำลองกล่อง)"
+    },
+    {
+      "key": "admin_username",
+      "value": "admin",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "key": "admin_password",
+      "value": "admin123",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string",
+      "description": "ได้จาก Login อัตโนมัติ"
+    },
+    {
+      "key": "device_id",
+      "value": "BOX-0001",
+      "type": "string",
+      "description": "กล่องที่จะจัดการ"
+    },
+    {
+      "key": "device_token",
+      "value": "1234",
+      "type": "string",
+      "description": "รหัสร่วมของกล่อง (ใช้ในโฟลเดอร์ 5)"
+    },
+    {
+      "key": "firmware_version",
+      "value": "",
+      "type": "string",
+      "description": "ไม่บังคับ — ว่าง = อ่านจากไฟล์ (ใช้ในข้อ 3.5 / 3.7 ให้ระบุ)"
+    },
+    {
+      "key": "schema_version",
+      "value": "1",
+      "type": "string",
+      "description": "schema ที่ firmware นี้ใช้ (ข้อ 3.2)"
+    },
+    {
+      "key": "firmware_signature",
+      "value": "",
+      "type": "string",
+      "description": "ไม่บังคับ — ว่าง = Server เซ็นให้"
+    },
+    {
+      "key": "deploy_to",
+      "value": "",
+      "type": "string",
+      "description": "อัปโหลดแล้วสั่งกล่องอัปเดตทันที: BOX-0001 / BOX-0001,BOX-0002 / all (ว่าง = อัปโหลดอย่างเดียว)"
+    },
+    {
+      "key": "replace_existing",
+      "value": "false",
+      "type": "string",
+      "description": "true = ทับเวอร์ชันเดิมบน Server"
+    },
+    {
+      "key": "allow_downgrade",
+      "value": "false",
+      "type": "string",
+      "description": "true = อนุญาตย้อนเป็นเวอร์ชันเก่า (ข้อ 3.1)"
+    },
+    {
+      "key": "wait_result",
+      "value": "true",
+      "type": "string",
+      "description": "true = รอผลจากกล่องจนจบแล้วค่อยตอบ (ข้อ 2.1–2.4, 3.1, 3.1b) / false = ตอบทันทีแล้วดูผลที่ 2.6 / 3.2"
+    },
+    {
+      "key": "config_version",
+      "value": "",
+      "type": "string",
+      "description": "ได้จากข้อ 2.1–2.4 อัตโนมัติ"
+    },
+    {
+      "key": "command_id",
+      "value": "",
+      "type": "string",
+      "description": "ได้จากข้อ 2.5 / 3.4 อัตโนมัติ"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. เริ่มต้น (ทำก่อนทุกครั้ง)",
+      "description": "กด Login ก่อน ระบบจะเก็บ token ไว้ใน collection variable ให้ทุก request ใช้ต่ออัตโนมัติ",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/login",
+            "description": "ได้ token แล้วเก็บไว้ใน {{admin_token}} อัตโนมัติ",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{admin_username}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { pm.collectionVariables.set('admin_token', pm.response.json().token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "เช็ค Delivery Server",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "เช็ค Gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. ดูข้อมูลกล่อง",
+      "item": [
+        {
+          "name": "รายชื่อกล่อง + ออนไลน์/ออฟไลน์",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/gw/devices",
+            "description": "online, firmware ที่รันจริง, config ที่กล่องใช้, เห็นล่าสุด, last_status (สัญญาณ WiFi, หน่วยความจำ, GPS)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "รายชื่อกล่อง + Config ที่ตั้งไว้",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/admin/devices",
+            "description": "รุ่น, schema, config_version ที่ตั้งไว้, ข้อมูลที่กล่องรายงาน (reported)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "กล่อง {{device_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/gw/devices/{{device_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Config ของ {{device_id}} (ตั้งไว้ vs กล่องใช้จริง)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config",
+            "description": "in_sync = true แปลว่ากล่องใช้ค่าล่าสุดแล้ว"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Parameter ที่ตั้งได้ (schema)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/admin/schemas/ESP32-DEVKIT-V1/1",
+            "description": "เปลี่ยนเลขท้ายเป็น 2 (v1.1.0) หรือ 3 (v1.2.0) เพื่อดูค่าที่ตั้งได้ของแต่ละเวอร์ชัน"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. ตั้ง Config (ส่งไปที่กล่องทันที)",
+      "description": "กด 2.1–2.4 อันใดอันหนึ่ง (ให้ตรงกับ firmware ที่กล่องรันอยู่) → Server บันทึกและสั่งกล่องให้ทันที → กด 2.6 ดูผล\nถ้าต้องการบันทึกอย่างเดียวไม่สั่งกล่อง ให้เติม ?push=false ท้าย URL\nส่งเฉพาะค่าที่ต้องการเปลี่ยนได้ ค่าเดิมที่ firmware รองรับจะคงอยู่ หลัง downgrade ค่าเดิมที่ไม่รองรับจะถูกตัดตอนบันทึกครั้งถัดไปและเก็บต้นฉบับไว้ใน history\nรอบส่ง GPS ใช้ settings.gps.send_interval_sec เสมอ ห้ามวาง send_interval_sec ตรงใต้ settings\n2.7 เปลี่ยนรอบส่งเป็น 20 วินาทีโดยคงค่าอื่น · 2.8 ดูประวัติ Config",
+      "item": [
+        {
+          "name": "2.1 Config v1.0.0 — ส่ง GPS ทุก 10 วินาที",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": {\n    \"led\": {\n      \"enabled\": true\n    },\n    \"gps\": {\n      \"enabled\": true,\n      \"baud_rate\": 9600,\n      \"send_interval_sec\": 10\n    },\n    \"data_server\": {\n      \"protocol\": \"https\",\n      \"host\": \"data.example.com\",\n      \"port\": 443,\n      \"path\": \"/api/gps\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "ตัวอย่าง Config เต็มสำหรับ firmware 1.0.0 ขึ้นไป ตั้ง GPS ทุก 10 วินาทีและปลายทางตัวอย่าง data.example.com หากต้องการเปลี่ยนเฉพาะรอบส่งโดยคงปลายทางเดิม ให้ใช้ 2.7\nหลัง downgrade เป็น 1.0.0 ค่า speed_limit / geofence ที่ค้างใน Config เดิมจะถูกตัดเมื่อบันทึก และเก็บ Config ก่อนแก้ใน history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('config_version', j.config_version); console.log('config_version =', j.config_version);",
+                  "if (j.command && j.command.command_id) { pm.collectionVariables.set('command_id', j.command.command_id); console.log('ส่งไปที่กล่องแล้ว', j.command.command_id, j.command.status, j.command.waiting_reason || ''); }",
+                  "else if (j.command) console.log('บันทึกแล้ว แต่สั่งกล่องไม่ได้:', j.command.message || j.command.error); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Config v1.0.0 — ปิด LED",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config",
+            "description": "เปลี่ยนเฉพาะ led.enabled เป็น false โดยคงค่า GPS และปลายทางเดิม Server บันทึกและสั่งกล่องให้อัตโนมัติ ดูผลที่ 2.6",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": {\n    \"led\": {\n      \"enabled\": false\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('config_version', j.config_version); console.log('config_version =', j.config_version);",
+                  "if (j.command && j.command.command_id) { pm.collectionVariables.set('command_id', j.command.command_id); console.log('ส่งไปที่กล่องแล้ว', j.command.command_id, j.command.status, j.command.waiting_reason || ''); }",
+                  "else if (j.command) console.log('บันทึกแล้ว แต่สั่งกล่องไม่ได้:', j.command.message || j.command.error); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Config v1.1.0 — ความเร็วสูงสุด 80 กม./ชม.",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config",
+            "description": "ต้องรอให้กล่องรายงาน firmware 1.1.0 (schema 2) ขึ้นไปก่อน เปลี่ยนเฉพาะ speed_limit โดยคงค่าอื่น หากกล่องยังเป็น 1.0.0 จะได้ 400 INVALID_CONFIG",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": {\n    \"speed_limit\": {\n      \"enabled\": true,\n      \"max_kmh\": 80\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('config_version', j.config_version); console.log('config_version =', j.config_version);",
+                  "if (j.command && j.command.command_id) { pm.collectionVariables.set('command_id', j.command.command_id); console.log('ส่งไปที่กล่องแล้ว', j.command.command_id, j.command.status, j.command.waiting_reason || ''); }",
+                  "else if (j.command) console.log('บันทึกแล้ว แต่สั่งกล่องไม่ได้:', j.command.message || j.command.error); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 Config v1.2.0 — ความเร็ว + Geofence",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config",
+            "description": "ต้องรอให้กล่องรายงาน firmware 1.2.0 (schema 3) ก่อน เปลี่ยนเฉพาะ speed_limit / geofence โดยคงค่าอื่น แก้ center_lat / center_lng เป็นพิกัดที่ต้องการ",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": {\n    \"speed_limit\": {\n      \"enabled\": true,\n      \"max_kmh\": 80\n    },\n    \"geofence\": {\n      \"enabled\": true,\n      \"center_lat\": 13.7563,\n      \"center_lng\": 100.5018,\n      \"radius_m\": 500\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('config_version', j.config_version); console.log('config_version =', j.config_version);",
+                  "if (j.command && j.command.command_id) { pm.collectionVariables.set('command_id', j.command.command_id); console.log('ส่งไปที่กล่องแล้ว', j.command.command_id, j.command.status, j.command.waiting_reason || ''); }",
+                  "else if (j.command) console.log('บันทึกแล้ว แต่สั่งกล่องไม่ได้:', j.command.message || j.command.error); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 ส่ง Config ซ้ำ (ไม่จำเป็น)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/gw/devices/{{device_id}}/commands/config-update",
+            "description": "ปกติไม่ต้องกด — 2.1–2.4 ส่งให้แล้ว ใช้เมื่อต้องการสั่งซ้ำ หรือบันทึกด้วย ?push=false ไว้ก่อน",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_config_version\": {{config_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('command_id', j.command_id); console.log('command_id =', j.command_id, j.status); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 ดูผล",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/gw/jobs/{{command_id}}",
+            "description": "กดซ้ำได้ ดูลำดับสถานะใน Console"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { ",
+                  "const j = pm.response.json();",
+                  "console.log(j.command_id, j.action, '→', j.status);",
+                  "if (j.error_message) console.log('สาเหตุ:', j.error_message, j.error_detail ? '| รายละเอียด: ' + j.error_detail : '');",
+                  "if (j.waiting_reason) console.log('สถานะการส่ง:', j.waiting_reason);",
+                  "console.log(j.events.map(e => e.status + (e.progress !== null ? ' ' + e.progress + '%' : '')).join(' → ')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.7 เปลี่ยนรอบส่ง GPS เป็น 20 วินาที (ใช้ได้หลัง downgrade)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": {\n    \"gps\": {\n      \"send_interval_sec\": 20\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "ใช้กับ firmware 1.0.0 ขึ้นไป ส่งเฉพาะ settings.gps.send_interval_sec = 20 คงค่าอื่นที่ schema ปัจจุบันรองรับ รวมถึง data_server เดิม\nหลัง downgrade ให้รอจนกล่องรายงานเวอร์ชันเก่าที่โฟลเดอร์ 1 ก่อนส่ง หากกล่องรายงาน schema 1 ค่า speed_limit / geofence ที่ค้างจะถูกตัดและเก็บ Config ก่อนแก้ใน history ดูที่ 2.8\nหากส่งค่าใหม่ที่ไม่รองรับเข้ามาเอง server ยังตอบ INVALID_CONFIG"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('config_version', j.config_version); console.log('config_version =', j.config_version);",
+                  "if (j.command && j.command.command_id) { pm.collectionVariables.set('command_id', j.command.command_id); console.log('ส่งไปที่กล่องแล้ว', j.command.command_id, j.command.status, j.command.waiting_reason || ''); }",
+                  "else if (j.command) console.log('บันทึกแล้ว แต่สั่งกล่องไม่ได้:', j.command.message || j.command.error); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }",
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.test('รอบส่ง GPS เป็น 20 วินาที', () => pm.expect(j.settings.gps.send_interval_sec).to.eql(20));",
+                  "  pm.test('ไม่มี send_interval_sec ที่ระดับ settings', () => pm.expect(j.settings).not.to.have.property('send_interval_sec'));",
+                  "  if (j.schema_version === 1) pm.test('schema 1 ไม่มีค่าค้าง speed_limit / geofence', () => { pm.expect(j.settings).not.to.have.property('speed_limit'); pm.expect(j.settings).not.to.have.property('geofence'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.8 ประวัติ Config (รวมค่าก่อน downgrade)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config/history",
+            "description": "รายการแรกคือ Config ปัจจุบัน ตามด้วยประวัติก่อนแก้ หลังใช้ 2.7 บน schema 1 ให้ตรวจว่ารายการปัจจุบันไม่มี speed_limit / geofence ส่วน Config เดิมยังอยู่ในประวัติ (เก็บสูงสุด 50 เวอร์ชันย้อนหลัง)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('ประวัติเป็น array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Firmware",
+      "description": "ใช้ 3.1 อย่างเดียวก็พอ: ส่งไฟล์ .bin ให้กล่อง {{device_id}} แล้วกล่องอัปเดตทันที → 3.2 ดูความคืบหน้า\nย้อนเวอร์ชันเก่า: 3.1b\n3.3–3.7 เป็นแบบขั้นสูง (เก็บไฟล์ไว้ก่อน / ส่งหลายกล่อง / schema)",
+      "item": [
+        {
+          "name": "3.1 อัปเดต Firmware ให้ {{device_id}} (ส่งไฟล์ทันที)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              },
+              {
+                "key": "X-Firmware-Version",
+                "value": "{{firmware_version}}"
+              },
+              {
+                "key": "X-Allow-Downgrade",
+                "value": "{{allow_downgrade}}",
+                "description": "true = อนุญาตย้อนเป็นเวอร์ชันเก่ากว่าที่กล่องใช้อยู่"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/firmware",
+            "description": "Body → binary → เลือกไฟล์ .bin → Send\nย้อนเป็นเวอร์ชันเก่า: ตั้งตัวแปร allow_downgrade = true\nตั้ง device_id = กล่องที่จะอัปเดต — firmware_version ปล่อยว่างได้ (Server อ่านเวอร์ชันจากไฟล์เอง ถ้าใส่ต้องตรงกับไฟล์)\nไม่ต้องอัปโหลดก่อน / ไม่ต้องเซ็น / schema เลือกให้เอง — ถ้ากล่องใช้เวอร์ชันนี้อยู่แล้วจะได้ 409 ALREADY_ON_VERSION",
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); console.log(j.message || ''); if (j.command && j.command.command_id) pm.collectionVariables.set('command_id', j.command.command_id); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.1b ย้อนเวอร์ชัน Firmware ให้ {{device_id}} (downgrade)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              },
+              {
+                "key": "X-Firmware-Version",
+                "value": "{{firmware_version}}"
+              },
+              {
+                "key": "X-Allow-Downgrade",
+                "value": "true",
+                "description": "อนุญาตลดเวอร์ชัน"
+              },
+              {
+                "key": "X-Wait-Result",
+                "value": "{{wait_result}}",
+                "description": "true = รอจนกล่องทำเสร็จแล้วค่อยตอบ (สูงสุด 5 นาที)"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/firmware",
+            "description": "ย้อนกล่องกลับไปใช้ firmware เวอร์ชันเก่า เช่น จาก 1.1.0 กลับเป็น 1.0.0\nBody → binary → เลือกไฟล์ .bin ของเวอร์ชันเก่า (เช่น esp32_gps_box-1.0.0.bin) → Send\nกล่องจะดาวน์โหลด → ตรวจลายเซ็น → ติดตั้ง → รีบูต แล้วกลับมาเป็นเวอร์ชันเก่า (ดูผลที่ 3.2)\nค่าตั้งที่เวอร์ชันเก่าไม่รู้จัก (เช่น speed_limit) จะถูกข้าม ส่วนค่าอื่นยังอยู่ครบ\nหลังกล่องรายงานเวอร์ชันเก่าแล้ว ใช้ 2.7 เปลี่ยนรอบส่ง GPS เป็น 20 วินาที ค่าเดิมที่ firmware ไม่รองรับจะถูกตัดตอนบันทึกครั้งถัดไป โดยเก็บ Config ก่อนแก้ไว้ในประวัติที่ 2.8",
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); console.log(j.message || ''); if (j.command && j.command.command_id) pm.collectionVariables.set('command_id', j.command.command_id); }",
+                  "if (pm.response.json().result) { const r = pm.response.json().result; console.log('ผล:', pm.response.json().message); console.log('ขั้นตอน:', (r.steps || []).join(' → ')); if (r.error_detail) console.log('รายละเอียด:', r.error_detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 ดูความคืบหน้า",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/gw/jobs/{{command_id}}",
+            "description": "กดซ้ำ: DOWNLOADING % → VALIDATING → INSTALLING → REBOOTING → SUCCESS"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { ",
+                  "const j = pm.response.json();",
+                  "console.log(j.command_id, j.action, '→', j.status);",
+                  "if (j.error_message) console.log('สาเหตุ:', j.error_message, j.error_detail ? '| รายละเอียด: ' + j.error_detail : '');",
+                  "if (j.waiting_reason) console.log('สถานะการส่ง:', j.waiting_reason);",
+                  "console.log(j.events.map(e => e.status + (e.progress !== null ? ' ' + e.progress + '%' : '')).join(' → ')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 (ขั้นสูง) Firmware ที่เก็บบน Server",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/admin/firmware"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 (ขั้นสูง) เก็บไฟล์ไว้ก่อน / ส่งหลายกล่อง",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              },
+              {
+                "key": "X-Hardware-Model",
+                "value": "ESP32-DEVKIT-V1"
+              },
+              {
+                "key": "X-Firmware-Version",
+                "value": "{{firmware_version}}"
+              },
+              {
+                "key": "X-Schema-Version",
+                "value": "{{schema_version}}"
+              },
+              {
+                "key": "X-Deploy-To",
+                "value": "{{deploy_to}}",
+                "description": "BOX-0001,BOX-0002 / all / ว่าง = เก็บอย่างเดียว"
+              },
+              {
+                "key": "X-Replace",
+                "value": "{{replace_existing}}"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/firmware",
+            "description": "ใช้เมื่อต้องการส่ง firmware เดียวกันให้หลายกล่อง (deploy_to) หรือเก็บไฟล์ไว้ก่อนแล้วค่อยสั่ง (3.5)",
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); (j.deployments || []).forEach(d => { console.log('→', d.device_id, d.command_id ? d.status + ' ' + d.command_id : 'ไม่สำเร็จ: ' + (d.message || d.error)); if (d.command_id) pm.collectionVariables.set('command_id', d.command_id); }); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 (ขั้นสูง) สั่งกล่องอัปเดตเป็นเวอร์ชันที่เก็บไว้",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/gw/devices/{{device_id}}/commands/firmware-update",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_firmware_version\": \"{{firmware_version}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) { const j = pm.response.json(); pm.collectionVariables.set('command_id', j.command_id); console.log('command_id =', j.command_id, j.status); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 (ขั้นสูง) เพิ่ม Schema ใหม่ (firmware มีค่าตั้งใหม่)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/schemas",
+            "description": "ใช้เมื่อ firmware ใหม่มีค่าตั้งเพิ่ม (ตัวอย่าง: 1.1.0 เพิ่ม speed_limit) — ต้องทำก่อน 3.1 เพื่อให้หน้า Config ตั้งค่าใหม่ได้",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hardware_model\": \"ESP32-DEVKIT-V1\",\n  \"firmware_version\": \"1.1.0\",\n  \"schema_version\": 2,\n  \"inherits\": \"1.0.0\",\n  \"additional_parameters\": [\n    {\n      \"key\": \"speed_limit.enabled\",\n      \"label\": \"เปิดตรวจสอบความเร็วเกิน\",\n      \"type\": \"boolean\",\n      \"default\": false\n    },\n    {\n      \"key\": \"speed_limit.max_kmh\",\n      \"label\": \"ความเร็วสูงสุดที่อนุญาต (กม./ชม.)\",\n      \"type\": \"number\",\n      \"min\": 1,\n      \"max\": 200,\n      \"default\": 80,\n      \"unit\": \"km/h\",\n      \"visible_when\": {\n        \"speed_limit.enabled\": true\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 (ขั้นสูง) ลบ firmware {{firmware_version}} ออกจาก Server",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/api/admin/firmware/ESP32-DEVKIT-V1/{{firmware_version}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. ประวัติ / จัดการคำสั่ง",
+      "item": [
+        {
+          "name": "ประวัติคำสั่งของ {{device_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/gw/devices/{{device_id}}/commands"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ประวัติ Config ของ {{device_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/config/history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ยกเลิกคำสั่ง {{command_id}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/gw/jobs/{{command_id}}/cancel",
+            "description": "ยกเลิกได้เฉพาะคำสั่งที่ยังไม่เริ่มดาวน์โหลด/ติดตั้ง"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ระงับกล่อง {{device_id}} (Gateway)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/gw/devices/{{device_id}}/revoke",
+            "description": "กดคู่กับข้อถัดไป — กล่องที่ถูกระงับจะต่อ Server ไม่ได้อีก"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ระงับกล่อง {{device_id}} (Delivery)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/admin/devices/{{device_id}}/revoke"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. จำลองเป็นกล่อง (ทดสอบโดยไม่มีกล่องจริง)",
+      "description": "ทำตัวเหมือนกล่อง {{device_id}} ใช้รหัส {{device_token}} + header X-Device-Id (กล่องใหม่จะถูกเพิ่มเข้าระบบอัตโนมัติ)",
+      "item": [
+        {
+          "name": "รายงานเวอร์ชัน",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Device-Id",
+                "value": "{{device_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/device/me/report",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{device_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firmware_version\": \"1.0.0\",\n  \"schema_version\": 1,\n  \"config_version\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ดึง Config",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Device-Id",
+                "value": "{{device_id}}"
+              }
+            ],
+            "url": "{{base_url}}/api/device/me/config",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{device_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ขอ Firmware manifest",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Device-Id",
+                "value": "{{device_id}}"
+              }
+            ],
+            "url": "{{base_url}}/api/device/me/firmware-manifest?target=1.1.0&current=1.0.0",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{device_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "คำสั่งที่ค้าง",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Device-Id",
+                "value": "{{device_id}}"
+              }
+            ],
+            "url": "{{gateway_url}}/api/device/me/pending-commands",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{device_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('สำเร็จ (2xx)', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "if (pm.response.code < 300) {  }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

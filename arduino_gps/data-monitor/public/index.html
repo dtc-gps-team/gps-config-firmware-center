@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data Monitor</title>
+<style>
+* { box-sizing:border-box; }
+body { margin:0; font-family:Arial,Tahoma,sans-serif; background:#0f172a; color:#f8fafc; font-size:14px; }
+header { background:#1e293b; border-bottom:1px solid #334155; padding:14px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+header h1 { font-size:20px; color:#38bdf8; margin:0; flex:1; min-width:240px; }
+main { max-width:1200px; margin:auto; padding:18px 16px 60px; }
+.card { background:#1e293b; border:1px solid #334155; padding:16px; border-radius:14px; margin-bottom:14px; }
+h2 { font-size:16px; margin:0 0 10px; }
+.small { color:#94a3b8; font-size:12px; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:14px; }
+.stat .value { font-size:26px; font-weight:bold; margin-top:6px; }
+.layout { display:grid; grid-template-columns:2fr 1fr; gap:14px; }
+@media (max-width:900px) { .layout { grid-template-columns:1fr; } }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:7px 6px; border-bottom:1px solid #334155; vertical-align:top; }
+th { color:#94a3b8; font-weight:normal; font-size:12px; position:sticky; top:0; background:#1e293b; }
+tbody tr { cursor:pointer; }
+tbody tr:hover { background:#273449; }
+tr.event { background:#3b1d24; }
+tr.new { animation:flash 1.2s ease-out; }
+@keyframes flash { from { background:#0369a1; } }
+.scroll { max-height:560px; overflow:auto; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; background:#334155; margin:1px; }
+.badge.gps { background:#0284c7; } .badge.event { background:#dc2626; } .badge.sim { background:#a16207; } .badge.nofix { background:#475569; } .badge.fix { background:#16a34a; }
+button, select { padding:7px 12px; border-radius:8px; border:0; font-size:13px; cursor:pointer; }
+button { background:#334155; color:#fff; } button.on { background:#0284c7; }
+select { background:#fff; color:#111827; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#64748b; margin-right:6px; }
+.dot.live { background:#4ade80; }
+pre { background:#0b1220; border-radius:8px; padding:10px; color:#4ade80; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; margin:0; }
+a { color:#38bdf8; }
+.hide { display:none !important; }
+.term { background:#000; color:#d1d5db; font-family:Consolas,'Courier New',monospace; font-size:12.5px; line-height:1.55; height:620px; overflow:auto; padding:10px 12px; border-radius:8px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.term .t { color:#64748b; } .term .gps { color:#4ade80; } .term .ev { color:#f87171; font-weight:bold; } .term .sim { color:#fbbf24; }
+.term .dev { color:#22d3ee; } .term .k { color:#93c5fd; } .term .bad { color:#f87171; }
+.term .line.ev-line { background:#2a0f14; }
+.term .cursor { display:inline-block; width:8px; height:14px; background:#4ade80; vertical-align:middle; animation:blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.empty { color:#94a3b8; text-align:center; padding:30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Data Monitor — ข้อมูลที่กล่องส่งเข้ามา</h1>
+  <span class="small" id="conn"><span class="dot"></span>กำลังเชื่อมต่อ...</span>
+  <select id="devFilter"><option value="">ทุกกล่อง</option></select>
+  <button id="viewBtn">มุมมอง: Terminal</button>
+  <button id="pauseBtn" class="on">กำลังแสดงสด</button>
+  <button id="clearBtn">ล้างข้อมูล</button>
+</header>
+<main>
+  <div class="card small">
+    กล่องส่งมาที่ <b id="endpoint"></b> — ตั้งใน Config ของกล่อง: <code>data_server = { protocol: "http", host: "&lt;IP เครื่องนี้&gt;", port: <span id="portTxt"></span>, path: "/api/gps" }</code>
+  </div>
+
+  <div class="stats">
+    <div class="card stat"><div class="small">รับทั้งหมด</div><div class="value" id="sTotal">0</div></div>
+    <div class="card stat"><div class="small">กล่องที่ส่งมา</div><div class="value" id="sDevices">0</div></div>
+    <div class="card stat"><div class="small">ใน 1 นาทีล่าสุด</div><div class="value" id="sRate">0</div></div>
+    <div class="card stat"><div class="small">แจ้งเตือน (event)</div><div class="value" id="sEvents">0</div></div>
+    <div class="card stat"><div class="small">รับล่าสุด</div><div class="value" id="sLast" style="font-size:18px">-</div></div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="card hide" id="termCard">
+        <h2>Terminal — ข้อมูลที่ไหลเข้ามา <span class="small">(ใหม่สุดอยู่ล่าง)</span></h2>
+        <div class="term" id="term"></div>
+      </div>
+      <div class="card" id="tableCard">
+        <h2>ข้อมูลที่ไหลเข้ามา <span class="small">(คลิกแถวเพื่อดูข้อมูลดิบ)</span></h2>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>เวลา</th><th>กล่อง</th><th>ประเภท</th><th>ละติจูด</th><th>ลองจิจูด</th><th>ความเร็ว</th><th>สถานะ</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div class="empty" id="empty">ยังไม่มีข้อมูล — รอกล่องส่งเข้ามา</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>ข้อมูลดิบที่เลือก</h2>
+        <p class="small" id="rawMeta">คลิกแถวในตาราง</p>
+        <pre id="raw">-</pre>
+        <p id="mapLink"></p>
+      </div>
+      <div class="card">
+        <h2>ค่าที่ส่งมา (ทุกฟิลด์ที่เคยเห็น)</h2>
+        <table>
+          <thead><tr><th>ฟิลด์</th><th>ชนิด</th><th>ค่าล่าสุด</th><th>จำนวน</th></tr></thead>
+          <tbody id="fields"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MAX_ROWS = 300;
+let all = [], paused = false, filter = '', selectedId = null;
+const fields = new Map(); // key -> {type, last, count}
+
+$('endpoint').textContent = 'POST http://' + location.hostname + ':' + location.port + '/api/gps';
+$('portTxt').textContent = location.port || 80;
+
+function td(text, cls) { const e = document.createElement('td'); if (cls) e.className = cls; if (text instanceof Node) e.append(text); else e.textContent = text; return e; }
+function badge(text, cls) { const b = document.createElement('span'); b.className = 'badge ' + cls; b.textContent = text; return b; }
+const fmt = (v) => (v === null || v === undefined ? '—' : v);
+const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
+function learnFields(body, prefix = '') {
+  if (!body || typeof body !== 'object') return;
+  for (const [k, v] of Object.entries(body)) {
+    const key = prefix + k;
+    if (v && typeof v === 'object' && !Array.isArray(v)) { learnFields(v, key + '.'); continue; }
+    const f = fields.get(key) || { types: new Set(), count: 0 };
+    f.types.add(typeOf(v)); f.last = v; f.count++;
+    fields.set(key, f);
+  }
+}
+
+function renderFields() {
+  const rows = [...fields.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, f]) => {
+    const tr = document.createElement('tr');
+    tr.append(td(k), td([...f.types].join(' / '), 'small'), td(JSON.stringify(f.last)), td(f.count, 'small'));
+    return tr;
+  });
+  $('fields').replaceChildren(...rows);
+}
+
+function rowFor(r) {
+  const b = r.body || {};
+  const tr = document.createElement('tr');
+  tr.dataset.id = r.id;
+  if (r.kind === 'EVENT') tr.className = 'event';
+  const st = document.createElement('span');
+  if (r.kind === 'EVENT') st.append(badge(b.event_type || 'EVENT', 'event'));
+  if (b.fix === true) st.append(badge('GPS fix', 'fix'));
+  if (b.fix === false) st.append(badge('ยังไม่มีสัญญาณ', 'nofix'));
+  if (b.location_source === 'default') st.append(badge('พิกัดเริ่มต้น', 'sim'));
+  if (b.simulated) st.append(badge('จำลอง', 'sim'));
+  if (r.parse_error) st.append(badge(r.parse_error, 'event'));
+  tr.append(
+    td(new Date(r.received_at).toLocaleTimeString('th-TH')),
+    td(b.device_id || r.from),
+    td(badge(r.kind === 'EVENT' ? 'แจ้งเตือน' : 'GPS', r.kind === 'EVENT' ? 'event' : 'gps')),
+    td(fmt(b.latitude)), td(fmt(b.longitude)),
+    td(b.speed_kmh === undefined ? '—' : fmt(b.speed_kmh) + (b.speed_kmh !== null ? ' กม./ชม.' : '') + (b.speed_limit_kmh ? ' (เกณฑ์ ' + b.speed_limit_kmh + ')' : '')),
+    td(st)
+  );
+  tr.addEventListener('click', () => select(r));
+  return tr;
+}
+
+function select(r) {
+  selectedId = r.id;
+  $('rawMeta').textContent = '#' + r.id + ' · ' + new Date(r.received_at).toLocaleString('th-TH') + ' · ' + r.path + ' · จาก ' + r.from;
+  $('raw').textContent = JSON.stringify(r.body, null, 2);
+  const b = r.body || {};
+  if (b.latitude != null && b.longitude != null) {
+    const a = document.createElement('a');
+    a.href = 'https://www.google.com/maps?q=' + b.latitude + ',' + b.longitude;
+    a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'เปิดตำแหน่งบน Google Maps';
+    $('mapLink').replaceChildren(a);
+  } else $('mapLink').textContent = '';
+}
+
+// ---------- มุมมอง Terminal ----------
+const MAX_TERM = 1000;
+function span(text, cls) { const e = document.createElement('span'); if (cls) e.className = cls; e.textContent = text; return e; }
+function termLine(r) {
+  const b = r.body;
+  const line = document.createElement('div');
+  line.className = 'line' + (r.kind === 'EVENT' ? ' ev-line' : '');
+  const kindCls = r.kind === 'EVENT' ? 'ev' : b && b.simulated ? 'sim' : 'gps';
+  line.append(
+    span(new Date(r.received_at).toLocaleTimeString('th-TH', { hour12: false }) + '  ', 't'),
+    span((r.kind === 'EVENT' ? (b.event_type || 'EVENT') : 'GPS').padEnd(10) + ' ', kindCls),
+    span(String((b && b.device_id) || r.from).padEnd(10) + ' ', 'dev'),
+    span('POST ' + r.path + '  ', 't')
+  );
+  if (b && typeof b === 'object') {
+    line.append(span('{', 't'));
+    Object.entries(b).forEach(([k, v], i) => {
+      line.append(span((i ? ', ' : '') + k, 'k'), span(':', 't'), document.createTextNode(JSON.stringify(v)));
+    });
+    line.append(span('}', 't'));
+  } else {
+    line.append(span(JSON.stringify(b) + '  (ไม่ใช่ JSON)', 'bad'));
+  }
+  line.addEventListener('click', () => select(r));
+  return line;
+}
+function termAppend(r) {
+  const term = $('term');
+  const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
+  term.querySelector('.cursor')?.remove();
+  term.append(termLine(r), span('', 'cursor'));
+  while (term.children.length > MAX_TERM + 1) term.firstChild.remove();
+  if (atBottom) term.scrollTop = term.scrollHeight;
+}
+function renderTerm() {
+  const term = $('term');
+  term.replaceChildren(...visible().slice(-MAX_TERM).map(termLine), span('', 'cursor'));
+  term.scrollTop = term.scrollHeight;
+}
+let view = 'table';
+try { view = localStorage.getItem('monitorView') || 'table'; } catch (e) {}
+const qView = new URLSearchParams(location.search).get('view');  // เปิดตรงด้วย ?view=term
+if (qView === 'term' || qView === 'table') view = qView;
+function applyView() {
+  $('termCard').classList.toggle('hide', view !== 'term');
+  $('tableCard').classList.toggle('hide', view !== 'table');
+  $('viewBtn').textContent = view === 'term' ? 'มุมมอง: ตาราง' : 'มุมมอง: Terminal';
+  if (view === 'term') renderTerm();
+}
+$('viewBtn').addEventListener('click', () => {
+  view = view === 'term' ? 'table' : 'term';
+  try { localStorage.setItem('monitorView', view); } catch (e) {}
+  applyView();
+});
+
+function visible() { return filter ? all.filter((r) => r.body && r.body.device_id === filter) : all; }
+
+function renderAll() {
+  const list = visible().slice(-MAX_ROWS).reverse();
+  $('rows').replaceChildren(...list.map(rowFor));
+  $('empty').style.display = list.length ? 'none' : '';
+  if (view === 'term') renderTerm();
+  renderStats();
+}
+
+function renderStats() {
+  const list = visible();
+  $('sTotal').textContent = list.length;
+  const devs = [...new Set(all.map((r) => r.body && r.body.device_id).filter(Boolean))];
+  $('sDevices').textContent = devs.length;
+  const minuteAgo = Date.now() - 60000;
+  $('sRate').textContent = list.filter((r) => new Date(r.received_at) > minuteAgo).length;
+  $('sEvents').textContent = list.filter((r) => r.kind === 'EVENT').length;
+  const last = list.at(-1);
+  $('sLast').textContent = last ? new Date(last.received_at).toLocaleTimeString('th-TH') : '-';
+  const cur = $('devFilter').value;
+  $('devFilter').replaceChildren(new Option('ทุกกล่อง', ''), ...devs.map((d) => new Option(d, d)));
+  $('devFilter').value = cur;
+}
+
+function add(r) {
+  all.push(r);
+  if (all.length > 2000) all.shift();
+  learnFields(r.body);
+  renderFields();
+  if (paused) return renderStats();
+  if (filter && !(r.body && r.body.device_id === filter)) return renderStats();
+  termAppend(r);
+  const tr = rowFor(r);
+  tr.classList.add('new');
+  $('rows').prepend(tr);
+  while ($('rows').children.length > MAX_ROWS) $('rows').lastChild.remove();
+  $('empty').style.display = 'none';
+  renderStats();
+  if (selectedId === null) select(r);
+}
+
+async function load() {
+  const list = await (await fetch('/api/received?limit=1000')).json();
+  all = list;
+  fields.clear();
+  list.forEach((r) => learnFields(r.body));
+  renderFields();
+  renderAll();
+  if (list.length) select(list.at(-1));
+}
+
+function connect() {
+  const es = new EventSource('/events');
+  es.onopen = () => { $('conn').innerHTML = '<span class="dot live"></span>เชื่อมต่อแล้ว (สด)'; };
+  es.onerror = () => { $('conn').innerHTML = '<span class="dot"></span>ขาดการเชื่อมต่อ กำลังลองใหม่...'; };
+  es.onmessage = (e) => {
+    const r = JSON.parse(e.data);
+    if (r.cleared) { all = []; fields.clear(); renderFields(); renderAll(); return; }
+    add(r);
+  };
+}
+
+$('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  $('pauseBtn').textContent = paused ? 'หยุดชั่วคราว (กดเพื่อแสดงสด)' : 'กำลังแสดงสด';
+  $('pauseBtn').className = paused ? '' : 'on';
+  if (!paused) renderAll();
+});
+$('clearBtn').addEventListener('click', async () => {
+  if (confirm('ล้างข้อมูลที่แสดงทั้งหมด? (ไฟล์บันทึกใน data/ ยังอยู่)')) await fetch('/api/received', { method: 'DELETE' });
+});
+$('devFilter').addEventListener('change', () => { filter = $('devFilter').value; renderAll(); });
+setInterval(renderStats, 5000);
+
+applyView();
+load().then(connect);
+</script>
+</body>
+</html>

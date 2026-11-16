@@ -1,0 +1,11 @@
+# secrets
+.env
+!.env.example
+keys/
+# runtime data / generated
+node_modules/
+data/
+firmware/dist/
+build/
+*.bin
+*.log

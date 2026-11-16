@@ -1,0 +1,15 @@
+{
+  "hardware_model": "ESP32-DEVKIT-V1",
+  "firmware_version": "1.0.0",
+  "schema_version": 1,
+  "parameters": [
+    { "key": "led.enabled", "label": "เปิดไฟ LED", "type": "boolean", "default": true },
+    { "key": "gps.enabled", "label": "เปิด GPS", "type": "boolean", "default": true },
+    { "key": "gps.baud_rate", "label": "GPS Baud Rate", "type": "enum", "options": [4800, 9600, 38400], "default": 9600, "visible_when": { "gps.enabled": true } },
+    { "key": "gps.send_interval_sec", "label": "รอบส่ง GPS (วินาที)", "type": "integer", "min": 5, "max": 3600, "default": 10 },
+    { "key": "data_server.protocol", "label": "โปรโตคอลส่งข้อมูล", "type": "enum", "options": ["https", "http"], "default": "https" },
+    { "key": "data_server.host", "label": "โฮสต์ปลายทาง (ว่าง = ไม่ส่งพิกัด)", "type": "hostname", "default": "" },
+    { "key": "data_server.port", "label": "พอร์ต", "type": "integer", "min": 1, "max": 65535, "default": 443 },
+    { "key": "data_server.path", "label": "API Path", "type": "string", "default": "/api/gps", "pattern": "^/[A-Za-z0-9._~/-]*$", "max_length": 128 }
+  ]
+}
