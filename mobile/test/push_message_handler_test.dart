@@ -211,6 +211,46 @@ void main() {
     });
   });
 
+  group('resolvePushDeepLink — ตรงกับการแตะในหน้ารายการแจ้งเตือน', () {
+    test(
+      'config_apply_retrying + taskId -> task detail (เดิมตกไปหน้ารายการ)',
+      () {
+        final path = resolvePushDeepLink({
+          'type': 'config_apply_retrying',
+          'payload': jsonEncode({'requestId': 'car-1', 'taskId': 'task-7'}),
+        });
+        expect(path, AppRoutes.taskDetail('task-7'));
+      },
+    );
+
+    for (final type in [
+      'config_override_approved',
+      'config_override_rejected',
+      'firmware_override_approved',
+      'firmware_override_rejected',
+    ]) {
+      test('$type + deviceId -> device detail', () {
+        final path = resolvePushDeepLink({
+          'type': type,
+          'payload': jsonEncode({
+            'overrideId': 'ov-1',
+            'deviceId': 'BOX-0001',
+            'rejectReason': 'ค่าเกินขอบเขต',
+          }),
+        });
+        expect(path, AppRoutes.deviceDetail('BOX-0001'));
+      });
+    }
+
+    test('override ไม่มี deviceId -> notifications', () {
+      final path = resolvePushDeepLink({
+        'type': 'config_override_approved',
+        'payload': jsonEncode({'overrideId': 'ov-1'}),
+      });
+      expect(path, AppRoutes.notifications);
+    });
+  });
+
   group('resolvePushBody', () {
     test('uses payload title (incident_report_pending)', () {
       expect(

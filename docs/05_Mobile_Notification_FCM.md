@@ -1,7 +1,9 @@
 # 05 — Mobile Notification: Push จริงผ่าน Firebase Cloud Messaging (FCM)
 
-> เสนอโดย: kittiphong (B) — 2026-09-02 · **อัปเดตสถานะ: 2026-10-08**
-> สถานะ: **implement แล้ว (Android)** — ยัง **ไม่ได้ทดสอบจริงด้วย FCM** (ดู TODO ท้ายเอกสาร)
+> เสนอโดย: kittiphong (B) — 2026-09-02 · **อัปเดตสถานะ: 2026-11-16**
+> สถานะ: **implement แล้วและทดสอบกับ FCM จริงแล้ว (Android)** — ผลทดสอบ:
+> [`docs/testing/FCM_Push_Test_Report_2026-10-12.md`](testing/FCM_Push_Test_Report_2026-10-12.md) ·
+> งานที่ยังเหลือดูหัวข้อ "งานที่ยังเหลือ" ท้ายเอกสาร
 
 เอกสารนี้เดิมเป็นข้อเสนอ ("ยังไม่ได้เขียนโค้ดจริง") ตอนนี้ระบบ push ทำงานในโค้ดครบแล้ว
 เนื้อหาด้านล่างสรุปสิ่งที่มีอยู่จริงและสิ่งที่ยังเหลือ
@@ -32,9 +34,11 @@
 - `PushMessageHandler` — foreground (`onMessage`) / background + terminated
   (top-level `firebaseMessagingBackgroundHandler`) แสดงเป็น local notification
   และจัดการตอนกด (`onMessageOpenedApp`, `getInitialMessage`, local notification tap)
-- **Deep link** (`resolvePushDeepLink`):
-  - `task_assigned` + `taskId` → `/tasks/:id`
+- **Deep link** (`resolvePushDeepLink`) ใช้กฎเดียวกับการแตะการ์ดในหน้ารายการแจ้งเตือน
+  (`NotificationTypeStyle.route`) — แก้ที่เดียวมีผลทั้งสองทาง:
+  - `task_assigned`, `config_apply_*` + `taskId` → `/tasks/:id`
   - `incident_report_pending|resolved|dismissed|promoted` + `incidentId` → `/incidents/:id`
+  - `config_override_*`, `firmware_override_*` + `deviceId` → `/devices/:deviceId`
   - ที่เหลือ หรือ payload ไม่ครบ → หน้ารายการแจ้งเตือน
 - **ข้อความ** (`resolvePushBody`): ใช้ `title` (incident ใหม่ ส่งให้ Operation) หรือ `reviewNote`
   (ผลการตัดสิน ส่งให้ผู้แจ้ง) จาก payload ถ้ามี ไม่มีใช้ "แตะเพื่อดูรายละเอียด"
@@ -43,6 +47,19 @@
   (ไม่เช่นนั้น router จะ redirect ไป splash/login แล้วปลายทางหาย)
 - `AppConfig.pushNotificationsEnabled` (`--dart-define=PUSH_NOTIFICATIONS_ENABLED`, default `true`)
   ปิดได้ — CI และ emulator ที่ไม่มี Google Play ปิดไว้
+
+### type ที่ส่ง push จริง (`FCM_ENABLED_NOTIFICATION_TYPES` ใน `notification.service.ts`)
+
+| กลุ่ม | type | ผู้รับ |
+|---|---|---|
+| งาน | `task_assigned` | ช่างที่ได้รับมอบหมาย |
+| Incident | `incident_report_pending` / `resolved` / `dismissed` / `promoted` | Operation / ผู้แจ้ง |
+| คำขอส่งเข้ากล่อง | `config_apply_approved` / `rejected` / `succeeded` / `failed` / `expired` / `retrying` | ช่างที่ถืองาน |
+| คำขอแก้ค่าเฉพาะเครื่อง | `config_override_approved` / `rejected`, `firmware_override_approved` / `rejected` | ช่างผู้ขอ |
+
+type อื่นยังบันทึกลงตาราง `Notification` ตามปกติ (เห็นในหน้ารายการแจ้งเตือน) แค่ไม่ยิง push —
+`*_pending` ที่ไปหา Operation ไม่ส่ง เพราะ Operation ตัดสินบน Web · Config Override ที่ผูกคำขอส่ง
+เข้ากล่อง (docs/30 โหมด central) แจ้งผลผ่าน `config_apply_*` ไม่ได้ push ซ้ำ
 
 > Push เป็นคนละระบบกับ Offline-first Sync (badge "รอซิงค์") — ไม่มีโค้ดร่วมกัน
 
@@ -54,19 +71,16 @@
 - `google-services.json` **ไม่ commit** (อยู่ใน `.gitignore`) วางเองต่อเครื่องจาก Firebase Console
   ส่วน CI ใช้ไฟล์ placeholder (`.github/workflows/mobile-integration-test.yml`)
 
-## TODO ที่เหลือ
+## งานที่ยังเหลือ
 
-- [ ] **ทดสอบจริงด้วย FCM** — ยังไม่เคยทำ ต้องมี (1) service account ฝั่ง backend
-  (`NOTIFICATION_MODE=fcm` + `FCM_SERVICE_ACCOUNT_PATH`) และ (2) emulator ที่มี Google Play
-  หรือเครื่องจริง ที่ต้องเช็ค:
-  - [ ] ได้ token และ register กับ backend หลัง login (เช็คแถวใน `DeviceToken`)
-  - [ ] รับ push ตอน foreground / background / terminated แล้วแสดง local notification
-  - [ ] กด notification ของ `task_assigned` ไปหน้างาน และของ `incident_report_*` ไปหน้า incident
-  - [ ] เปิดแอปจาก terminated ด้วยการกด notification ตอนยังไม่ login แล้ว login → ไปหน้าปลายทาง
-  - [ ] Android 13+ ขอ permission `POST_NOTIFICATIONS` ได้จริง
-  - [ ] logout แล้วเครื่องไม่รับ push ของ user เดิม · login user อื่นบนเครื่องเดียวกันได้ token ใหม่
-- [ ] iOS (APNs key, `GoogleService-Info.plist`, entitlements, ทดสอบบน Mac)
-- [ ] ชนิด notification อื่นที่ยังไปแค่หน้ารายการ (เช่น `config_override_*`, `firmware_override_*`,
-  `config_approved`) — เพิ่ม deep link เมื่อมีหน้าปลายทางบน mobile
-- [ ] id ของ local notification ตอนนี้ใช้เวลา (ไม่มี id จาก backend) — ถ้าต้องการ replace/ยกเลิกรายการเดิม
+ทดสอบกับ FCM จริงแล้ว (Firebase project dev, 12 ต.ค. 2569 — ผ่านทุกข้อ: รับ push ตอน foreground/background,
+กดเปิดจาก terminated, logout แล้วไม่รับ push ของ user เดิม · ดูรายงานผลทดสอบ) ที่ยังไม่ได้ทำ:
+
+- [ ] **iOS** — APNs key, `GoogleService-Info.plist`, entitlements และทดสอบบน Mac (`_platform` ใน
+  `PushNotificationService` ยัง hardcode เป็น `android`)
+- [ ] **Firebase project production** — ตอนนี้ทดสอบกับ project dev เท่านั้น deploy จริงต้องตั้ง
+  `FCM_SERVICE_ACCOUNT_PATH` ชี้ไฟล์ของ production และ `FCM_ALLOW_NON_DEV_PROJECT=true` (ดู CLAUDE.md)
+  และ build แอป flavor `prod` ด้วย `google-services.json` ของ production
+- [ ] กรณีที่ยังไม่ได้ทดสอบ: กด push ตอนยังไม่ login จริง, logout ตอนเครื่องออฟไลน์, ปิดแอปด้วยการปัดทิ้งจาก recents
+- [ ] id ของ local notification ตอนนี้ใช้เวลา (backend ไม่ส่ง id มา) — ถ้าต้องการแทนที่/ยกเลิกรายการเดิม
   ต้องให้ backend ส่ง id มาด้วย
