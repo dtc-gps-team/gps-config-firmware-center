@@ -1,0 +1,146 @@
+{
+    "metrics": {
+        "iterations": {
+            "count": 37498,
+            "rate": 288.4204686722472
+        },
+        "http_req_duration{name:telemetry}": {
+            "avg": 18.929702456130922,
+            "med": 12.4926,
+            "p(95)": 49.75345500000002,
+            "p(99)": 131.89050199999997,
+            "max": 326.4485,
+            "thresholds": {
+                "p(95)<300": false,
+                "p(99)<1000": false
+            }
+        },
+        "http_req_blocked": {
+            "max": 13.4952,
+            "avg": 0.008784111152594807,
+            "med": 0,
+            "p(95)": 0,
+            "p(99)": 0.3377749999999971
+        },
+        "iteration_duration": {
+            "p(95)": 50.32766500000003,
+            "p(99)": 132.49437599999976,
+            "max": 327.9319,
+            "avg": 19.20827914555433,
+            "med": 12.80115
+        },
+        "dropped_iterations": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count<1": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "med": 0
+        },
+        "vus_max": {
+            "min": 200,
+            "max": 200,
+            "value": 200
+        },
+        "checks": {
+            "passes": 74996,
+            "fails": 0,
+            "value": 1
+        },
+        "vus": {
+            "min": 1,
+            "max": 51,
+            "value": 7
+        },
+        "http_req_duration{expected_response:true}": {
+            "med": 12.4926,
+            "p(95)": 49.75345500000002,
+            "p(99)": 131.89050199999997,
+            "max": 326.4485,
+            "avg": 18.929702456130922
+        },
+        "data_received": {
+            "count": 11924364,
+            "rate": 91717.70903777459
+        },
+        "http_req_receiving": {
+            "p(99)": 2.3743869999999965,
+            "max": 48.1474,
+            "avg": 0.2396483359112491,
+            "med": 0,
+            "p(95)": 1.3597300000000003
+        },
+        "http_req_waiting": {
+            "avg": 18.67015169342358,
+            "med": 12.22335,
+            "p(95)": 49.58963000000001,
+            "p(99)": 131.29119899999932,
+            "max": 326.4485
+        },
+        "data_sent": {
+            "count": 13505184,
+            "rate": 103876.7800625349
+        },
+        "http_req_connecting": {
+            "avg": 0.0035452904154888265,
+            "med": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 5.253
+        },
+        "http_req_duration": {
+            "avg": 18.929702456130922,
+            "med": 12.4926,
+            "p(95)": 49.75345500000002,
+            "p(99)": 131.89050199999997,
+            "max": 326.4485
+        },
+        "http_reqs": {
+            "count": 37498,
+            "rate": 288.4204686722472
+        },
+        "http_req_sending": {
+            "avg": 0.0199024267960958,
+            "med": 0,
+            "p(95)": 0,
+            "p(99)": 0.5585119999999996,
+            "max": 14.02
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 37498,
+            "thresholds": {
+                "rate<0.001": false
+            },
+            "value": 0
+        }
+    },
+    "root_group": {
+        "groups": {},
+        "checks": {
+            "telemetry 200": {
+                "name": "telemetry 200",
+                "path": "::telemetry 200",
+                "id": "b8075bc2d9aedf6d85a2a00d03e08f5f",
+                "passes": 37498,
+                "fails": 0
+            },
+            "ไม่โดน 429": {
+                "name": "ไม่โดน 429",
+                "path": "::ไม่โดน 429",
+                "id": "e230c75c22892828d9cffc346abb8db0",
+                "passes": 37498,
+                "fails": 0
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+}
