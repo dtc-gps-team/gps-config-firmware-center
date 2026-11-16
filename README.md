@@ -74,11 +74,15 @@ npm run dev                     # http://localhost:3000
 รหัสตั้งต้นสำหรับเครื่อง dev อยู่ใน `backend/src/common/test-users.ts`
 
 มือถือ (Android emulator บนเครื่องเดียวกัน) ต้องมี `google-services.json` ก่อน build — ไฟล์จริงไม่อยู่ใน repo
-ใช้ไฟล์ของ Firebase project หรือไฟล์ stub (push ใช้ไม่ได้) ตาม [mobile/README.md](mobile/README.md)
+ใช้ไฟล์ของ Firebase project (`--flavor dev`) หรือไฟล์ stub แล้ว build แบบไม่ใส่ `--flavor` (push ใช้ไม่ได้) — ขั้นตอนเต็ม
+ใน [mobile/README.md](mobile/README.md)
 
 ```bash
-cd mobile && flutter pub get && dart run build_runner build
+cd mobile && flutter pub get && dart run build_runner build --delete-conflicting-outputs
+# มีไฟล์ Firebase dev:
 flutter run --flavor dev --dart-define=API_MOCK_MODE=false --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
+# ใช้ stub:
+flutter run --dart-define=PUSH_NOTIFICATIONS_ENABLED=false --dart-define=API_MOCK_MODE=false --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
 ```
 
 Server กลาง + กล่องจริง: ดู [arduino_gps/README.md](arduino_gps/README.md) แล้วตั้ง `CENTRAL_MODE=real` +

@@ -18,8 +18,10 @@ dart run build_runner build --delete-conflicting-outputs   # สร้าง *.g
 | `dev` (`com.example.mobile.dev`) | `android/app/src/dev/google-services.json` | `gps-config-firmware-center-dev` |
 | `prod` (`com.example.mobile`, ค่าเริ่มต้นเมื่อไม่ใส่ `--flavor`) | `android/app/google-services.json` | `gps-config-firmware-center` |
 
-ไม่มีไฟล์จริง: ใช้ stub ใน `.github/workflows/mobile-integration-test.yml` (ขั้น "google-services.json placeholder") แล้ว
-รันด้วย `--dart-define=PUSH_NOTIFICATIONS_ENABLED=false` — แอปใช้ได้ปกติแค่ไม่มี push
+**ไม่มีไฟล์จริง:** คัดลอก JSON ในขั้น "google-services.json placeholder" ของ `.github/workflows/mobile-integration-test.yml`
+ไปไว้ที่ `android/app/google-services.json` แล้ว **build แบบไม่ใส่ `--flavor`** (ได้ `prod`) พร้อม
+`--dart-define=PUSH_NOTIFICATIONS_ENABLED=false` — แอปใช้ได้ปกติแค่ไม่มี push · stub นี้มีแค่ package `com.example.mobile`
+ใช้กับ `--flavor dev` ไม่ได้ (Gradle ฟ้อง `No matching client found for package name 'com.example.mobile.dev'`)
 
 ```bash
 # ข้อมูลจำลองในแอป (ไม่ต้องมี backend)
@@ -27,6 +29,9 @@ flutter run --flavor dev
 
 # ต่อ backend จริง — emulator บนเครื่องเดียวกันใช้ 10.0.2.2 · มือถือจริงใช้ IP ของเครื่อง backend (Wi-Fi เดียวกัน)
 flutter run --flavor dev --dart-define=API_MOCK_MODE=false --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
+
+# ใช้ stub (ไม่มีไฟล์ Firebase จริง)
+flutter run --dart-define=PUSH_NOTIFICATIONS_ENABLED=false --dart-define=API_MOCK_MODE=false --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
 ```
 
 emulator บางเครื่องจอดำ/ค้าง: เพิ่ม `--no-enable-impeller` · ใช้มือถือในวง LAN: [OPERATIONS.md §4](../docs/deploy/OPERATIONS.md)
