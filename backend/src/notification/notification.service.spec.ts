@@ -275,6 +275,53 @@ describe('NotificationService', () => {
       },
     );
 
+    it.each([
+      'config_override_approved',
+      'config_override_rejected',
+      'firmware_override_approved',
+      'firmware_override_rejected',
+    ] as const)(
+      'ผลคำขอแก้ค่าเฉพาะเครื่อง %s (แจ้งช่างผู้ขอ) → ยิงผ่าน fcmSender จริง',
+      async (type) => {
+        notification.create.mockResolvedValue({ ...sampleNotification, type });
+        notification.update.mockResolvedValue({ ...sampleNotification, type });
+        deviceToken.findMany.mockResolvedValue(sampleTokens);
+        const fcmSender: FcmSenderMock = {
+          sendToTokens: jest
+            .fn()
+            .mockResolvedValue({ invalidTokens: [] } satisfies FcmSendResult),
+        };
+        const service = await buildService(
+          'fcm',
+          notification,
+          deviceToken,
+          fcmSender,
+        );
+
+        await service.send({ userId: 'user-1', type });
+
+        expect(fcmSender.sendToTokens).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(['config_override_pending', 'firmware_override_pending'] as const)(
+      '%s → ไม่ส่ง push เพราะไปหา Operation ที่ตัดสินบน Web',
+      async (type) => {
+        notification.create.mockResolvedValue({ ...sampleNotification, type });
+        const fcmSender: FcmSenderMock = { sendToTokens: jest.fn() };
+        const service = await buildService(
+          'fcm',
+          notification,
+          deviceToken,
+          fcmSender,
+        );
+
+        await service.send({ userId: 'user-1', type });
+
+        expect(fcmSender.sendToTokens).not.toHaveBeenCalled();
+      },
+    );
+
     it('type ที่ไม่ใช่ task_assigned → ไม่เรียก fcmSender เลย (fallback เหมือน mock)', async () => {
       notification.create.mockResolvedValue({
         ...sampleNotification,
