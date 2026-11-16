@@ -53,6 +53,7 @@ function makeDevice(
     id: `id-${deviceId}`,
     deviceId,
     simNumber: "0800000000",
+    modelId: `model-${deviceModel}`,
     deviceModel,
     protocol,
     hardwareRevisionCode: null,
@@ -79,7 +80,7 @@ const gt06nConfig: Config = {
   name: "GT06N มาตรฐาน",
   deviceModel: "GT06N",
   idMaster: "11111111-1111-4111-8111-111111111111",
-  modelId: "22222222-2222-4222-8222-222222222222",
+  modelId: "model-GT06N",
   protocol: "TCP",
   description: null,
   status: "approved",
@@ -96,7 +97,12 @@ const hookState = vi.hoisted(() => ({
   targets: [] as { deviceId: string }[],
   devices: [] as unknown[],
   configs: [] as unknown[],
-  campaign: { autoRetry: true } as { autoRetry: boolean } | null,
+  firmware: [] as unknown[],
+  deviceModels: [] as { id: string; name: string }[],
+  campaign: { autoRetry: true } as {
+    autoRetry: boolean;
+    modelId?: string | null;
+  } | null,
   campaignError: null as string | null,
 }));
 
@@ -116,7 +122,10 @@ vi.mock("@/hooks/use-configs", () => ({
   useConfigs: () => queryState(hookState.configs),
 }));
 vi.mock("@/hooks/use-firmware", () => ({
-  useFirmwareList: () => queryState([]),
+  useFirmwareList: () => queryState(hookState.firmware),
+}));
+vi.mock("@/hooks/use-device-models", () => ({
+  useDeviceModels: () => queryState(hookState.deviceModels),
 }));
 
 async function selectConfig(
@@ -375,5 +384,117 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
 
     expect(createCampaignRollout).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /ถัดไป/ })).toBeDisabled();
+  });
+});
+
+/** กลุ่มผูกได้รุ่นเดียว (13 พ.ย. 2569): ตัวเลือก payload เหลือแค่ของรุ่นนี้ และข้ามขั้นตรวจเมื่อไม่มีเครื่องไม่เข้ากัน */
+describe("CampaignRolloutCreateForm: กลุ่มที่มีรุ่น", () => {
+  const vt300Config: Config = {
+    ...gt06nConfig,
+    id: "cfg-vt300",
+    name: "VT300 มาตรฐาน",
+    deviceModel: "VT300",
+    modelId: "model-VT300",
+  };
+
+  beforeEach(() => {
+    createCampaignRollout.mockReset();
+    hookState.campaign = { autoRetry: true, modelId: "model-GT06N" };
+    hookState.campaignError = null;
+    hookState.targets = [{ deviceId: "DEV-0001" }, { deviceId: "DEV-0002" }];
+    hookState.devices = devices;
+    hookState.configs = [gt06nConfig, vt300Config];
+    hookState.firmware = [];
+    hookState.deviceModels = [];
+  });
+
+  it("ตัวเลือก Config มีแค่ของรุ่นกลุ่ม", async () => {
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await user.click(screen.getByRole("combobox", { name: "Config" }));
+
+    expect(
+      await screen.findByRole("option", { name: /GT06N มาตรฐาน/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /VT300 มาตรฐาน/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ทุกเครื่องเข้ากัน: ไม่มีขั้นตรวจสอบผลกระทบ ถัดไปจากเลือก Config ไปยืนยันเลย ย้อนกลับมาที่เลือก Config", async () => {
+    createCampaignRollout.mockResolvedValue({ id: "roll-1" });
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    expect(screen.queryByText("ตรวจสอบผลกระทบ")).not.toBeInTheDocument();
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+
+    expect(screen.getByText("ตรวจสอบก่อนเริ่ม")).toBeInTheDocument();
+    expect(screen.getByText("2 จาก 2 เครื่อง")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /ย้อนกลับ/ }));
+    expect(screen.getByRole("combobox", { name: "Config" })).toBeInTheDocument();
+    await next(user);
+    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    expect(createCampaignRollout).toHaveBeenCalledWith("tok", "camp-1", {
+      payloadType: "Config",
+      configId: "cfg-gt06n",
+    });
+  });
+
+  it("มีเครื่องไม่เข้ากันจริง (protocol ต่าง): ยังแสดงขั้นตรวจสอบผลกระทบ", async () => {
+    hookState.devices = [
+      makeDevice("DEV-0001", "GT06N"),
+      makeDevice("DEV-0002", "GT06N", "HTTP"),
+    ];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+
+    expect(
+      screen.getByText(/โปรโตคอล HTTP ไม่ตรงกับ Config นี้/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ถัดไป/ })).toBeDisabled();
+  });
+
+  it("หาชื่อโมเดลจากทะเบียนโมเดล: เครื่องโมเดลนี้ไม่อยู่ในรายการเครื่องแล้ว (ปลดระวางหมด) ก็ยังกรอง Firmware ได้", async () => {
+    hookState.devices = [];
+    hookState.deviceModels = [{ id: "model-GT06N", name: "GT06N" }];
+    hookState.firmware = [
+      {
+        id: "fw-gt06n",
+        version: "1.0.0",
+        uploadStatus: "stored",
+        deviceModelCompatibility: ["GT06N"],
+      },
+      {
+        id: "fw-vt300",
+        version: "2.0.0",
+        uploadStatus: "stored",
+        deviceModelCompatibility: ["VT300"],
+      },
+    ];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await user.click(screen.getByRole("radio", { name: /Firmware/ }));
+    await user.click(screen.getByRole("combobox", { name: "Firmware" }));
+
+    expect(
+      await screen.findByRole("option", { name: /v1\.0\.0/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /v2\.0\.0/ }),
+    ).not.toBeInTheDocument();
   });
 });

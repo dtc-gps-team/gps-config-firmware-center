@@ -70,6 +70,9 @@ export type Campaign = {
   /** ลองส่งเข้ากล่องใหม่อัตโนมัติเมื่อส่งไม่สำเร็จ ตามจำนวนครั้งสูงสุดของ backend (ค่าเริ่มต้น 3 · openapi v3.90, docs/31 §6) ·
    * กลุ่มที่มีอยู่ก่อน v3.90 เป็น false */
   autoRetry: boolean;
+  /** รุ่นอุปกรณ์ของกลุ่ม (`DeviceModel.id`, openapi v3.99) — ทุกเครื่องในกลุ่มเป็นรุ่นนี้ หน้า Rollout แสดงแค่
+   * Config/Firmware ของรุ่นนี้ · null = กลุ่มเดิมที่มีหลายรุ่นปนกัน (ทำงานแบบเดิม) · ชื่อรุ่นหาจาก `useDeviceModels` */
+  modelId: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +95,8 @@ export type CampaignTargetInput = {
 export type CreateCampaignInput = {
   name: string;
   description?: string;
+  /** รุ่นอุปกรณ์ของกลุ่ม (บังคับ, v3.99) — ทุกเครื่องใน `targets` ต้องเป็นรุ่นนี้ ไม่งั้น 400 */
+  modelId: string;
   targets: CampaignTargetInput[];
   /** `Incident.id` ของ Field Report ที่ Operation promote มาเป็นกลุ่มนี้
    * (issue #236) ส่งเฉพาะ flow "ส่งต่อเป็น Campaign" เท่านั้น */
@@ -206,7 +211,7 @@ export function listCampaignTargets(
  * `POST /campaigns` — Operation เท่านั้น · สร้างกลุ่มอุปกรณ์เปล่าๆ เท่านั้น
  * ไม่มี payload/approval ในคำขอนี้แล้ว (ย้ายไป `createCampaignRollout`) ·
  * 409 ถ้าอุปกรณ์เป้าหมายบางเครื่องไม่พบหรือยังไม่ installed · 400 ถ้า
- * targets ว่าง/deviceId ซ้ำ
+ * targets ว่าง/deviceId ซ้ำ หรือมีเครื่องที่ไม่ใช่รุ่น `modelId`
  */
 export function createCampaign(
   token: string,

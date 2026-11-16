@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
+  IsUUID,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -39,6 +40,11 @@ export class CreateCampaignDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  /** `DeviceModel.id` ของกลุ่ม (13 พ.ย. 2569) — บังคับ · ทุกเครื่องใน `targets` (และที่เพิ่มทีหลัง) ต้องเป็น
+   * รุ่นนี้ ไม่งั้น 400 · หน้า Rollout จึงเลือกได้แค่ Config/Firmware ของรุ่นนี้ */
+  @IsUUID()
+  modelId!: string;
 
   @IsArray()
   @ArrayMinSize(1)

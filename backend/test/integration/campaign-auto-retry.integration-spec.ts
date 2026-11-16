@@ -443,6 +443,7 @@ describe('Campaign auto-retry (integration — real postgres, fake central)', ()
     const created = await campaignService.create(
       {
         name: 'ปิดลองใหม่',
+        modelId: model.id,
         targets: [{ deviceId: device.deviceId }],
         autoRetry: false,
       },

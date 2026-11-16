@@ -28,15 +28,27 @@ type CampaignDelegateMock = {
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 
+const MODEL_GT06N = { id: 'model-gt06n', name: 'GT06N' };
+
 const installedDeviceA = {
   deviceId: 'DEV-0001',
+  modelId: MODEL_GT06N.id,
   deviceModel: 'GT06N',
+  protocol: 'TCP',
+  status: 'installed' as const,
+};
+
+const installedOtherModelDevice = {
+  deviceId: 'DEV-0009',
+  modelId: 'model-gt06l',
+  deviceModel: 'GT06L',
   protocol: 'TCP',
   status: 'installed' as const,
 };
 
 const installedDeviceB = {
   deviceId: 'DEV-0002',
+  modelId: MODEL_GT06N.id,
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'installed' as const,
@@ -49,6 +61,7 @@ const sampleCampaign: Campaign = {
   createdBy: operation.id,
   sourceIncidentId: null,
   autoRetry: true,
+  modelId: MODEL_GT06N.id,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -56,6 +69,7 @@ const sampleCampaign: Campaign = {
 function baseDto(): CreateCampaignDto {
   return {
     name: 'กลุ่มทดสอบ',
+    modelId: MODEL_GT06N.id,
     targets: [
       { deviceId: installedDeviceA.deviceId },
       { deviceId: installedDeviceB.deviceId },
@@ -76,6 +90,7 @@ describe('CampaignService', () => {
   let campaignRollout: { count: jest.Mock };
   let queryRaw: jest.Mock;
   let device: { findMany: jest.Mock };
+  let deviceModel: { findUnique: jest.Mock };
   let incident: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
 
@@ -102,6 +117,7 @@ describe('CampaignService', () => {
         .fn()
         .mockResolvedValue([installedDeviceA, installedDeviceB]),
     };
+    deviceModel = { findUnique: jest.fn().mockResolvedValue(MODEL_GT06N) };
     incident = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
 
@@ -110,6 +126,7 @@ describe('CampaignService', () => {
       campaignTarget,
       campaignRollout,
       device,
+      deviceModel,
       incident,
       auditLog,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
@@ -137,6 +154,7 @@ describe('CampaignService', () => {
           name: 'กลุ่มทดสอบ',
           description: undefined,
           createdBy: operation.id,
+          modelId: MODEL_GT06N.id,
         },
       });
       expect(campaignTarget.createMany).toHaveBeenCalledWith({
@@ -151,6 +169,34 @@ describe('CampaignService', () => {
           },
         ],
       });
+    });
+
+    it('ไม่พบรุ่นที่ระบุ -> 400 ไม่สร้าง', async () => {
+      deviceModel.findUnique.mockResolvedValue(null);
+
+      await expect(service.create(baseDto(), operation)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(campaign.create).not.toHaveBeenCalled();
+    });
+
+    it('มีเครื่องต่างรุ่นจากรุ่นของกลุ่ม -> 400 บอกเครื่องที่ต่างรุ่น ไม่สร้าง', async () => {
+      device.findMany.mockResolvedValue([
+        installedDeviceA,
+        installedOtherModelDevice,
+      ]);
+      const dto = {
+        ...baseDto(),
+        targets: [
+          { deviceId: installedDeviceA.deviceId },
+          { deviceId: installedOtherModelDevice.deviceId },
+        ],
+      };
+
+      await expect(service.create(dto, operation)).rejects.toThrow(
+        'กลุ่มนี้รับเฉพาะโมเดล GT06N เครื่องต่อไปนี้เป็นโมเดลอื่น: DEV-0009 (GT06L)',
+      );
+      expect(campaign.create).not.toHaveBeenCalled();
     });
 
     it('ตั้งชื่อกลุ่มเป็นชื่อสงวนของ Campaign ระบบ -> 400 ไม่สร้าง', async () => {
@@ -257,6 +303,7 @@ describe('CampaignService', () => {
             description: undefined,
             createdBy: operation.id,
             sourceIncidentId: 'inc-1',
+            modelId: MODEL_GT06N.id,
           },
         });
       });
@@ -464,6 +511,36 @@ describe('CampaignService', () => {
           },
         },
       });
+    });
+
+    it('เพิ่มเครื่องต่างรุ่นเข้ากลุ่มที่มีรุ่น -> 400 ไม่เพิ่ม', async () => {
+      device.findMany.mockResolvedValue([installedOtherModelDevice]);
+
+      await expect(
+        service.addTargets(
+          sampleCampaign.id,
+          { targets: [{ deviceId: installedOtherModelDevice.deviceId }] },
+          operation,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(campaignTarget.createMany).not.toHaveBeenCalled();
+    });
+
+    it('กลุ่มเดิมที่ไม่มีรุ่น (หลายรุ่นปนกัน) -> เพิ่มเครื่องรุ่นไหนก็ได้เหมือนเดิม', async () => {
+      campaign.findUnique.mockResolvedValue({
+        ...sampleCampaign,
+        modelId: null,
+      });
+      device.findMany.mockResolvedValue([installedOtherModelDevice]);
+
+      await service.addTargets(
+        sampleCampaign.id,
+        { targets: [{ deviceId: installedOtherModelDevice.deviceId }] },
+        operation,
+      );
+
+      expect(deviceModel.findUnique).not.toHaveBeenCalled();
+      expect(campaignTarget.createMany).toHaveBeenCalled();
     });
 
     it('มี Rollout ค้าง -> 409 ไม่เพิ่ม', async () => {

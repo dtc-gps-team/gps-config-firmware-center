@@ -44,6 +44,7 @@ const installed: Device = {
   id: "d1",
   deviceId: "DEV-1",
   simNumber: "0811111111",
+  modelId: "model-gt06n",
   deviceModel: "GT06N",
   protocol: "TCP",
   hardwareRevisionCode: "RevA",

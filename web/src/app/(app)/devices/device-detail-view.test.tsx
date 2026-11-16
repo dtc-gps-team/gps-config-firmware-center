@@ -32,6 +32,7 @@ let device: Device = {
   id: "id-1",
   deviceId: "DEV-0001",
   simNumber: "0800000000",
+  modelId: "model-gt06n",
   deviceModel: "GT06N",
   protocol: "TCP",
   hardwareRevisionCode: null,

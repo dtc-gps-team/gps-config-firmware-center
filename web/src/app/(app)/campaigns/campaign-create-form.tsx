@@ -10,6 +10,14 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Notice } from "@/components/ui/notice";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -53,6 +61,11 @@ function ErrorBanner({ message }: { message: string }) {
  * backend ปฏิเสธเครื่องที่ยังไม่ติดตั้ง) แล้วส่ง `sourceIncidentId` ไปกับคำขอ
  * ให้ backend ผูกกลุ่มกับรายงานนี้ · ค่าเริ่มต้นเหล่านี้คำนวณตอน render
  * (`ค่าที่ผู้ใช้แก้ ?? ค่าเริ่มต้น`) แก้ได้อิสระ ไม่เขียน state ใน effect
+ *
+ * **กลุ่มผูกได้รุ่นเดียว (13 พ.ย. 2569):** เลือกรุ่นอุปกรณ์ก่อน ตารางแสดงแค่เครื่องรุ่นนั้น เปลี่ยนรุ่น =
+ * ล้างเครื่องที่เลือกไว้ · ส่ง `modelId` ไปกับคำขอ (backend ตอบ 400 ถ้ามีเครื่องรุ่นอื่น) · หน้า Rollout
+ * ของกลุ่มจึงแสดงแค่ Config/Firmware ของรุ่นนี้ ไม่มีเครื่องไม่เข้ากันเพราะรุ่นปนกัน · ไม่ล็อก protocol
+ * รุ่นเริ่มต้น: รุ่นของเครื่องที่รายงานปัญหา (ถ้าติดตั้งแล้ว) หรือรุ่นเดียวที่มีเครื่องติดตั้งอยู่
  */
 export function CampaignCreateForm({
   sourceIncidentId,
@@ -77,6 +90,12 @@ export function CampaignCreateForm({
   const [nameInput, setNameInput] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [selectedInput, setSelectedInput] = useState<string[] | null>(null);
+  const [modelInput, setModelInput] = useState<string | null>(null);
+  // เปลี่ยนโมเดลตอนมีเครื่องที่เลือกไว้แล้ว ต้องบอกว่าเครื่องเดิมถูกล้าง (ไม่งั้นผู้ใช้นึกว่าเลือกข้ามโมเดลได้)
+  const [clearedNotice, setClearedNotice] = useState<{
+    fromModel: string;
+    count: number;
+  } | null>(null);
   // เปิดเป็นค่าเริ่มต้น (ตรงกับ backend) · Operation ปิดได้ถ้าไม่ต้องการให้ลองซ้ำ
   const [autoRetry, setAutoRetry] = useState(true);
 
@@ -94,6 +113,17 @@ export function CampaignCreateForm({
     [devicesQuery.data],
   );
 
+  /** รุ่นที่มีเครื่องติดตั้งแล้ว (ตัวเลือกของ dropdown) เรียงตามชื่อ พร้อมจำนวนเครื่อง */
+  const modelOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string; count: number }>();
+    for (const d of installedDevices) {
+      const entry = byId.get(d.modelId);
+      if (entry) entry.count += 1;
+      else byId.set(d.modelId, { id: d.modelId, name: d.deviceModel, count: 1 });
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [installedDevices]);
+
   const defaultName = linkableSource
     ? `แก้ไขปัญหา: ${linkableSource.title}`
     : "";
@@ -106,7 +136,19 @@ export function CampaignCreateForm({
       reportedDeviceInstalled && reportedDeviceId ? [reportedDeviceId] : [],
     [reportedDeviceInstalled, reportedDeviceId],
   );
+  const reportedDeviceModelId =
+    installedDevices.find((d) => d.deviceId === reportedDeviceId)?.modelId ??
+    null;
+  const defaultModelId =
+    reportedDeviceModelId ??
+    (modelOptions.length === 1 ? modelOptions[0].id : "");
   const name = nameInput ?? defaultName;
+  const modelId = modelInput ?? defaultModelId;
+  const selectedModel = modelOptions.find((m) => m.id === modelId) ?? null;
+  const modelDevices = useMemo(
+    () => installedDevices.filter((d) => d.modelId === modelId),
+    [installedDevices, modelId],
+  );
   const selectedDeviceIds = selectedInput ?? defaultSelected;
 
   const isDirty =
@@ -115,7 +157,21 @@ export function CampaignCreateForm({
     selectedDeviceIds.length > 0;
   const { confirmLeave } = useUnsavedChangesWarning(isDirty);
 
+  function changeModel(nextModelId: string) {
+    if (nextModelId === modelId) return;
+    setClearedNotice(
+      selectedModel && selectedDeviceIds.length > 0
+        ? { fromModel: selectedModel.name, count: selectedDeviceIds.length }
+        : null,
+    );
+    setModelInput(nextModelId);
+    // เครื่องที่เลือกไว้เป็นรุ่นเดิมทั้งหมด เปลี่ยนรุ่นแล้วต้องเลือกใหม่
+    setSelectedInput([]);
+    clearErrors();
+  }
+
   function toggleDevice(deviceId: string, checked: boolean) {
+    setClearedNotice(null);
     setSelectedInput((prev) => {
       const base = prev ?? defaultSelected;
       if (checked) {
@@ -135,6 +191,10 @@ export function CampaignCreateForm({
       setNameError("ต้องตั้งชื่อกลุ่ม");
       return;
     }
+    if (!selectedModel) {
+      setFormError("เลือกโมเดลของกลุ่มก่อน");
+      return;
+    }
     if (selectedDeviceIds.length === 0) {
       setFormError("เลือกอุปกรณ์เป้าหมายอย่างน้อย 1 เครื่อง");
       return;
@@ -149,6 +209,7 @@ export function CampaignCreateForm({
       const trimmedDesc = description.trim();
       const created = await createCampaign(session.accessToken, {
         name: trimmedName,
+        modelId: selectedModel.id,
         targets: targetInputs,
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
         autoRetry,
@@ -205,12 +266,6 @@ export function CampaignCreateForm({
         cell: ({ row }) => (
           <span className="font-instrument text-xs">{row.original.deviceId}</span>
         ),
-      },
-      {
-        accessorKey: "deviceModel",
-        header: "โมเดล",
-        filterFn: multiSelectFilterFn,
-        meta: { filterVariant: "multi-select", label: "โมเดล" },
       },
       {
         accessorKey: "protocol",
@@ -286,7 +341,32 @@ export function CampaignCreateForm({
           />
           {nameError && <p className="text-xs text-destructive">{nameError}</p>}
         </div>
+        {/* รุ่นเป็นคุณสมบัติของกลุ่ม อยู่คู่กับชื่อกลุ่ม (กล่องล่างเหลือแค่เลือกเครื่อง) */}
         <div className="flex flex-col gap-1.5">
+          <Label htmlFor="campaign-model">โมเดล</Label>
+          <Select
+            value={modelId}
+            onValueChange={(value) => changeModel(value ?? "")}
+            disabled={modelOptions.length === 0}
+          >
+            <SelectTrigger id="campaign-model" className="w-full">
+              <SelectValue placeholder="- เลือกโมเดล -">
+                {() => (selectedModel ? selectedModel.name : "- เลือกโมเดล -")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {modelOptions.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name} ({m.count} เครื่อง)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            ตอน Rollout เลือกได้แค่ Config และ Firmware ของโมเดลนี้
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
           <Label htmlFor="campaign-description">
             คำอธิบาย{" "}
             <span className="font-normal text-muted-foreground">
@@ -316,23 +396,50 @@ export function CampaignCreateForm({
       </Card>
 
       <Card className="gap-3 p-5">
-        <div>
-          <p className="text-sm font-medium">เลือกอุปกรณ์สมาชิก</p>
-          <p className="text-xs text-muted-foreground">
-            ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก เฉพาะอุปกรณ์สถานะ
-            installed เท่านั้น (เลือกแล้ว {selectedDeviceIds.length} เครื่อง)
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+          <div>
+            <p className="text-sm font-medium">
+              {selectedModel
+                ? `เลือกเครื่องโมเดล ${selectedModel.name}`
+                : "เลือกเครื่องในกลุ่ม"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              คลิกที่แถวเพื่อเลือกหรือยกเลิก แสดงเฉพาะเครื่องที่ติดตั้งแล้ว
+            </p>
+          </div>
+          <p
+            className="text-sm text-muted-foreground tabular-nums"
+            data-testid="selected-count"
+          >
+            เลือกแล้ว{" "}
+            <span className="font-semibold text-foreground">
+              {selectedDeviceIds.length}
+            </span>{" "}
+            / {modelDevices.length} เครื่อง
           </p>
         </div>
 
+        {clearedNotice && (
+          <Notice tone="warning">
+            ล้างเครื่องโมเดล {clearedNotice.fromModel} ที่เลือกไว้{" "}
+            {clearedNotice.count} เครื่องแล้ว เพราะกลุ่มหนึ่งมีได้โมเดลเดียว
+            ถ้าต้องการเครื่องโมเดลนั้นให้สร้างอีกกลุ่ม
+          </Notice>
+        )}
+
         {installedDevices.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            ไม่พบอุปกรณ์ที่ installed
+            ยังไม่มีเครื่องที่ติดตั้งแล้ว
+          </p>
+        ) : !selectedModel ? (
+          <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+            เลือกโมเดลก่อน แล้วรายชื่อเครื่องโมเดลนั้นจะแสดงที่นี่
           </p>
         ) : (
           <DataTable
             columns={columns}
-            data={installedDevices}
-            searchPlaceholder="ค้นหาเลขเครื่อง/โมเดล…"
+            data={modelDevices}
+            searchPlaceholder="ค้นหาเลขเครื่อง…"
             emptyMessage="ไม่พบอุปกรณ์ที่ตรงกับเงื่อนไข"
             onRowClick={(device) =>
               toggleDevice(

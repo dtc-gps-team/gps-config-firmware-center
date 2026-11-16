@@ -45,6 +45,7 @@ import { useCampaign } from "@/hooks/use-campaign";
 import { useCampaignTargets } from "@/hooks/use-campaign-targets";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { ErrorState } from "@/components/error-state";
@@ -260,6 +261,10 @@ function RolloutSummary({
  *
  * default = สมาชิกทั้งกลุ่ม เอาบางเครื่องออกได้ผ่านการติ๊กออกในตาราง (ไม่มี
  * ทางเพิ่มเครื่องนอกกลุ่ม — ต่างจาก wizard เดิมที่เลือกเป้าหมายอิสระ)
+ *
+ * **กลุ่มที่มีรุ่น (`Campaign.modelId`, 13 พ.ย. 2569):** ตัวเลือก Config/Firmware เหลือแค่ของรุ่นนี้ และข้ามขั้น
+ * "ตรวจสอบผลกระทบ" ให้เองเมื่อไม่มีเครื่องไหนไม่เข้ากัน (ขั้นนี้ยังโผล่เมื่อมีจริง เช่น protocol ของเครื่องไม่ตรง
+ * Config) · กลุ่มเดิมที่ไม่มีรุ่น (หลายรุ่นปนกัน) ทำงานแบบเดิมทุกอย่าง
  */
 export function CampaignRolloutCreateForm({
   campaignId,
@@ -272,6 +277,7 @@ export function CampaignRolloutCreateForm({
   const targetsQuery = useCampaignTargets(campaignId);
   const campaignQuery = useCampaign(campaignId);
   const devicesQuery = useDevices();
+  const deviceModelsQuery = useDeviceModels();
   const configsQuery = useConfigs();
   const firmwareQuery = useFirmwareList();
 
@@ -289,19 +295,38 @@ export function CampaignRolloutCreateForm({
   const groupAutoRetry = campaignQuery.data?.autoRetry;
   const autoRetry = autoRetryInput ?? groupAutoRetry ?? true;
 
+  // รุ่นของกลุ่ม: null = กลุ่มเดิมที่หลายรุ่นปนกัน หรือโหลดกลุ่มไม่สำเร็จ (แสดงทุกตัวแบบเดิม ขั้นตรวจยังกันไว้)
+  const campaignModelId = campaignQuery.data?.modelId ?? null;
+  // Firmware อ้างรุ่นด้วยชื่อ (`deviceModelCompatibility`) หาชื่อจากทะเบียนโมเดล (เครื่องของโมเดลนี้อาจ
+  // ถูกปลดระวางหมดจนไม่อยู่ในรายการเครื่อง ข้อสังเกต B ใน #484) ทะเบียนโหลดไม่สำเร็จค่อยหาจากเครื่อง
+  const campaignModelName = useMemo(() => {
+    if (!campaignModelId) return null;
+    return (
+      deviceModelsQuery.data?.find((m) => m.id === campaignModelId)?.name ??
+      (devicesQuery.data ?? []).find((d) => d.modelId === campaignModelId)
+        ?.deviceModel ??
+      null
+    );
+  }, [campaignModelId, deviceModelsQuery.data, devicesQuery.data]);
+
   const eligibleConfigs = useMemo(
     () =>
-      (configsQuery.data ?? []).filter((c) =>
-        ELIGIBLE_CONFIG_STATUSES.includes(c.status),
+      (configsQuery.data ?? []).filter(
+        (c) =>
+          ELIGIBLE_CONFIG_STATUSES.includes(c.status) &&
+          (!campaignModelId || c.modelId === campaignModelId),
       ),
-    [configsQuery.data],
+    [configsQuery.data, campaignModelId],
   );
   const eligibleFirmware = useMemo(
     () =>
       (firmwareQuery.data ?? []).filter(
-        (f) => f.uploadStatus === ELIGIBLE_FIRMWARE_UPLOAD_STATUS,
+        (f) =>
+          f.uploadStatus === ELIGIBLE_FIRMWARE_UPLOAD_STATUS &&
+          (!campaignModelName ||
+            f.deviceModelCompatibility.includes(campaignModelName)),
       ),
-    [firmwareQuery.data],
+    [firmwareQuery.data, campaignModelName],
   );
 
   const deviceByDeviceId = useMemo(
@@ -361,6 +386,13 @@ export function CampaignRolloutCreateForm({
   );
   const payloadKind = payloadType === "Config" ? "Config" : "Firmware";
 
+  /** แสดงขั้น "ตรวจสอบผลกระทบ" เมื่อกลุ่มไม่มีรุ่น (แบบเดิม) หรือมีเครื่องไม่เข้ากันจริง · นับจากทุกเครื่องที่ไม่เข้ากัน
+   * รวมที่เอาออกไปแล้ว ค่านี้จึงไม่เปลี่ยนระหว่างอยู่ในขั้นนี้ (กดเอาออกแล้วขั้นไม่หายไปใต้มือ) */
+  const showCompatStep = !campaignModelId || incompatibleReasons.size > 0;
+  const visibleSteps = showCompatStep
+    ? STEPS
+    : STEPS.filter((s) => s.n !== 3);
+
   function removeBlocking() {
     setExcludedDeviceIds((prev) => {
       const next = new Set(prev);
@@ -405,14 +437,16 @@ export function CampaignRolloutCreateForm({
   }
 
   function goNext() {
-    const problem = validateStep(step);
+    // ข้ามขั้นตรวจ: ยังต้องผ่านเงื่อนไขของขั้นนั้น (เหลือเครื่องอย่างน้อย 1 เครื่อง)
+    const skipCompat = step === 2 && !showCompatStep;
+    const problem = validateStep(step) ?? (skipCompat ? validateStep(3) : null);
     setFormError(problem);
-    if (!problem) setStep((n) => n + 1);
+    if (!problem) setStep((n) => (skipCompat ? 4 : n + 1));
   }
 
   function goBack() {
     setFormError(null);
-    setStep((n) => n - 1);
+    setStep((n) => (n === 4 && !showCompatStep ? 2 : n - 1));
   }
 
   function handleCancel() {
@@ -473,7 +507,14 @@ export function CampaignRolloutCreateForm({
     (targetsQuery.isLoading && !targetsQuery.data) ||
     (devicesQuery.isLoading && !devicesQuery.data) ||
     (configsQuery.isLoading && !configsQuery.data) ||
-    (firmwareQuery.isLoading && !firmwareQuery.data);
+    (firmwareQuery.isLoading && !firmwareQuery.data) ||
+    // รอรู้รุ่นของกลุ่มก่อน ไม่งั้นตัวเลือก Config/Firmware จะกระพริบจากทั้งหมดเหลือแค่รุ่นนี้
+    (campaignQuery.isLoading && !campaignQuery.data && !campaignQuery.error) ||
+    // กลุ่มมีโมเดล: รอชื่อโมเดลจากทะเบียนก่อน ไม่งั้นรายการ Firmware จะแสดงทุกตัวชั่วขณะ
+    (campaignModelId !== null &&
+      deviceModelsQuery.isLoading &&
+      !deviceModelsQuery.data &&
+      !deviceModelsQuery.error);
   const loadError =
     targetsQuery.error ??
     devicesQuery.error ??
@@ -510,7 +551,10 @@ export function CampaignRolloutCreateForm({
 
   return (
     <div className="flex flex-col gap-6">
-      <WizardStepIndicator steps={STEPS} step={step} />
+      <WizardStepIndicator
+        steps={visibleSteps.map((s, i) => ({ n: i + 1, label: s.label }))}
+        step={visibleSteps.findIndex((s) => s.n === step) + 1}
+      />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-5">
           {step === 1 && (
@@ -676,7 +720,9 @@ export function CampaignRolloutCreateForm({
                   </Select>
                   {eligibleConfigs.length === 0 && (
                     <p className="text-xs text-muted-foreground">
-                      ยังไม่มี Config สถานะ approved/synced ให้เลือก
+                      ยังไม่มี Config สถานะ approved/synced
+                      {campaignModelName ? ` ของโมเดล ${campaignModelName}` : ""}{" "}
+                      ให้เลือก
                     </p>
                   )}
                 </div>
@@ -711,6 +757,9 @@ export function CampaignRolloutCreateForm({
                   {eligibleFirmware.length === 0 && (
                     <p className="text-xs text-muted-foreground">
                       ยังไม่มี Firmware สถานะ stored (จัดเก็บสำเร็จแล้ว)
+                      {campaignModelName
+                        ? ` ที่รองรับโมเดล ${campaignModelName}`
+                        : ""}{" "}
                       ให้เลือก
                     </p>
                   )}
