@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
   CENTRAL_DEVICE_CLIENT,
@@ -21,6 +21,12 @@ import type {
   RawRegistryDevice,
 } from './central-device.types';
 import { omitHiddenConfigFields } from './hidden-config-fields';
+import { DEVICE_HUB_CLIENT } from './device-hub-client.provider';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  type DeliveryChannel,
+  resolveDeliveryChannel,
+} from '../device-model/delivery-channel';
 
 /** ผลการสั่งส่ง Config ให้กล่องหนึ่งเครื่อง */
 export type PushConfigOutcome =
@@ -97,13 +103,55 @@ const CACHE_TTL_MS = 3000;
  */
 @Injectable()
 export class CentralDeviceService {
-  private cache: { at: number; value: CentralDeviceList } | null = null;
-  private inFlight: Promise<CentralDeviceList> | null = null;
+  // cache / single-flight แยกต่อทางส่ง (docs/33) — device-hub ล่มไม่ทำให้รายการของ Server กลางหาย
+  private readonly caches: Record<
+    DeliveryChannel,
+    { at: number; value: CentralDeviceList } | null
+  > = { central: null, hub: null };
+  private readonly inFlight: Record<
+    DeliveryChannel,
+    Promise<CentralDeviceList> | null
+  > = { central: null, hub: null };
 
+  private static readonly HUB_DISABLED =
+    'ไม่ได้เปิด device-hub (ตั้ง DEVICE_HUB_MODE=real ที่ backend) จึงติดต่อกล่องรุ่นนี้ไม่ได้';
+
+  /**
+   * `hubClient` / `prisma` เป็น optional (docs/33 §0 ข้อ 2): ไม่มี prisma = ทุกเครื่องใช้ Server กลางเหมือนเดิม
+   * · `hubClient` = null เมื่อ `DEVICE_HUB_MODE` ไม่ใช่ real (รุ่นที่ตั้ง hub ได้ผล unavailable พร้อมเหตุผล)
+   */
   constructor(
     @Inject(CENTRAL_DEVICE_CLIENT) private readonly client: CentralDeviceClient,
     private readonly nestConfig: NestConfigService,
+    @Optional()
+    @Inject(DEVICE_HUB_CLIENT)
+    private readonly hubClient: CentralDeviceClient | null = null,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
+
+  /** ทางส่งของเครื่องนี้จาก `DeviceModel.deliveryChannel` · ไม่รู้จักเครื่อง / อ่านไม่ได้ = central */
+  private async channelOf(deviceId: string): Promise<DeliveryChannel> {
+    if (!this.prisma) return 'central';
+    try {
+      const device = await this.prisma.device.findUnique({
+        where: { deviceId },
+        select: { model: { select: { deliveryChannel: true } } },
+      });
+      return resolveDeliveryChannel(device?.model?.deliveryChannel);
+    } catch {
+      return 'central';
+    }
+  }
+
+  /** client ของทางส่งนั้น · null = device-hub ปิดอยู่ */
+  private clientOf(channel: DeliveryChannel): CentralDeviceClient | null {
+    return channel === 'hub' ? this.hubClient : this.client;
+  }
+
+  /** commandId ของ device-hub ขึ้นต้น `hub-` เสมอ (docs/33 §0 ข้อ 6) — ผู้เรียกไม่ต้องส่ง deviceId มา */
+  private clientOfCommand(commandId: string): CentralDeviceClient | null {
+    return commandId.startsWith('hub-') ? this.hubClient : this.client;
+  }
 
   get mode(): CentralMode {
     return this.nestConfig.get<string>('CENTRAL_MODE', 'mock') === 'real'
@@ -111,21 +159,54 @@ export class CentralDeviceService {
       : 'mock';
   }
 
+  /** ทุกเครื่องจาก Server กลาง + device-hub (เมื่อเปิด) · `reachable` = ติดต่อได้ทุกฝั่งที่เปิดอยู่ */
   async listDevices(): Promise<CentralDeviceList> {
-    if (this.cache && Date.now() - this.cache.at < CACHE_TTL_MS) {
-      return this.cache.value;
+    const central = await this.listChannel('central');
+    if (!this.hubClient) return central;
+    const hub = await this.listChannel('hub');
+    const seen = new Set(central.devices.map((d) => d.deviceId));
+    return {
+      ...central,
+      reachable: central.reachable && hub.reachable,
+      error:
+        [central.error, hub.error && `device-hub: ${hub.error}`]
+          .filter(Boolean)
+          .join(' · ') || null,
+      devices: [
+        ...central.devices,
+        ...hub.devices.filter((d) => !seen.has(d.deviceId)),
+      ].sort((a, b) => a.deviceId.localeCompare(b.deviceId)),
+    };
+  }
+
+  private async listChannel(
+    channel: DeliveryChannel,
+  ): Promise<CentralDeviceList> {
+    const client = this.clientOf(channel);
+    if (!client) {
+      return {
+        mode: this.mode,
+        fetchedAt: new Date().toISOString(),
+        reachable: false,
+        error: CentralDeviceService.HUB_DISABLED,
+        devices: [],
+      };
+    }
+    const cached = this.caches[channel];
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      return cached.value;
     }
     // single-flight: คำขอที่มาพร้อมกันตอน cache หมดอายุรอผลของรอบที่กำลังโหลดอยู่ร่วมกัน
     // ไม่ยิง Server กลางซ้ำซ้อน (cache อย่างเดียวกันคำขอที่กำลังวิ่งพร้อมกันไม่ได้)
-    this.inFlight ??= this.fetchDevices()
+    this.inFlight[channel] ??= this.fetchDevices(client)
       .then((value) => {
-        this.cache = { at: Date.now(), value };
+        this.caches[channel] = { at: Date.now(), value };
         return value;
       })
       .finally(() => {
-        this.inFlight = null;
+        this.inFlight[channel] = null;
       });
-    return this.inFlight;
+    return this.inFlight[channel];
   }
 
   async getStatus(): Promise<CentralStatus> {
@@ -142,7 +223,7 @@ export class CentralDeviceService {
   async findDevice(
     deviceId: string,
   ): Promise<{ list: CentralDeviceList; device: CentralDevice | null }> {
-    const list = await this.listDevices();
+    const list = await this.listChannel(await this.channelOf(deviceId));
     return {
       list,
       device: list.devices.find((d) => d.deviceId === deviceId) ?? null,
@@ -158,7 +239,9 @@ export class CentralDeviceService {
     deviceId: string,
   ): Promise<ReportedBoxFields | null> {
     try {
-      const raw = await this.client.getDeviceConfig(deviceId);
+      const client = this.clientOf(await this.channelOf(deviceId));
+      if (!client) return null;
+      const raw = await client.getDeviceConfig(deviceId);
       const settings = raw.reported?.settings;
       if (!settings) return null;
       const fields = omitHiddenConfigFields(flattenSettings(settings));
@@ -180,8 +263,8 @@ export class CentralDeviceService {
     try {
       const target = await this.findConfigTarget(deviceId);
       if ('kind' in target) return null;
-      const { device } = target;
-      const schema = await this.client.getSchema(
+      const { device, client } = target;
+      const schema = await client.getSchema(
         device.hardwareModel,
         device.reportedSchemaVersion,
       );
@@ -206,10 +289,10 @@ export class CentralDeviceService {
   ): Promise<PushConfigOutcome> {
     const target = await this.findConfigTarget(deviceId);
     if ('kind' in target) return target;
-    const device = target.device;
+    const { device, client, channel } = target;
 
     try {
-      const schema = await this.client.getSchema(
+      const schema = await client.getSchema(
         device.hardwareModel,
         device.reportedSchemaVersion,
       );
@@ -217,12 +300,9 @@ export class CentralDeviceService {
       if ('errors' in built) {
         return { kind: 'rejected', reason: built.errors.join(' | ') };
       }
-      const result = await this.client.putDeviceConfig(
-        deviceId,
-        built.settings,
-      );
+      const result = await client.putDeviceConfig(deviceId, built.settings);
       // สถานะกล่องเปลี่ยนแล้ว ไม่ให้หน้าเว็บเห็นข้อมูลเก่าจาก cache
-      this.cache = null;
+      this.caches[channel] = null;
       const commandId = result.command?.command_id;
       if (!commandId) {
         return {
@@ -260,9 +340,9 @@ export class CentralDeviceService {
         ? { kind: 'rejected', reasons: [target.reason] }
         : target;
     }
-    const device = target.device;
+    const { device, client } = target;
     try {
-      const schema = await this.client.getSchema(
+      const schema = await client.getSchema(
         device.hardwareModel,
         device.reportedSchemaVersion,
       );
@@ -287,13 +367,20 @@ export class CentralDeviceService {
   }
 
   /** ตรวจว่ากล่องพร้อมรับ Config (ใช้ร่วม `pushConfig`/`checkConfig`) */
-  private async findConfigTarget(
-    deviceId: string,
-  ): Promise<
-    | { device: ConfigTarget }
+  private async findConfigTarget(deviceId: string): Promise<
+    | {
+        device: ConfigTarget;
+        client: CentralDeviceClient;
+        channel: DeliveryChannel;
+      }
     | { kind: 'rejected'; reason: string }
     | { kind: 'unavailable'; reason: string }
   > {
+    const channel = await this.channelOf(deviceId);
+    const client = this.clientOf(channel);
+    if (!client) {
+      return { kind: 'unavailable', reason: CentralDeviceService.HUB_DISABLED };
+    }
     const { list, device } = await this.findDevice(deviceId);
     if (!list.reachable) {
       return {
@@ -325,6 +412,8 @@ export class CentralDeviceService {
         hardwareModel: device.hardwareModel,
         reportedSchemaVersion: device.reportedSchemaVersion,
       },
+      client,
+      channel,
     };
   }
 
@@ -359,10 +448,15 @@ export class CentralDeviceService {
       };
     }
 
+    const channel = await this.channelOf(deviceId);
+    const client = this.clientOf(channel);
+    if (!client) {
+      return { kind: 'unavailable', reason: CentralDeviceService.HUB_DISABLED };
+    }
     try {
-      const result = await this.client.pushFirmware(deviceId, data, options);
+      const result = await client.pushFirmware(deviceId, data, options);
       // สถานะกล่องเปลี่ยนแล้ว ไม่ให้หน้าเว็บเห็นข้อมูลเก่าจาก cache
-      this.cache = null;
+      this.caches[channel] = null;
       const commandId = result.command?.command_id;
       if (!commandId) {
         return {
@@ -389,8 +483,10 @@ export class CentralDeviceService {
 
   /** ผลล่าสุดของคำสั่งที่เคยสั่งไว้ · ถามไม่ได้ = `unavailable` (ไม่ตัดสิน รอถามใหม่) */
   async getCommandOutcome(commandId: string): Promise<CentralCommandOutcome> {
+    const client = this.clientOfCommand(commandId);
+    if (!client) return { kind: 'unavailable' };
     try {
-      return classifyCentralCommand(await this.client.getCommand(commandId));
+      return classifyCentralCommand(await client.getCommand(commandId));
     } catch (err) {
       if (err instanceof CentralRejectedError) {
         return {
@@ -404,7 +500,11 @@ export class CentralDeviceService {
 
   /** Read full command detail for progress views; caller handles unavailable errors. */
   async getCommand(commandId: string) {
-    return this.client.getCommand(commandId);
+    const client = this.clientOfCommand(commandId);
+    if (!client) {
+      throw new CentralUnavailableError(CentralDeviceService.HUB_DISABLED);
+    }
+    return client.getCommand(commandId);
   }
 
   /**
@@ -422,7 +522,9 @@ export class CentralDeviceService {
     try {
       const { device } = await this.findDevice(deviceId);
       if (!device) return null;
-      const commands = await this.client.listDeviceCommands(deviceId);
+      const client = this.clientOf(await this.channelOf(deviceId));
+      if (!client) return null;
+      const commands = await client.listDeviceCommands(deviceId);
       const match = commands.find(
         (c) =>
           c.action === 'UPDATE_FIRMWARE' &&
@@ -436,12 +538,14 @@ export class CentralDeviceService {
     }
   }
 
-  private async fetchDevices(): Promise<CentralDeviceList> {
+  private async fetchDevices(
+    client: CentralDeviceClient,
+  ): Promise<CentralDeviceList> {
     const base = { mode: this.mode, fetchedAt: new Date().toISOString() };
     try {
       const [gateway, registry] = await Promise.all([
-        this.client.listGatewayDevices(),
-        this.client.listRegistryDevices(),
+        client.listGatewayDevices(),
+        client.listRegistryDevices(),
       ]);
       return {
         ...base,
