@@ -12,7 +12,8 @@ import {
   Min,
 } from 'class-validator';
 import { DeviceModelStatus } from '@prisma/client';
-import { DELIVERY_CHANNELS, DeliveryChannel } from '../delivery-channel';
+import { DELIVERY_CHANNELS } from '../delivery-channel';
+import type { DeliveryChannel } from '../delivery-channel';
 
 /**
  * Body ของ `PATCH /device-models/{id}` — ทุก field optional ส่งมาแค่ตัวที่จะ
