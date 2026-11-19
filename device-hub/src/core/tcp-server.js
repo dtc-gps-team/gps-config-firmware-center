@@ -19,7 +19,8 @@ function parseFirmwareVersion(body) {
 }
 
 function createTcpServer({
-  port, host = '0.0.0.0', devices, log = () => {}, rawLog = () => {},
+  port, host, devices, // host ไม่ระบุ = ฟังทั้ง IPv4 และ IPv6 (ssh tunnel บน Windows ต่อ localhost ทาง ::1)
+  log = () => {}, rawLog = () => {},
   onPacket = () => {}, onOnline = () => {}, onOffline = () => {},
   commandTimeoutMs = 30000, maxConnectionsPerIp = 5, maxJunkBytes = 64 * 1024,
 }) {

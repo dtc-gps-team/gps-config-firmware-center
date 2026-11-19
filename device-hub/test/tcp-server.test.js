@@ -195,3 +195,15 @@ test('กล่องที่ระบุตัวแล้วหลายเ�
   t.after(() => boxes.forEach((b) => b.sock.destroy()));
   for (const imei of many.keys()) assert.ok(server.isOnline(imei), imei);
 });
+
+test('ค่าเริ่มต้นรับได้ทั้ง IPv4 และ IPv6 (ssh tunnel บน Windows ส่ง localhost มาทาง ::1)', async (t) => {
+  const server = createTcpServer({ port: 0, devices, log: () => {} });
+  const port = await server.listen();
+  t.after(() => server.close());
+  for (const host of ['127.0.0.1', '::1']) {
+    await new Promise((resolve, reject) => {
+      const s = net.connect(port, host, () => { s.destroy(); resolve(); });
+      s.on('error', reject);
+    });
+  }
+});
