@@ -174,15 +174,22 @@ describe('CentralDeviceService: เลือกทางส่งตามรุ
     expect(list.devices.map((d) => d.deviceId)).toEqual([TA, ESP].sort());
   });
 
-  it('device-hub ล่ม -> reachable false มีข้อความของ hub แต่รายการของ Server กลางยังอยู่', async () => {
+  it('device-hub ล่ม -> สถานะ Server กลางยังติดต่อได้ (หน้าเว็บของ ESP32 ไม่หาย) รายการเหลือเฉพาะฝั่ง Server กลาง', async () => {
     const { hub, service } = setup();
     (hub.listGatewayDevices as jest.Mock).mockRejectedValue(
       new CentralUnavailableError('hub ล่ม'),
     );
     const list = await service.listDevices();
-    expect(list.reachable).toBe(false);
-    expect(list.error).toContain('hub ล่ม');
+    expect(list.reachable).toBe(true);
+    expect(list.error).toBeNull();
+    expect((await service.getStatus()).reachable).toBe(true);
     expect(list.devices.map((d) => d.deviceId)).toEqual([ESP]);
+    // กล่องฝั่ง hub ได้ unavailable พร้อมเหตุผลของ hub (ไม่ใช่ "ไม่รู้จักกล่อง")
+    const hubPush = await service.pushConfig(TA, {
+      'meitrack.track_interval_sec': 60,
+    });
+    expect(hubPush.kind).toBe('unavailable');
+    expect((hubPush as { reason: string }).reason).toContain('hub ล่ม');
     // กล่องฝั่ง Server กลางยังส่งได้ตามปกติ
     expect(
       (await service.pushConfig(ESP, { 'gps.send_interval_sec': 10 })).kind,

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
   CENTRAL_DEVICE_CLIENT,
@@ -103,6 +103,7 @@ const CACHE_TTL_MS = 3000;
  */
 @Injectable()
 export class CentralDeviceService {
+  private readonly logger = new Logger(CentralDeviceService.name);
   // cache / single-flight แยกต่อทางส่ง (docs/33) — device-hub ล่มไม่ทำให้รายการของ Server กลางหาย
   private readonly caches: Record<
     DeliveryChannel,
@@ -159,19 +160,22 @@ export class CentralDeviceService {
       : 'mock';
   }
 
-  /** ทุกเครื่องจาก Server กลาง + device-hub (เมื่อเปิด) · `reachable` = ติดต่อได้ทุกฝั่งที่เปิดอยู่ */
+  /**
+   * ทุกเครื่องจาก Server กลาง + device-hub (เมื่อเปิด) · `reachable` / `error` เป็นของ **Server กลางเท่านั้น**
+   * — หน้าเว็บใช้ค่านี้ตัดสินสถานะ Server กลาง ถ้า device-hub ล่มแล้วทำให้เป็น false หน้าสรุปของกล่อง ESP32
+   * จะหายทั้งที่ Server กลางปกติ (docs/33 §1 ข้อ 5) · hub ล่ม = รายการขาดกล่องฝั่ง hub ไป และคำสั่งถึงกล่อง
+   * เหล่านั้นได้ `unavailable` พร้อมเหตุผลของ hub (`findConfigTarget` อ่านรายการของ hub เอง)
+   */
   async listDevices(): Promise<CentralDeviceList> {
     const central = await this.listChannel('central');
     if (!this.hubClient) return central;
     const hub = await this.listChannel('hub');
+    if (!hub.reachable) {
+      this.logger.warn(`ติดต่อ device-hub ไม่ได้: ${hub.error ?? ''}`);
+    }
     const seen = new Set(central.devices.map((d) => d.deviceId));
     return {
       ...central,
-      reachable: central.reachable && hub.reachable,
-      error:
-        [central.error, hub.error && `device-hub: ${hub.error}`]
-          .filter(Boolean)
-          .join(' · ') || null,
       devices: [
         ...central.devices,
         ...hub.devices.filter((d) => !seen.has(d.deviceId)),
