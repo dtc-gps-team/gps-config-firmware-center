@@ -160,7 +160,7 @@ test('สายใหม่ของ IMEI เดิมแทนสายเก�
   assert.deepStrictEqual(await server.sendCommand(SAMPLE_IMEI, 'A12,6'), { type: 'A12', body: 'OK' });
 });
 
-test('IP เดียวเปิดสายเกิน 5 สายพร้อมกัน → สายที่ 6 ถูกตัด', async (t) => {
+test('IP เดียวเปิดสายที่ยังไม่ระบุตัวเกิน 5 สาย → สายที่ 6 ถูกตัด', async (t) => {
   const { server, port } = await startServer();
   t.after(() => server.close());
   const boxes = [];
@@ -178,4 +178,20 @@ test('ข้อมูลขยะไม่มี $$ เกิน 64 KB → ต�
   const box = fakeBox(port);
   box.sock.write(Buffer.alloc(70 * 1024, 0x41));
   await box.closed;
+});
+
+test('กล่องที่ระบุตัวแล้วหลายเครื่องจาก IP เดียวกัน (ซิมหลัง CGNAT) ไม่ถูกตัด', async (t) => {
+  const many = new Map();
+  for (let i = 1; i <= 8; i++) many.set(`35000000000000${i}`.slice(-15), { model: 'TA255L', telemetryKey: `k${i}` });
+  const { server, port, events } = await startServer({ devices: many });
+  t.after(() => server.close());
+  const boxes = [];
+  for (const imei of many.keys()) {
+    const b = fakeBox(port, { answer: e91 });
+    b.sock.write(cceFrame({ imei }));
+    boxes.push(b);
+    await until(() => events.online.includes(imei));
+  }
+  t.after(() => boxes.forEach((b) => b.sock.destroy()));
+  for (const imei of many.keys()) assert.ok(server.isOnline(imei), imei);
 });

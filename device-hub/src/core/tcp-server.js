@@ -26,7 +26,8 @@ function createTcpServer({
   const sessions = new Map(); // imei -> conn
   const lastSeen = new Map(); // imei -> ISO
   const firmware = new Map(); // imei -> version
-  const perIp = new Map(); // ip -> จำนวนสายที่เปิดอยู่
+  // ip -> จำนวนสายที่ยังไม่ระบุตัว · สายที่ระบุตัวเป็นกล่องในทะเบียนแล้วไม่นับ (ซิมหลายเครื่องอาจออก IP เดียวกันหลัง CGNAT)
+  const perIp = new Map();
   const sockets = new Set(); // ทุกสายที่เปิดอยู่ (รวมสายที่ยังไม่ระบุตัว) — ปิดให้หมดตอน close()
   let nextId = 0x41;
 
@@ -53,8 +54,17 @@ function createTcpServer({
     conn.pending.clear();
   }
 
+  function release(conn) {
+    if (!conn.counted) return;
+    conn.counted = false;
+    const left = (perIp.get(conn.ip) ?? 1) - 1;
+    if (left <= 0) perIp.delete(conn.ip);
+    else perIp.set(conn.ip, left);
+  }
+
   function goOnline(conn, imei) {
     conn.imei = imei;
+    release(conn);
     const old = sessions.get(imei);
     sessions.set(imei, conn);
     if (old && old !== conn) old.socket.destroy(); // สายใหม่แทนสายเก่า
@@ -110,12 +120,10 @@ function createTcpServer({
     const ip = socket.remoteAddress;
     const count = (perIp.get(ip) ?? 0) + 1;
     perIp.set(ip, count);
-    const conn = { socket, imei: null, pending: new Map(), buf: Buffer.alloc(0), junk: 0, remote: `${ip}:${socket.remotePort}` };
+    const conn = { socket, ip, counted: true, imei: null, pending: new Map(), buf: Buffer.alloc(0), junk: 0, remote: `${ip}:${socket.remotePort}` };
     socket.on('close', () => {
       sockets.delete(socket);
-      const left = (perIp.get(ip) ?? 1) - 1;
-      if (left <= 0) perIp.delete(ip);
-      else perIp.set(ip, left);
+      release(conn);
       failAll(conn, codedError('DEVICE_NO_REPLY', 'การเชื่อมต่อปิดก่อนกล่องตอบ'));
       if (conn.imei && sessions.get(conn.imei) === conn) {
         sessions.delete(conn.imei);
@@ -125,7 +133,7 @@ function createTcpServer({
     });
     socket.on('error', (e) => log(`socket error ${e.message}`));
     if (count > maxConnectionsPerIp) {
-      log(`ปฏิเสธการเชื่อมต่อจาก ${ip}: เปิดค้างเกิน ${maxConnectionsPerIp} สาย`);
+      log(`ปฏิเสธการเชื่อมต่อจาก ${ip}: มีสายที่ยังไม่ระบุตัวค้างเกิน ${maxConnectionsPerIp} สาย`);
       socket.destroy();
       return;
     }
