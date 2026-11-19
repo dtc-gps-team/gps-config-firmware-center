@@ -9,6 +9,7 @@ const { isDeepStrictEqual } = require('node:util');
 const TRACK_BY_TIME = 35;
 const HINT_EVENTS = new Set([21, 81]); // ออกนอก geofence / กล่องถูกถอด → กล่องใช้รอบส่งอื่นแทน A12
 const CLOCK_SKEW_MS = 5000; // ยอมให้นาฬิกากล่องกับเครื่องเราต่างกันได้
+const MISMATCHES_TO_FAIL = 3; // ช่วงห่างไม่ตรงติดกันกี่ช่วงจึงตัดสินว่าล้ม (กันช่องว่างจากกล่องต่อสายใหม่)
 
 function createExecutor({ queue, tcp, parseReadback, now = Date.now, log = () => {}, maxAttempts = 3, toleranceSec = 5 }) {
   const running = new Set(); // deviceId ที่กำลังทำงานอยู่
@@ -47,15 +48,22 @@ function createExecutor({ queue, tcp, parseReadback, now = Date.now, log = () =>
     const w = watches.get(deviceId);
     if (!w) return;
     if (HINT_EVENTS.has(packet.eventCode)) w.hint = true;
-    if (packet.eventCode !== TRACK_BY_TIME || meta.remainingCache > 0 || !packet.time) return;
+    if (packet.eventCode !== TRACK_BY_TIME || !packet.time) return;
     const t = Date.parse(packet.time);
-    if (!(t >= w.ackAt - CLOCK_SKEW_MS)) return; // ข้อมูลเก่าก่อนกล่องตอบรับ
+    // ตัดสินจากเวลาของกล่อง ไม่ใช่ remainingCache: รอบที่กล่องส่งย้อนหลังหลังต่อสายใหม่ก็เป็นหลักฐานได้
+    // ถ้าเวลาอยู่หลังการตั้งค่า · ข้อมูลที่เวลาก่อนตั้งค่าไม่นับ
+    if (!(t >= w.ackAt - CLOCK_SKEW_MS) || w.times.includes(t)) return;
     w.times.push(t);
-    // แพ็กเก็ตแรกหลังตั้งค่าเป็นรายงานทันทีจากการตั้งค่า ไม่ใช่รอบปกติ → ใช้ช่วงห่างของแพ็กเก็ตที่ 2 กับ 3
-    if (w.times.length < 3) return;
-    const gap = Math.round((w.times[2] - w.times[1]) / 1000);
-    if (Math.abs(gap - w.targetSec) <= toleranceSec) w.resolve({ ok: true, detail: `ยืนยันจากรอบส่งจริง ${gap} วิ` });
-    else w.resolve({ ok: false, message: `กล่องตอบรับแต่รอบส่งจริงไม่ตรง (ตั้ง ${w.targetSec} วิ ได้ ${gap} วิ)${hintText(w)}` });
+    w.times.sort((a, b) => a - b);
+    // แพ็กเก็ตแรกหลังตั้งค่าเป็นรายงานทันทีจากการตั้งค่า ไม่ใช่รอบปกติ → ดูช่วงห่างของแพ็กเก็ตถัดๆ ไป
+    const gaps = [];
+    for (let i = 2; i < w.times.length; i++) gaps.push(Math.round((w.times[i] - w.times[i - 1]) / 1000));
+    const match = gaps.find((g) => Math.abs(g - w.targetSec) <= toleranceSec);
+    if (match !== undefined) {
+      w.resolve({ ok: true, detail: `ยืนยันจากรอบส่งจริง ${match} วิ` });
+    } else if (gaps.length >= MISMATCHES_TO_FAIL) {
+      w.resolve({ ok: false, message: `กล่องตอบรับแต่รอบส่งจริงไม่ตรง (ตั้ง ${w.targetSec} วิ ได้ ${gaps.join(', ')} วิ)${hintText(w)}` });
+    }
   }
 
   function checkDeadlines() {
@@ -135,11 +143,22 @@ function createExecutor({ queue, tcp, parseReadback, now = Date.now, log = () =>
       const job = queue.nextRunnable(deviceId);
       if (!job) continue;
       running.add(deviceId);
-      runJob(job).finally(() => running.delete(deviceId)); // ไม่รอ: การยืนยันรอบส่งใช้เวลาหลายนาที
+      runJob(job)
+        .catch((err) => log(`งาน ${job.command_id} หยุดกลางทาง (บันทึกคิวไม่ได้?): ${err.message}`))
+        .finally(() => running.delete(deviceId)); // ไม่รอ: การยืนยันรอบส่งใช้เวลาหลายนาที
     }
   }
 
-  return { tick, onPacket };
+  // ห้าม throw ออกไป — error ที่หลุดจาก setInterval ทำให้ hub ทั้งตัวล่ม (เช่นไฟล์คิวถูก OneDrive/antivirus ล็อกชั่วคราว)
+  async function safeTick() {
+    try {
+      await tick();
+    } catch (err) {
+      log(`รอบตรวจคิวผิดพลาด: ${err.message}`);
+    }
+  }
+
+  return { tick: safeTick, onPacket };
 }
 
 module.exports = { createExecutor };

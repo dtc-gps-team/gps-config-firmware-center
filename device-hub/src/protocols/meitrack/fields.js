@@ -7,6 +7,7 @@
 
 const MODEL = 'TA255L';
 const SCHEMA_VERSION = 1;
+const MAX_VERIFIED_INTERVAL_SEC = 300;
 
 const GROUPS = [
   {
@@ -15,8 +16,9 @@ const GROUPS = [
       { key: 'meitrack.track_interval_sec', label: 'รอบส่งพิกัด ตั้งทีละ 10 วินาที 0 = ปิด (วินาที)', type: 'integer', min: 0, max: 655350, default: 60, step: 10 },
     ],
     toCommand: (v) => `A12,${v.track_interval_sec / 10}`,
-    // ยืนยันจากช่วงห่างของรายงานจริง · ปิด (0) ดูจากรอบส่งไม่ได้ จึงยืนยันแค่กล่องตอบรับ
-    verify: (v) => (v.track_interval_sec === 0 ? 'ack' : 'interval'),
+    // ยืนยันจากช่วงห่างของรายงานจริง · ปิด (0) ดูจากรอบส่งไม่ได้ · รอบยาวเกิน 5 นาทีต้องรอหลายชั่วโมงถึงวัน
+    // ระหว่างนั้นคำสั่งอื่นของกล่องนี้ส่งไม่ได้ → ทั้งสองกรณียืนยันแค่กล่องตอบรับ
+    verify: (v) => (v.track_interval_sec === 0 || v.track_interval_sec > MAX_VERIFIED_INTERVAL_SEC ? 'ack' : 'interval'),
   },
   {
     id: 'idling', // §3.22 — ส่ง B14 เปล่าเพื่ออ่านค่าปัจจุบันกลับได้

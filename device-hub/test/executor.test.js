@@ -96,25 +96,49 @@ test('interval ตรง: ข้ามแพ็กเก็ตแรก แล�
   assert.ok(done.events.at(-1).details.includes('60'));
 });
 
-test('interval ไม่นับแพ็กเก็ตย้อนหลัง (remainingCache > 0) และแพ็กเก็ตที่เวลาก่อนตอบรับ', async () => {
+test('interval ไม่นับแพ็กเก็ตที่เวลากล่องก่อนตอบรับ (ข้อมูลเก่าที่ค้างในกล่อง)', async () => {
   const s = setup();
   const job = s.enqueue({ meitrack: { track_interval_sec: 60 } });
   await s.executor.tick();
   await s.settle(job, (j) => j.status === 'ACKED');
-  s.executor.onPacket(DEV, s.packet(35, 1), { remainingCache: 0 }); // ข้าม (ครั้งแรก)
-  s.executor.onPacket(DEV, s.packet(35, 31), { remainingCache: 5 }); // ข้อมูลค้าง ไม่นับ
-  s.executor.onPacket(DEV, s.packet(35, -600), { remainingCache: 0 }); // เวลาก่อนตอบรับ ไม่นับ
+  s.executor.onPacket(DEV, s.packet(35, -600), { remainingCache: 3 }); // ค้างจากก่อนตั้งค่า ไม่นับ
+  s.executor.onPacket(DEV, s.packet(35, -570), { remainingCache: 2 });
+  s.executor.onPacket(DEV, s.packet(35, -540), { remainingCache: 0 });
+  s.executor.onPacket(DEV, s.packet(35, 1), { remainingCache: 0 }); // ข้าม (ครั้งแรกหลังตั้งค่า)
   s.executor.onPacket(DEV, s.packet(35, 61), { remainingCache: 0 });
   s.executor.onPacket(DEV, s.packet(35, 121), { remainingCache: 0 });
   assert.strictEqual((await s.settle(job)).status, 'SUCCESS');
 });
 
-test('interval ไม่ตรง (ห่าง 30 วิ ตั้ง 60) → FAILED + NOT_VERIFIED', async () => {
+test('interval: กล่องต่อสายใหม่แล้วส่งรอบที่พลาดย้อนหลัง (remainingCache > 0) → ยังยืนยันได้ ไม่ล้มเพราะช่องว่าง', async () => {
   const s = setup();
   const job = s.enqueue({ meitrack: { track_interval_sec: 60 } });
   await s.executor.tick();
   await s.settle(job, (j) => j.status === 'ACKED');
-  for (const t of [1, 31, 61]) s.executor.onPacket(DEV, s.packet(35, t), { remainingCache: 0 });
+  s.executor.onPacket(DEV, s.packet(35, 1), { remainingCache: 0 });
+  s.executor.onPacket(DEV, s.packet(35, 61), { remainingCache: 0 });
+  s.executor.onPacket(DEV, s.packet(35, 121), { remainingCache: 1 }); // ส่งย้อนหลังหลังต่อใหม่
+  s.executor.onPacket(DEV, s.packet(35, 181), { remainingCache: 0 });
+  assert.strictEqual((await s.settle(job)).status, 'SUCCESS');
+});
+
+test('interval: แพ็กเก็ตมาสลับลำดับ / ซ้ำ → เรียงตามเวลากล่องก่อนคำนวณ', async () => {
+  const s = setup();
+  const job = s.enqueue({ meitrack: { track_interval_sec: 60 } });
+  await s.executor.tick();
+  await s.settle(job, (j) => j.status === 'ACKED');
+  for (const t of [1, 121, 121, 61]) s.executor.onPacket(DEV, s.packet(35, t), { remainingCache: 0 });
+  assert.strictEqual((await s.settle(job)).status, 'SUCCESS');
+});
+
+test('interval ไม่ตรง (ห่าง 30 วิ ตั้ง 60) ติดกัน 3 ช่วง → FAILED + NOT_VERIFIED', async () => {
+  const s = setup();
+  const job = s.enqueue({ meitrack: { track_interval_sec: 60 } });
+  await s.executor.tick();
+  await s.settle(job, (j) => j.status === 'ACKED');
+  for (const t of [1, 31, 61, 91]) s.executor.onPacket(DEV, s.packet(35, t), { remainingCache: 0 });
+  assert.strictEqual(s.status(job).status, 'ACKED', 'ช่องว่างไม่ตรง 2 ช่วงยังไม่ตัดสิน');
+  s.executor.onPacket(DEV, s.packet(35, 121), { remainingCache: 0 });
   const done = await s.settle(job);
   assert.strictEqual(done.error_code, 'NOT_VERIFIED');
   assert.match(done.error_message, /30/);
@@ -188,4 +212,26 @@ test('tick ซ้อนกันไม่ส่งงานเดียวกั
   assert.deepStrictEqual(s.sent, ['B31,10']);
   release();
   assert.strictEqual((await s.settle(job)).status, 'SUCCESS');
+});
+
+test('บันทึกคิวไม่ได้ (เช่นไฟล์ถูกล็อก) → tick ไม่ throw และไม่มี unhandled rejection ที่ทำให้ hub ล่ม', async () => {
+  const unhandled = [];
+  const onUnhandled = (err) => unhandled.push(err);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const s = setup();
+    s.enqueue({ meitrack: { led_off: true } });
+    const broken = new Error('EPERM: rename queue.json');
+    const transition = s.queue.transition;
+    s.queue.transition = () => { throw broken; };
+    await s.executor.tick();
+    await wait(30);
+    s.queue.expireOld = () => { throw broken; };
+    await s.executor.tick();
+    await wait(30);
+    s.queue.transition = transition;
+    assert.deepStrictEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
 });

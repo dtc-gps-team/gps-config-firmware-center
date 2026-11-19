@@ -100,3 +100,9 @@ test('ไม่มีคำสั่งต้องห้ามในไฟล�
     assert.ok(!src.includes(banned), `พบ ${banned}`);
   }
 });
+
+test('A12 รอบยาวเกิน 5 นาที → ยืนยันแค่กล่องตอบรับ (ไม่ค้างคิวรอเป็นวัน)', () => {
+  assert.strictEqual(planCommands({ meitrack: { track_interval_sec: 300 } }).steps[0].verify, 'interval');
+  assert.strictEqual(planCommands({ meitrack: { track_interval_sec: 310 } }).steps[0].verify, 'ack');
+  assert.strictEqual(planCommands({ meitrack: { track_interval_sec: 86400 } }).steps[0].verify, 'ack');
+});
