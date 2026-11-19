@@ -14,6 +14,7 @@ import {
 } from './central-device.client';
 import { CentralDeviceController } from './central-device.controller';
 import { CentralDeviceService } from './central-device.service';
+import { deviceHubClientProvider } from './device-hub-client.provider';
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
@@ -26,6 +27,8 @@ const DEFAULT_TIMEOUT_MS = 5000;
   controllers: [CentralDeviceController],
   providers: [
     CentralDeviceService,
+    // device-hub (docs/33) — env `DEVICE_HUB_MODE` ค่าเริ่มต้น mock = ปิด
+    deviceHubClientProvider,
     {
       provide: CENTRAL_DEVICE_CLIENT,
       useFactory: (nestConfig: NestConfigService): CentralDeviceClient => {
