@@ -55,6 +55,49 @@ ssh -p 443 -R0:localhost:5000 tcp@a.pinggy.io
 - ชะลอเองไม่เกิน 60 ครั้ง/นาที/เครื่อง และ 240 ครั้ง/นาทีรวม (backend จำกัด 60/เครื่อง และ 300/IP)
 - backend ล่ม → เก็บรอส่งใหม่ (สูงสุด 5000 จุดต่อเครื่อง) · backend ปฏิเสธ (4xx) → ทิ้งจุดนั้นพร้อม log
 
+## รับ Config จาก backend
+
+เปิดเมื่อตั้ง `DEVICE_HUB_ADMIN_USERNAME` และ `DEVICE_HUB_ADMIN_PASSWORD` — HTTP API ใช้ path และรูป JSON เดียวกับ Server กลาง ESP32 backend จึงใช้ client ตัวเดิมได้ (ตั้ง `DEVICE_HUB_MODE=real`, `DEVICE_HUB_BASE_URL`, user/pass เดียวกันฝั่ง backend)
+
+| env | ค่าเริ่มต้น | ใช้ทำอะไร |
+|---|---|---|
+| `DEVICE_HUB_HTTP_HOST` | `127.0.0.1` | ฟังเฉพาะในเครื่อง — เปิดออกเครือข่ายเมื่อ backend อยู่คนละเครื่องเท่านั้น |
+| `DEVICE_HUB_HTTP_PORT` | `8090` | |
+| `DEVICE_HUB_ADMIN_USERNAME` / `DEVICE_HUB_ADMIN_PASSWORD` | (ไม่ตั้ง = ปิดส่วนนี้) | backend ใช้ login |
+| `DEVICE_HUB_DATA_DIR` | `data` | เก็บคิวคำสั่ง (`queue.json`) |
+| `DEVICE_HUB_QUEUE_TTL_HOURS` | `24` | คำสั่งที่รอกล่องเกินนี้ถือว่าข้าม (กล่องออฟไลน์) |
+
+ค่าที่ตั้งได้ของแต่ละรุ่นอยู่ใน `src/protocols/<โปรโตคอล>/fields.js` ที่เดียว · หลังแก้ตารางให้รัน `npm run schema` แล้วนำเข้า backend:
+
+```bash
+cd backend
+npm run import:central-schema -- --file ../device-hub/schemas/TA255L-1.json --as TA255L --dry-run
+```
+
+### สถานะคำสั่ง
+
+| สถานะ | ความหมาย | backend เห็นเป็น |
+|---|---|---|
+| `QUEUED` | รอกล่องเชื่อมต่อ / รอส่งใหม่ | กำลังส่ง |
+| `SENT` | ส่งแล้ว รอกล่องตอบ | กำลังส่ง |
+| `ACKED` | กล่องตอบรับ กำลังยืนยันผล | กำลังส่ง |
+| `SUCCESS` | ยืนยันแล้ว (ตอบรับ / อ่านค่ากลับตรง / รอบส่งจริงตรง) | สำเร็จ |
+| `FAILED` + `DEVICE_REJECTED` | กล่องตอบ Error | ล้มเหลว (ไม่ลองซ้ำ) |
+| `FAILED` + `NOT_VERIFIED` | กล่องตอบรับแต่ค่าไม่ถูกใช้ (เช่น อยู่นอก geofence) | ล้มเหลว |
+| `FAILED` + `DEVICE_NO_REPLY` | ส่งไม่ถึงกล่อง 3 ครั้ง | ล้มเหลว |
+| `FAILED` + `SUPERSEDED` | มีคำสั่งใหม่ของกล่องเดียวกันมาแทนก่อนส่ง | ข้าม |
+| `EXPIRED` + `TTL_EXPIRED` | กล่องไม่ต่อเข้ามาภายในเวลา | ข้าม (กล่องออฟไลน์) |
+
+## เพิ่มกล่องรุ่นหรือโปรโตคอลใหม่
+
+- **รุ่นใหม่ โปรโตคอลเดิม:** เพิ่มเครื่องใน `devices.json` (ใส่ `model`) และเพิ่มตารางค่าของรุ่นนั้น
+- **โปรโตคอลใหม่:** สร้าง `src/protocols/<ชื่อ>/` ที่มี 3 ส่วนแบบเดียวกับ `meitrack/`
+  - `frame.js` — แยก frame จาก TCP, สร้างคำสั่ง, แปลงข้อมูลพิกัด
+  - `telemetry.js` — `toTelemetryReport(packet, ctx)` แปลงเป็นรูปที่ backend รับ
+  - `fields.js` — `MODEL`, `SCHEMA_VERSION`, `schema()`, `planCommands(settings)`, `parseReadback(group, body)`
+  - test ด้วยข้อมูลตัวอย่างจากเอกสารผู้ผลิตเท่านั้น (ห้ามใช้ IMEI / พิกัด / log จากกล่องจริง — repo เป็น public)
+- ไม่มีช่องส่งคำสั่งดิบ: ค่าที่ไม่อยู่ใน `fields.js` ส่งเข้ากล่องไม่ได้ · ห้ามใส่คำสั่งเปลี่ยนเซิร์ฟเวอร์ / ตัดน้ำมัน / คืนค่าโรงงาน
+
 ## เอกสารโปรโตคอล
 
 อ้างอิง "TA255 GPRS Protocol V1.0 (2022-09-21)" ของ Meitrack — เอกสาร Confidential **ห้ามใส่ใน repo** ขอจากพี่เลี้ยง
