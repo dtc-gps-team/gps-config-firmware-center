@@ -274,6 +274,9 @@ const NON_RETRYABLE_ERROR_CODES = new Set([
   'DOWNLOAD_URL_INVALID', // PUBLIC_BASE_URL ของ delivery-server ผิด ต้องแก้ที่ Server
   // firmware ในกล่องไม่รู้จักคำสั่ง
   'UNSUPPORTED_ACTION',
+  // device-hub (docs/33): กล่องตอบ Error กับคำสั่งตั้งค่า — ส่งค่าเดิมซ้ำก็ถูกปฏิเสธอีก
+  // (NOT_VERIFIED / DEVICE_NO_REPLY ของ hub ยังลองใหม่ได้: กล่องอาจกลับเข้าเขตหรือต่อสายกลับมา)
+  'DEVICE_REJECTED',
 ]);
 
 /** รหัสที่กล่องต่อท้ายด้วยชื่อ field (`device_config.h`) — ค่า Config ที่ firmware ไม่รองรับหรือไม่ผ่าน */
