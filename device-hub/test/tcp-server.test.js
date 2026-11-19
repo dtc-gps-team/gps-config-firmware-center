@@ -1,0 +1,181 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const net = require('node:net');
+const { createTcpServer } = require('../src/core/tcp-server');
+const { SAMPLE_IMEI, cceFrame, replyFrame } = require('./helpers/meitrack-fixtures');
+
+const devices = new Map([[SAMPLE_IMEI, { model: 'TA255L', telemetryKey: 'k' }]]);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function until(fn, ms = 2000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (fn()) return;
+    await wait(10);
+  }
+  throw new Error('หมดเวลารอเงื่อนไข');
+}
+
+async function startServer(opts = {}) {
+  const events = { online: [], offline: [], packets: [] };
+  const server = createTcpServer({
+    port: 0, host: '127.0.0.1', devices, log: () => {}, commandTimeoutMs: 300,
+    onOnline: (imei) => events.online.push(imei),
+    onOffline: (imei) => events.offline.push(imei),
+    onPacket: (imei, packet, meta) => events.packets.push({ imei, packet, meta }),
+    ...opts,
+  });
+  const port = await server.listen();
+  return { server, port, events };
+}
+
+// กล่องปลอม: answer(code, args) คืน body ที่จะตอบ หรือ null = ไม่ตอบ
+function fakeBox(port, { answer = () => null } = {}) {
+  const sock = net.connect(port, '127.0.0.1');
+  const received = [];
+  let buf = '';
+  sock.on('data', (d) => {
+    buf += d.toString('latin1');
+    let m;
+    while ((m = buf.match(/^@@(.)\d+,(\d+),([^*]*)\*[0-9A-F]{2}\r\n/))) {
+      buf = buf.slice(m[0].length);
+      const [code, ...args] = m[3].split(',');
+      received.push(m[3]);
+      const body = answer(code, args, m[1]);
+      if (body !== null) sock.write(replyFrame(m[1], code, body, m[2]));
+    }
+  });
+  sock.on('error', () => {});
+  const closed = new Promise((r) => sock.on('close', r));
+  return { sock, received, closed };
+}
+
+const e91 = (code) => (code === 'E91' ? 'TA255L-V028,12345678' : null);
+
+test('กล่องในทะเบียนต่อได้ → onOnline และได้แพ็กเก็ตพร้อม remainingCache', async (t) => {
+  const { server, port, events } = await startServer();
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: e91 });
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame({ remainingCache: 3 }));
+  await until(() => events.packets.length === 1);
+  assert.deepStrictEqual(events.online, [SAMPLE_IMEI]);
+  assert.ok(server.isOnline(SAMPLE_IMEI));
+  assert.ok(server.lastSeenAt(SAMPLE_IMEI));
+  assert.strictEqual(events.packets[0].packet.lat, 22.513638);
+  assert.strictEqual(events.packets[0].meta.remainingCache, 3);
+});
+
+test('IMEI ไม่อยู่ในทะเบียน → ถูกตัดสาย ไม่มี onOnline', async (t) => {
+  const { server, port, events } = await startServer();
+  t.after(() => server.close());
+  const box = fakeBox(port);
+  box.sock.write(cceFrame({ imei: '999999999999999' }));
+  await box.closed;
+  assert.deepStrictEqual(events.online, []);
+  assert.strictEqual(events.packets.length, 0);
+});
+
+test('sendCommand ส่ง @@ ถูกรูปแบบและได้คำตอบ', async (t) => {
+  const { server, port } = await startServer();
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: (code) => (code === 'A12' ? 'OK' : e91(code)) });
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  const reply = await server.sendCommand(SAMPLE_IMEI, 'A12,6');
+  assert.deepStrictEqual(reply, { type: 'A12', body: 'OK' });
+  assert.ok(box.received.includes(`A12,6`));
+});
+
+test('คำตอบที่เป็นแพ็กเก็ตพิกัด (A10) คืน type CCE และยังส่งแพ็กเก็ตต่อ', async (t) => {
+  const { server, port, events } = await startServer();
+  t.after(() => server.close());
+  let box;
+  box = fakeBox(port, {
+    answer: (code, args, id) => {
+      if (code === 'A10') {
+        box.sock.write(cceFrame({ identifier: id }));
+        return null;
+      }
+      return e91(code);
+    },
+  });
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  const reply = await server.sendCommand(SAMPLE_IMEI, 'A10');
+  assert.strictEqual(reply.type, 'CCE');
+  await until(() => events.packets.length === 2);
+});
+
+test('sendCommand ตอนไม่มีสาย → DEVICE_OFFLINE', async (t) => {
+  const { server } = await startServer();
+  t.after(() => server.close());
+  await assert.rejects(server.sendCommand(SAMPLE_IMEI, 'A12,6'), { code: 'DEVICE_OFFLINE' });
+});
+
+test('กล่องไม่ตอบใน commandTimeoutMs → DEVICE_NO_REPLY', async (t) => {
+  const { server, port } = await startServer();
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: e91 });
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  await assert.rejects(server.sendCommand(SAMPLE_IMEI, 'A12,6'), { code: 'DEVICE_NO_REPLY' });
+});
+
+test('สายหลุดระหว่างรอคำตอบ → DEVICE_NO_REPLY และ onOffline', async (t) => {
+  const { server, port, events } = await startServer({ commandTimeoutMs: 5000 });
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: (code) => { if (code === 'A12') box.sock.destroy(); return e91(code); } });
+  box.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  await assert.rejects(server.sendCommand(SAMPLE_IMEI, 'A12,6'), { code: 'DEVICE_NO_REPLY' });
+  await until(() => events.offline.length === 1);
+  assert.strictEqual(server.isOnline(SAMPLE_IMEI), false);
+});
+
+test('ต่อแล้วส่ง E91 เองและเก็บเวอร์ชัน firmware', async (t) => {
+  const { server, port } = await startServer();
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: e91 });
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame());
+  await until(() => server.firmwareVersion(SAMPLE_IMEI) !== null);
+  assert.strictEqual(server.firmwareVersion(SAMPLE_IMEI), 'V028');
+});
+
+test('สายใหม่ของ IMEI เดิมแทนสายเก่า', async (t) => {
+  const { server, port } = await startServer();
+  t.after(() => server.close());
+  const first = fakeBox(port, { answer: e91 });
+  first.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  const second = fakeBox(port, { answer: (code) => (code === 'A12' ? 'OK' : e91(code)) });
+  t.after(() => second.sock.destroy());
+  second.sock.write(cceFrame());
+  await first.closed;
+  assert.deepStrictEqual(await server.sendCommand(SAMPLE_IMEI, 'A12,6'), { type: 'A12', body: 'OK' });
+});
+
+test('IP เดียวเปิดสายเกิน 5 สายพร้อมกัน → สายที่ 6 ถูกตัด', async (t) => {
+  const { server, port } = await startServer();
+  t.after(() => server.close());
+  const boxes = [];
+  for (let i = 0; i < 5; i++) boxes.push(fakeBox(port));
+  t.after(() => boxes.forEach((b) => b.sock.destroy()));
+  await wait(100);
+  const sixth = fakeBox(port);
+  await sixth.closed;
+  assert.ok(boxes.every((b) => !b.sock.destroyed));
+});
+
+test('ข้อมูลขยะไม่มี $$ เกิน 64 KB → ตัดสาย', async (t) => {
+  const { server, port } = await startServer();
+  t.after(() => server.close());
+  const box = fakeBox(port);
+  box.sock.write(Buffer.alloc(70 * 1024, 0x41));
+  await box.closed;
+});
