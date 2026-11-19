@@ -67,11 +67,11 @@ ssh -p 443 -R0:localhost:5000 tcp@a.pinggy.io
 | `DEVICE_HUB_DATA_DIR` | `data` | เก็บคิวคำสั่ง (`queue.json`) |
 | `DEVICE_HUB_QUEUE_TTL_HOURS` | `24` | คำสั่งที่รอกล่องเกินนี้ถือว่าข้าม (กล่องออฟไลน์) |
 
-ค่าที่ตั้งได้ของแต่ละรุ่นอยู่ใน `src/protocols/<โปรโตคอล>/fields.js` ที่เดียว · หลังแก้ตารางให้รัน `npm run schema` แล้วนำเข้า backend:
+ต้องใส่ `--protocol TCP` ให้ตรงกับรุ่น (ค่าเริ่มต้นของสคริปต์คือ HTTP ของ ESP32 — ใส่ผิด field จะไม่ขึ้นในหน้าสร้าง Config) · ค่าที่ตั้งได้ของแต่ละรุ่นอยู่ใน `src/protocols/<โปรโตคอล>/fields.js` ที่เดียว · หลังแก้ตารางให้รัน `npm run schema` แล้วนำเข้า backend:
 
 ```bash
 cd backend
-npm run import:central-schema -- --file ../device-hub/schemas/TA255L-1.json --as TA255L --dry-run
+npm run import:central-schema -- --file ../device-hub/schemas/TA255L-1.json --as TA255L --protocol TCP --dry-run
 ```
 
 ### สถานะคำสั่ง
