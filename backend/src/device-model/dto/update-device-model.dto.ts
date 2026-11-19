@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,6 +12,7 @@ import {
   Min,
 } from 'class-validator';
 import { DeviceModelStatus } from '@prisma/client';
+import { DELIVERY_CHANNELS, DeliveryChannel } from '../delivery-channel';
 
 /**
  * Body ของ `PATCH /device-models/{id}` — ทุก field optional ส่งมาแค่ตัวที่จะ
@@ -54,4 +56,9 @@ export class UpdateDeviceModelDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  /** ทางส่งเข้ากล่อง (docs/33) — `null` = กลับเป็นค่าเริ่มต้น (central) */
+  @IsOptional()
+  @IsIn(DELIVERY_CHANNELS)
+  deliveryChannel?: DeliveryChannel | null;
 }

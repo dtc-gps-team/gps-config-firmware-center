@@ -442,6 +442,10 @@ model DeviceModel {
   warrantyMonths     Int?
   endOfSupportDate   DateTime?
   notes              String?
+  // ทางส่ง Config/Firmware เข้ากล่องของรุ่นนี้ (docs/33) — null = Server กลาง ESP32 (ข้อมูลเดิมทุกแถว) ·
+  // "hub" = device-hub (กล่องที่ไม่ใช่ ESP32 เช่น Meitrack TA255) · string ไม่ใช่ enum เพื่อเพิ่มค่าได้โดยไม่ต้อง
+  // migration แบบ supportedProtocols · ค่าที่ใช้ได้อยู่ใน src/device-model/delivery-channel.ts
+  deliveryChannel    String?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 

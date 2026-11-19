@@ -239,6 +239,28 @@ describe('DeviceModelService', () => {
       });
     });
 
+    it('deliveryChannel: hub -> บันทึก · null -> ล้างค่า (กลับเป็น central) (docs/33)', async () => {
+      findUnique.mockResolvedValue(gt06n);
+      update.mockResolvedValue({ ...gt06n, deliveryChannel: 'hub' });
+
+      const result = await updateModel(gt06n.id, { deliveryChannel: 'hub' });
+      expect(result.deliveryChannel).toBe('hub');
+      expect(update).toHaveBeenLastCalledWith({
+        where: { id: gt06n.id },
+        data: expect.objectContaining({
+          deliveryChannel: 'hub',
+        }) as Partial<DeviceModel>,
+      });
+
+      await updateModel(gt06n.id, { deliveryChannel: null });
+      expect(update).toHaveBeenLastCalledWith({
+        where: { id: gt06n.id },
+        data: expect.objectContaining({
+          deliveryChannel: null,
+        }) as Partial<DeviceModel>,
+      });
+    });
+
     it('endOfSupportDate เป็นวันที่ -> แปลงเป็น Date, เป็น null -> ล้างค่า (null)', async () => {
       findUnique.mockResolvedValue(gt06n);
       update.mockResolvedValue(gt06n);
