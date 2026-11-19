@@ -29,7 +29,7 @@ describe('createDeviceHubClient', () => {
   });
 
   it('real ขาด BASE_URL -> throw บอกชื่อ env และไม่มีรหัสผ่านในข้อความ', () => {
-    const { DEVICE_HUB_BASE_URL: _omit, ...rest } = full;
+    const rest = { ...full, DEVICE_HUB_BASE_URL: '' };
     expect(() => createDeviceHubClient(env(rest))).toThrow(
       /DEVICE_HUB_BASE_URL/,
     );
