@@ -84,7 +84,7 @@ sudo ufw allow from 203.0.113.0/24 to any port 5000 proto tcp
 
 ## รับ Config จาก backend
 
-เปิดเมื่อตั้ง `DEVICE_HUB_ADMIN_USERNAME` และ `DEVICE_HUB_ADMIN_PASSWORD` — HTTP API ใช้ path และรูป JSON เดียวกับ Server กลาง ESP32 backend จึงใช้ client ตัวเดิมได้ (ตั้ง `DEVICE_HUB_MODE=real`, `DEVICE_HUB_BASE_URL`, user/pass เดียวกันฝั่ง backend)
+เปิดเมื่อตั้ง `DEVICE_HUB_ADMIN_USERNAME` และ `DEVICE_HUB_ADMIN_PASSWORD` — HTTP API ใช้ path และรูป JSON เดียวกับ Server กลาง ESP32 backend จึงใช้ client ตัวเดิมได้ (ตั้ง `DEVICE_HUB_MODE=real`, `DEVICE_HUB_BASE_URL`, user/pass เดียวกันฝั่ง backend) · token จาก `/api/login` อายุ 24 ชม. และจำไว้ไม่เกิน 100 ตัว (ตัวเก่าสุดถูกตัดก่อน) — หมดอายุแล้ว backend login ใหม่เองเมื่อได้ 401
 
 | env | ค่าเริ่มต้น | ใช้ทำอะไร |
 |---|---|---|
