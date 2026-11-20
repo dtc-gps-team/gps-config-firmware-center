@@ -139,7 +139,11 @@ export class CentralDeviceService {
         select: { model: { select: { deliveryChannel: true } } },
       });
       return resolveDeliveryChannel(device?.model?.deliveryChannel);
-    } catch {
+    } catch (err) {
+      // ถอยไป central ให้ ESP32 ใช้ได้ต่อ แต่ต้องมีร่องรอย: ถ้าเป็นกล่องรุ่น hub จะดูเหมือนกล่องหายไปเฉยๆ (review #491 ข้อ 1)
+      this.logger.warn(
+        `อ่านรุ่นของเครื่อง ${deviceId} จากฐานไม่ได้ จึงใช้ Server กลาง: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return 'central';
     }
   }

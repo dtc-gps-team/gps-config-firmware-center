@@ -1277,6 +1277,128 @@ void main() {
     });
   });
 
+  // docs/33 §11.6 ข้อ 1 — Override ใช้ครั้งเดียว ส่งแล้วช่องกลับเป็นค่าตาม Config
+  // แต่กล่องยังใช้ค่าที่แก้ · ช่างต้องเห็นค่าในกล่องจริง และรู้ว่าคืนค่าได้ด้วยการส่ง
+  // Config ตรงๆ (ไม่ต้องขออนุมัติ) แทนที่จะเจอ "ยังไม่ได้แก้ค่าไหนเลย"
+  group('ค่าในกล่องจริงต่างจาก Config (boxFields)', () {
+    const ledDef = ConfigFieldDefinition(
+      id: 'def-led-off',
+      fieldName: 'meitrack.led_off',
+      dataType: 'boolean',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+    );
+    const intervalDef = ConfigFieldDefinition(
+      id: 'def-interval',
+      fieldName: 'meitrack.track_interval_sec',
+      dataType: 'integer',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+    );
+
+    Future<_FakeConfigOverrideRepository> pumpWithBox(
+      WidgetTester tester,
+      Map<String, dynamic>? box,
+    ) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: DeviceConfigDraft(
+          id: 'cfg-ta',
+          name: 'TA255',
+          deviceModel: 'TA255L',
+          protocol: 'TCP',
+          status: ConfigStatus.approved,
+          fields: const {
+            'meitrack.led_off': false,
+            'meitrack.track_interval_sec': 60,
+          },
+          boxFields: box == null
+              ? null
+              : BoxFields(fields: box, reportedAt: null),
+        ),
+        definitions: const [ledDef, intervalDef],
+      );
+      return _pump(tester, repo: fake);
+    }
+
+    testWidgets(
+      'ใต้ช่องที่กล่องใช้ค่าอื่น -> บอกค่าในกล่อง และว่าส่ง Config แล้วกลับเป็นค่าตาม Config',
+      (tester) async {
+        await pumpWithBox(tester, const {
+          'meitrack.led_off': true,
+          'meitrack.track_interval_sec': 60,
+        });
+
+        expect(
+          find.byKey(const Key('config_override_in_box_meitrack.led_off')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'ในกล่องตอนนี้ true · ส่ง Config เข้ากล่องแล้วจะกลับเป็นค่าในช่อง',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const Key('config_override_in_box_meitrack.track_interval_sec'),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('config_override_undelivered_notice')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'ไม่แก้ค่าแต่กล่องต่างจาก Config -> แนะนำให้ส่ง Config ตรงๆ แทน "ยังไม่ได้แก้ค่าไหนเลย"',
+      (tester) async {
+        final repo = await pumpWithBox(tester, const {
+          'meitrack.led_off': true,
+          'meitrack.track_interval_sec': 60,
+        });
+        await tester.enterText(
+          find.byKey(const Key('config_override_reason_input')),
+          'เปิดไฟกลับ',
+        );
+        await tester.tap(find.byKey(const Key('config_override_submit')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('ยังไม่ได้แก้ค่าไหนเลย'), findsNothing);
+        expect(
+          find.textContaining('ค่าในกล่องต่างจาก Config อยู่ 1 ค่า'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('ไม่ต้องขออนุมัติ'), findsOneWidget);
+        expect(repo.overrideCalls, 0);
+      },
+    );
+
+    testWidgets('ค่าในกล่องตรงกับ Config -> แสดงแบบเดิม', (tester) async {
+      await pumpWithBox(tester, const {
+        'meitrack.led_off': false,
+        'meitrack.track_interval_sec': 60,
+      });
+
+      expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+    });
+
+    testWidgets('ไม่รู้ค่าในกล่อง (boxFields null) -> แสดงแบบเดิม', (
+      tester,
+    ) async {
+      await pumpWithBox(tester, null);
+
+      expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+    });
+  });
+
   group('docs/30 — ช่วงค่าและโหมด central', () {
     const speedDef = ConfigFieldDefinition(
       id: 'def-speed',
