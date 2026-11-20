@@ -67,8 +67,13 @@ sudo ufw allow from 203.0.113.0/24 to any port 5000 proto tcp
 | `DEVICE_HUB_BACKEND_URL` | (ไม่ตั้ง = ไม่ส่งพิกัด) | เช่น `http://localhost:3001/api/v1` |
 | `DEVICE_HUB_DEVICES_FILE` | `devices.json` | ทะเบียนเครื่องที่อนุญาต |
 | `DEVICE_HUB_LOG_DIR` | `logs` | log อ่านง่าย (`<วันที่>.log`) + hex (`<วันที่>.raw.log`) เวลาเป็น UTC |
+| `DEVICE_HUB_IDLE_MIN_SEC` | `120` | เกณฑ์ต่ำสุดของการตัดสายที่เงียบ (ดูด้านล่าง) |
 
 กล่องที่ IMEI ไม่อยู่ใน `devices.json` จะถูกตัดสายทันที · สายที่ยังไม่ระบุตัวจาก IP เดียวกันค้างได้ไม่เกิน 5 สาย (กล่องที่ระบุตัวแล้วไม่จำกัด — ซิมหลายเครื่องอาจออก IP เดียวกัน)
+
+**สายตายแบบเงียบ:** สายที่ไม่มีข้อมูลจากกล่องนานเกิน `max(DEVICE_HUB_IDLE_MIN_SEC, 3 × ช่วงห่างที่ยาวที่สุดของข้อมูลจากกล่องเครื่องนั้น 10 ครั้งล่าสุด)` ถูกตัดเอง กล่องจึงขึ้นออฟไลน์ทันที ไม่ส่งคำสั่งเข้าสายที่ใช้ไม่ได้ · ช่วงห่างจำไว้ที่กล่อง (ข้ามสาย) กล่องที่ตั้งรอบส่งนานกว่าค่าต่ำสุดอาจถูกตัดผิดครั้งแรกครั้งเดียว ต่อกลับมาแล้วเกณฑ์ปรับตามรอบจริง
+
+**คำตอบทางสายใหม่:** คำสั่งที่รอคำตอบผูกกับกล่อง ไม่ใช่สาย สายหลุดแล้วกล่องต่อใหม่และตอบภายใน 30 วินาทียังนับ ไม่ต้องลองส่งใหม่
 
 ## ส่งพิกัดเข้า backend
 
@@ -79,7 +84,7 @@ sudo ufw allow from 203.0.113.0/24 to any port 5000 proto tcp
 
 ## รับ Config จาก backend
 
-เปิดเมื่อตั้ง `DEVICE_HUB_ADMIN_USERNAME` และ `DEVICE_HUB_ADMIN_PASSWORD` — HTTP API ใช้ path และรูป JSON เดียวกับ Server กลาง ESP32 backend จึงใช้ client ตัวเดิมได้ (ตั้ง `DEVICE_HUB_MODE=real`, `DEVICE_HUB_BASE_URL`, user/pass เดียวกันฝั่ง backend)
+เปิดเมื่อตั้ง `DEVICE_HUB_ADMIN_USERNAME` และ `DEVICE_HUB_ADMIN_PASSWORD` — HTTP API ใช้ path และรูป JSON เดียวกับ Server กลาง ESP32 backend จึงใช้ client ตัวเดิมได้ (ตั้ง `DEVICE_HUB_MODE=real`, `DEVICE_HUB_BASE_URL`, user/pass เดียวกันฝั่ง backend) · token จาก `/api/login` อายุ 24 ชม. และจำไว้ไม่เกิน 100 ตัว (ตัวเก่าสุดถูกตัดก่อน) — หมดอายุแล้ว backend login ใหม่เองเมื่อได้ 401
 
 | env | ค่าเริ่มต้น | ใช้ทำอะไร |
 |---|---|---|

@@ -44,7 +44,7 @@ async function main() {
   let executor = null;
 
   const tcp = createTcpServer({
-    port: config.tcpPort, devices, log, rawLog,
+    port: config.tcpPort, devices, log, rawLog, idleMinMs: config.idleMinSec * 1000,
     onPacket: (imei, packet, meta) => {
       log(`พิกัดจาก ${imei}: ${packet.event ?? ''} ${packet.time ?? ''} lat ${packet.lat} lng ${packet.lng}` +
         (meta.remainingCache ? ` (ค้างในกล่อง ${meta.remainingCache})` : ''));
