@@ -22,6 +22,7 @@ const gt06n: DeviceModel = {
   warrantyMonths: null,
   endOfSupportDate: null,
   notes: null,
+  deliveryChannel: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -236,6 +237,28 @@ describe('DeviceModelService', () => {
           endOfSupportDate: undefined,
           notes: undefined,
         },
+      });
+    });
+
+    it('deliveryChannel: hub -> บันทึก · null -> ล้างค่า (กลับเป็น central) (docs/33)', async () => {
+      findUnique.mockResolvedValue(gt06n);
+      update.mockResolvedValue({ ...gt06n, deliveryChannel: 'hub' });
+
+      const result = await updateModel(gt06n.id, { deliveryChannel: 'hub' });
+      expect(result.deliveryChannel).toBe('hub');
+      expect(update).toHaveBeenLastCalledWith({
+        where: { id: gt06n.id },
+        data: expect.objectContaining({
+          deliveryChannel: 'hub',
+        }) as Partial<DeviceModel>,
+      });
+
+      await updateModel(gt06n.id, { deliveryChannel: null });
+      expect(update).toHaveBeenLastCalledWith({
+        where: { id: gt06n.id },
+        data: expect.objectContaining({
+          deliveryChannel: null,
+        }) as Partial<DeviceModel>,
       });
     });
 

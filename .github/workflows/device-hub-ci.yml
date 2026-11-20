@@ -1,0 +1,28 @@
+name: Device Hub CI
+
+# test ของ device-hub (docs/33) — รันเฉพาะเมื่อแก้โฟลเดอร์ device-hub/ · ไม่ได้ตั้งเป็น required check
+on:
+  pull_request:
+    paths:
+      - "device-hub/**"
+      - ".github/workflows/device-hub-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "device-hub/**"
+      - ".github/workflows/device-hub-ci.yml"
+
+jobs:
+  test:
+    name: Device Hub / test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: device-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Test
+        run: npm test

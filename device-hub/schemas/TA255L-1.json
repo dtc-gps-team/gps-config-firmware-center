@@ -1,0 +1,44 @@
+{
+  "hardware_model": "TA255L",
+  "schema_version": 1,
+  "parameters": [
+    {
+      "key": "meitrack.track_interval_sec",
+      "label": "รอบส่งพิกัด ตั้งทีละ 10 วินาที 0 = ปิด (วินาที)",
+      "type": "integer",
+      "min": 0,
+      "max": 655350,
+      "default": 60
+    },
+    {
+      "key": "meitrack.idling.time_sec",
+      "label": "แจ้งเตือนจอดติดเครื่อง: ความเร็วต่ำต่อเนื่องนาน (วินาที)",
+      "type": "integer",
+      "min": 0,
+      "max": 60000,
+      "default": 180
+    },
+    {
+      "key": "meitrack.idling.speed_kmh",
+      "label": "แจ้งเตือนจอดติดเครื่อง: ความเร็วไม่เกิน (กม./ชม.)",
+      "type": "integer",
+      "min": 0,
+      "max": 200,
+      "default": 5
+    },
+    {
+      "key": "meitrack.idling.alert_sec",
+      "label": "แจ้งเตือนจอดติดเครื่อง: เวลาแจ้งเตือน (วินาที)",
+      "type": "integer",
+      "min": 0,
+      "max": 60000,
+      "default": 120
+    },
+    {
+      "key": "meitrack.led_off",
+      "label": "ปิดไฟ LED บนกล่อง",
+      "type": "boolean",
+      "default": false
+    }
+  ]
+}

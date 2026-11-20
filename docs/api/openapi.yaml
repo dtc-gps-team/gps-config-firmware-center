@@ -5319,6 +5319,14 @@ components:
         notes:
           type: string
           nullable: true
+        deliveryChannel:
+          type: string
+          nullable: true
+          enum: [central, hub, null]
+          description: >-
+            ทางส่ง Config/Firmware เข้ากล่องของรุ่นนี้ (v3.100, docs/33) — `null` หรือ
+            `central` = Server กลาง ESP32 (ค่าเดิมของทุกรุ่น) · `hub` = device-hub
+            (กล่องที่ไม่ใช่ ESP32 เช่น Meitrack TA255)
         createdAt:
           type: string
           format: date-time
@@ -5357,6 +5365,10 @@ components:
         notes:
           type: string
           maxLength: 1000
+        deliveryChannel:
+          type: string
+          enum: [central, hub]
+          description: ทางส่งเข้ากล่อง (v3.100, docs/33) — ไม่ส่ง = central
 
     UpdateDeviceModelInput:
       type: object
@@ -5385,6 +5397,11 @@ components:
         notes:
           type: string
           maxLength: 1000
+        deliveryChannel:
+          type: string
+          nullable: true
+          enum: [central, hub, null]
+          description: ทางส่งเข้ากล่อง (v3.100, docs/33) — `null` = กลับเป็นค่าเริ่มต้น (central)
 
     CampaignPayloadType:
       type: string

@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -12,6 +13,8 @@ import {
   MinLength,
 } from 'class-validator';
 import { DeviceModelStatus } from '@prisma/client';
+import { DELIVERY_CHANNELS } from '../delivery-channel';
+import type { DeliveryChannel } from '../delivery-channel';
 
 /**
  * Body ของ `POST /device-models` (issue #209, docs/15) — Admin/SuperAdmin
@@ -61,4 +64,9 @@ export class CreateDeviceModelDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  /** ทางส่งเข้ากล่อง (docs/33) — ไม่ส่ง = central */
+  @IsOptional()
+  @IsIn(DELIVERY_CHANNELS)
+  deliveryChannel?: DeliveryChannel;
 }

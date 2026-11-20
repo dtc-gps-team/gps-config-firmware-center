@@ -1,0 +1,15 @@
+{
+  "name": "device-hub",
+  "version": "0.1.0",
+  "description": "ตัวกลางรับการเชื่อมต่อจากกล่อง GPS ที่ไม่ใช่ ESP32 (เริ่มที่ Meitrack TA255) ส่งพิกัดเข้า backend และรับ Config จาก backend (docs/33)",
+  "main": "src/index.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test",
+    "schema": "node src/protocols/meitrack/fields.js --write-schema"
+  },
+  "engines": {
+    "node": ">=20.12"
+  }
+}

@@ -110,6 +110,7 @@ export class DeviceModelService {
             warrantyMonths: dto.warrantyMonths,
             endOfSupportDate: toDbDate(dto.endOfSupportDate),
             notes: dto.notes,
+            deliveryChannel: dto.deliveryChannel,
           },
         });
         await this.logAudit(tx, 'create', actor, {
@@ -153,6 +154,7 @@ export class DeviceModelService {
             warrantyMonths: dto.warrantyMonths,
             endOfSupportDate: toDbDate(dto.endOfSupportDate),
             notes: dto.notes,
+            deliveryChannel: dto.deliveryChannel,
           },
         });
         await this.logAudit(tx, 'update', actor, {

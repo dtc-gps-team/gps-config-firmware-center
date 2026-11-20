@@ -140,6 +140,7 @@ const gt06nModel: DeviceModel = {
   warrantyMonths: null,
   endOfSupportDate: null,
   notes: null,
+  deliveryChannel: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
