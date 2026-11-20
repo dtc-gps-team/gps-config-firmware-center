@@ -66,6 +66,6 @@ DATABASE_URL=postgresql://gps_user:gps_password@localhost:5433/gps_config_firmwa
 | `npm run seed:demo` | ข้อมูลตัวอย่างสำหรับเดโม (ห้ามใช้กับฐานจริง) |
 | `npm run clear:sample-data` | ล้างข้อมูลตัวอย่าง — เฉพาะฐานชื่อลงท้าย `_demo` |
 | `npm run test-users:set-password` | ตั้งรหัสบัญชี `*.test` เป็น `TEST_USERS_PASSWORD` |
-| `npm run import:central-schema` | นำเข้า Parameter Schema จาก Server กลาง (`--as <ชื่อรุ่น>`, ลอง `--dry-run` ก่อน) |
+| `npm run import:central-schema` | นำเข้า Parameter Schema จาก Server กลาง (`--as <ชื่อรุ่น>`, **รัน `--dry-run` ก่อนเสมอ** — พิมพ์ `--as` ผิดจะสร้างรุ่นใหม่) |
 | `npm run seed:ci-fixtures` | ข้อมูลที่ E2E มือถือใน CI ใช้ |
 | `npm run prisma:studio` | ดูข้อมูลผ่าน Prisma Studio |

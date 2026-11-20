@@ -37,6 +37,28 @@ ssh -p 443 -R0:localhost:5000 tcp@a.pinggy.io
 
 แล้วใส่ IP + Port ใน Meitrack Manager → Tracking → Set
 
+## ความปลอดภัยตอนใช้งานจริง
+
+โปรโตคอล Meitrack **ไม่มีการยืนยันตัวตน** กล่องบอกแค่ IMEI ในทุก frame ใครรู้ IMEI ที่อยู่ใน `devices.json` ก็ต่อพอร์ต TCP เข้ามาส่งพิกัดแทนกล่องได้ (เป็นข้อจำกัดของตัวกล่อง แก้ฝั่ง device-hub ไม่ได้)
+
+ตอนใช้งานจริงจึงต้องให้ firewall ของ server **รับพอร์ต TCP (`DEVICE_HUB_TCP_PORT`, ค่าเริ่มต้น `5000`) เฉพาะช่วง IP ที่เครือข่ายซิมของกล่องใช้ออกอินเทอร์เน็ต** ขอช่วง IP นี้จากผู้ให้บริการซิม (ถ้าซิมใช้ APN ส่วนตัว / private network ได้จะปลอดภัยกว่า)
+
+ตัวอย่าง (`203.0.113.0/24` เป็น IP ตัวอย่าง ให้แทนด้วยช่วงจริงของซิม):
+
+```powershell
+# Windows Server
+New-NetFirewallRule -DisplayName "device-hub TCP จากซิม" -Direction Inbound -Protocol TCP -LocalPort 5000 -RemoteAddress 203.0.113.0/24 -Action Allow
+```
+
+```bash
+# Linux (ufw)
+sudo ufw allow from 203.0.113.0/24 to any port 5000 proto tcp
+```
+
+- อย่าเปิดพอร์ตนี้ให้ทุก IP (`0.0.0.0/0`) · pinggy ที่ใช้ในหัวข้อ "รันจริง" เปิดรับทุก IP ใช้ได้เฉพาะช่วงทดสอบ
+- HTTP API (`DEVICE_HUB_HTTP_HOST`) ฟัง `127.0.0.1` เป็นค่าเริ่มต้น ให้ backend เรียกจากเครื่องเดียวกันหรือวงภายในเท่านั้น ไม่ต้องเปิดออกอินเทอร์เน็ต
+- ซิมหลายเครื่องอาจออก IP เดียวกัน (CGNAT) ยังรอพี่เลี้ยงยืนยันว่าซิมที่ใช้จริงเป็นแบบไหน (`docs/HANDOVER.md` §6)
+
 ## ค่าตั้ง (env)
 
 | env | ค่าเริ่มต้น | ใช้ทำอะไร |
