@@ -697,7 +697,18 @@ class _FieldRowState extends State<_FieldRow> {
   String _inBoxLabel(dynamic value) {
     if (value == null) return '—';
     if (widget.def?.sensitive != false && !widget.revealed) return '••••';
-    return configValueToInput(value);
+    return _booleanWord(configValueToInput(value)) ?? configValueToInput(value);
+  }
+
+  /// field ชนิด boolean แสดงเป็นคำ "เปิด"/"ปิด" แบบเดียวกับหน้าพารามิเตอร์ของ Config
+  /// (review #493) · ค่าที่ส่งให้ backend ยังเป็น `true`/`false` · ไม่ใช่ boolean = null
+  String? _booleanWord(String input) {
+    if (widget.def?.dataType != 'boolean') return null;
+    return switch (input) {
+      'true' => 'เปิด',
+      'false' => 'ปิด',
+      _ => null,
+    };
   }
 
   Widget _buildValue(String currentValue) {
@@ -731,7 +742,7 @@ class _FieldRowState extends State<_FieldRow> {
             )
           else
             Text(
-              currentValue,
+              _booleanWord(currentValue) ?? currentValue,
               overflow: TextOverflow.ellipsis,
               style: valueStyle,
             ),
@@ -764,8 +775,8 @@ class _FieldRowState extends State<_FieldRow> {
           isExpanded: true,
           hint: const Text('เลือกค่า'),
           items: const [
-            DropdownMenuItem(value: 'true', child: Text('true')),
-            DropdownMenuItem(value: 'false', child: Text('false')),
+            DropdownMenuItem(value: 'true', child: Text('เปิด')),
+            DropdownMenuItem(value: 'false', child: Text('ปิด')),
           ],
           onChanged: (v) => v == null ? null : widget.onChanged(v),
         ),
