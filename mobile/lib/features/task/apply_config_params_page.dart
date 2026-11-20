@@ -17,6 +17,7 @@ import '../../core/ui/app_role_locked_view.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../config_override/box_value_diff.dart';
 import '../config_override/config_override_repository.dart';
 import '../config_override/config_value_parser.dart';
 import '../config_override/unsupported_firmware_notice.dart';
@@ -231,13 +232,13 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
                 const <ConfigFieldDefinition>[])
           def.fieldName: def,
     };
-    // v3.76 — พารามิเตอร์ที่ firmware บนกล่องรองรับ (null = ไม่ทราบ ไม่ล็อก)
-    final boxSchema = config == null
+    final current = config == null
         ? null
-        : ref
-              .watch(currentConfigProvider(widget.deviceId))
-              .valueOrNull
-              ?.boxSchema;
+        : ref.watch(currentConfigProvider(widget.deviceId)).valueOrNull;
+    // v3.76 — พารามิเตอร์ที่ firmware บนกล่องรองรับ (null = ไม่ทราบ ไม่ล็อก)
+    final boxSchema = current?.boxSchema;
+    // ค่าที่อ่านจากกล่องจริง (null = ไม่ทราบ) — docs/33 §11.6 ข้อ 1
+    final boxValues = current?.boxFields?.fields;
     final navigator = Navigator.of(context);
 
     return AppV2Theme(
@@ -288,11 +289,12 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
                         defByName,
                         canEdit: role == UserRole.st,
                         boxSchema: boxSchema,
+                        boxValues: boxValues,
                       ),
                     ),
             ),
             if (options != null && config != null)
-              _actions(options, config, defByName),
+              _actions(options, config, defByName, boxValues),
           ],
         ),
       ),
@@ -305,6 +307,7 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     Map<String, ConfigFieldDefinition> defByName, {
     required bool canEdit,
     required BoxSchema? boxSchema,
+    required Map<String, dynamic>? boxValues,
   }) {
     if (config == null) {
       return ListView(
@@ -386,6 +389,7 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
             errors: _paramErrors,
             canEdit: canEdit,
             boxSchema: boxSchema,
+            boxValues: boxValues,
             enabled: !_submitting,
             onChanged: (field, value) => setState(() {
               _edits[field] = value;
@@ -423,8 +427,14 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     DeviceApplyOptions options,
     ApplyOptionConfig config,
     Map<String, ConfigFieldDefinition> defByName,
+    Map<String, dynamic>? boxValues,
   ) {
     final edited = _changedFields(config).isNotEmpty;
+    // docs/33 §11.6 ข้อ 1 — ส่งตรง (ไม่แก้) = ส่งทุกค่าของ Config · ค่าที่กล่องใช้
+    // ต่างอยู่ (เช่นจาก Override ครั้งก่อน) จะกลับเป็นค่าตาม Config บอกก่อนกด
+    final willChange = edited
+        ? const <String>[]
+        : boxDiffersFromConfig(config.fields, boxValues);
     // คำขอของงานนี้เองที่ค้าง หน้างานไม่เปิดมาที่นี่อยู่แล้ว — ค้างอยู่ = ของงานอื่น
     // หรือเปิดจากหน้ากล่อง (backend ตอบ 409 ถ้าขอซ้ำ)
     final blocked = !options.deviceInstalled || options.openRequest != null;
@@ -448,6 +458,26 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
                 child: const Text('ไปที่งาน (งานเริ่มแล้ว)'),
               ),
             ),
+          const SizedBox(height: 8),
+        ],
+        if (willChange.isNotEmpty) ...[
+          AppNotice(
+            key: const Key('apply_box_will_change'),
+            tone: AppBadgeTone.info,
+            icon: Icons.sync_alt,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('ส่งแล้วค่าในกล่องจะเปลี่ยนเป็นค่าตาม Config นี้'),
+                for (final key in willChange)
+                  Text(
+                    '${_paramName(defByName[key], key)} '
+                    '${_paramValueLabel(defByName[key], boxValues![key])} → '
+                    '${_paramValueLabel(defByName[key], config.fields[key])}',
+                  ),
+              ],
+            ),
+          ),
           const SizedBox(height: 8),
         ],
         AppSubmitButton(
@@ -475,12 +505,16 @@ class _ConfigParams extends StatelessWidget {
     required this.errors,
     required this.canEdit,
     required this.boxSchema,
+    required this.boxValues,
     required this.enabled,
     required this.onChanged,
   });
 
   final ApplyOptionConfig config;
   final BoxSchema? boxSchema;
+
+  /// ค่าที่อ่านจากกล่องจริง (null = ไม่ทราบ)
+  final Map<String, dynamic>? boxValues;
   final Map<String, ConfigFieldDefinition> defByName;
   final Map<String, String> errors;
   final bool canEdit;
@@ -490,6 +524,7 @@ class _ConfigParams extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = config.fields.entries.toList(growable: false);
+    final differs = boxDiffersFromConfig(config.fields, boxValues).toSet();
     return Container(
       key: const Key('apply_params'),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -515,6 +550,12 @@ class _ConfigParams extends StatelessWidget {
                   ? null
                   : boxSchema!.unsupportedLabel,
               error: errors[entry.key],
+              inBoxLabel: differs.contains(entry.key)
+                  ? _paramValueLabel(
+                      defByName[entry.key],
+                      boxValues![entry.key],
+                    )
+                  : null,
               enabled: enabled,
               onChanged: (v) => onChanged(entry.key, v),
             ),
@@ -533,11 +574,15 @@ class _ParamRow extends StatefulWidget {
     required this.editable,
     this.unsupportedLabel,
     required this.error,
+    this.inBoxLabel,
     required this.enabled,
     required this.onChanged,
   });
 
   final String field;
+
+  /// ค่าในกล่องตอนนี้ (แสดงแล้ว) เมื่อต่างจากค่าของ Config · null = ตรงกัน/ไม่ทราบ
+  final String? inBoxLabel;
 
   /// firmware บนกล่องไม่รองรับค่านี้ (v3.76) — บอกเหตุผลแทน "(แก้ไขไม่ได้)"
   final String? unsupportedLabel;
@@ -640,11 +685,7 @@ class _ParamRowState extends State<_ParamRow> {
       height: AppTypography.xsHeight,
       color: AppColors.mutedForeground,
     );
-    final readOnlyValue = def?.sensitive != false
-        ? '••••'
-        : def?.dataType == 'boolean' && widget.value is bool
-        ? (widget.value as bool ? 'เปิด' : 'ปิด')
-        : configValueToInput(widget.value);
+    final readOnlyValue = _paramValueLabel(def, widget.value);
     final error = widget.error;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -699,8 +740,32 @@ class _ParamRowState extends State<_ParamRow> {
                   const Text('(แก้ไขไม่ได้)', style: muted),
               ],
             ),
+          if (widget.inBoxLabel case final inBox?)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'ในกล่องตอนนี้ $inBox',
+                key: Key('apply_param_in_box_${widget.field}'),
+                style: muted,
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+/// ชื่อเรียกง่ายของพารามิเตอร์ (`description`) · ไม่มีใช้ชื่อจริง
+String _paramName(ConfigFieldDefinition? def, String field) {
+  final label = def?.description?.trim();
+  return label == null || label.isEmpty ? field : label;
+}
+
+/// ค่าที่แสดงให้ช่างเห็น: ค่าลับ/ไม่มีนิยาม = ซ่อน · เปิด/ปิดเป็นคำ ไม่ใช่ true/false
+String _paramValueLabel(ConfigFieldDefinition? def, dynamic value) {
+  if (def?.sensitive != false) return '••••';
+  if (def?.dataType == 'boolean' && value is bool) {
+    return value ? 'เปิด' : 'ปิด';
+  }
+  return configValueToInput(value);
 }
