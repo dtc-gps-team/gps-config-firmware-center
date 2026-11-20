@@ -21,6 +21,7 @@ import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/text_scale.dart';
 import '../task/apply_mode_provider.dart';
 import '../task/config_apply_request_repository.dart';
+import 'box_value_diff.dart';
 import 'config_override_repository.dart';
 import 'config_value_parser.dart';
 import 'unsupported_firmware_notice.dart';
@@ -141,7 +142,14 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
             for (final e in fieldErrors.entries) '${e.key}: ${e.value}',
           ];
         } else if (changed.isEmpty) {
-          _error = 'ยังไม่ได้แก้ค่าไหนเลย';
+          // docs/33 §11.6 ข้อ 1 — ตั้งกลับเป็นค่าตาม Config ไม่ต้องขอ Override
+          // ส่ง Config ตรงๆ ก็คืนค่าได้ (ส่งทุกค่าของ Config ไม่ต้องรออนุมัติ)
+          final boxDiffers = _boxOnlyDiffers(config);
+          _error = boxDiffers.isEmpty
+              ? 'ยังไม่ได้แก้ค่าไหนเลย'
+              : 'ค่าในกล่องต่างจาก Config อยู่ ${boxDiffers.length} ค่า · '
+                    'ส่ง Config เข้ากล่องจากหน้างานได้เลย ไม่ต้องขออนุมัติ '
+                    'กล่องจะกลับเป็นค่าตาม Config';
         } else {
           // เหลือแค่เหตุผลว่าง — ข้อความจริงอยู่ใต้ช่องเหตุผลแล้ว
           _error = 'กรอกข้อมูลไม่ครบ ดูช่องที่มีข้อความสีแดง';
@@ -187,6 +195,16 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       });
     }
   }
+
+  /// ค่าที่กล่องใช้ต่างจาก Config ซึ่ง**ไม่ได้**มาจาก Override ที่อนุมัติแล้วรอส่ง
+  /// (ตัวนั้นมีแถบ "อนุมัติแล้วแต่ยังไม่ได้ส่ง" บอกอยู่แล้ว)
+  static List<String> _boxOnlyDiffers(DeviceConfigDraft config) => [
+    for (final key in boxDiffersFromConfig(
+      config.fields ?? const {},
+      config.boxFields?.fields,
+    ))
+      if (config.delivery?.isPending(key) != true) key,
+  ];
 
   /// docs/30 §6 — โหมด central: Override กลายเป็นคำขอส่งเข้ากล่องในงานของช่าง
   /// ไปที่หน้างานนั้นเลย (ติดตาม/กดส่งที่นั่น) · งานหาจาก `openRequest` ของ
@@ -406,6 +424,8 @@ class _OverrideForm extends StatelessWidget {
         .toList(growable: false);
     final delivery = config.delivery;
     final undelivered = delivery?.pendingFieldNames.length ?? 0;
+    final boxFields = config.boxFields?.fields ?? const <String, dynamic>{};
+    final boxDiffers = _ConfigOverridePageState._boxOnlyDiffers(config).toSet();
     // v3.76 — ค่าใน Config ที่ firmware บนกล่องไม่รองรับ (null = ไม่ทราบ ไม่ล็อก)
     final boxSchema = config.boxSchema;
     final unsupported =
@@ -469,6 +489,8 @@ class _OverrideForm extends StatelessWidget {
                   editValue: edits[entry.key],
                   inBox: delivery != null && delivery.isPending(entry.key)
                       ? _InBoxValue(delivery.fields[entry.key])
+                      : boxDiffers.contains(entry.key)
+                      ? _InBoxValue(boxFields[entry.key], pending: false)
                       : null,
                   unsupportedLabel: unsupported.contains(entry.key)
                       ? boxSchema!.unsupportedLabel
@@ -519,9 +541,13 @@ class _OverrideForm extends StatelessWidget {
 
 /// ค่าในกล่องของ field หนึ่ง (ห่อไว้แยก "ไม่มีค่า" กับ "ไม่ต้องแสดง")
 class _InBoxValue {
-  const _InBoxValue(this.value);
+  const _InBoxValue(this.value, {this.pending = true});
 
   final dynamic value;
+
+  /// true = ค่าที่อนุมัติแล้วรอส่ง · false = กล่องใช้ค่าอื่นอยู่ (เช่น Override
+  /// ครั้งก่อน) ส่ง Config ตรงๆ แล้วกลับเป็นค่าในช่อง (docs/33 §11.6 ข้อ 1)
+  final bool pending;
 }
 
 class _FieldRow extends StatefulWidget {
@@ -545,7 +571,8 @@ class _FieldRow extends StatefulWidget {
   final ConfigFieldDefinition? def;
   final String? editValue;
 
-  /// ค่าในกล่องตอนนี้ เมื่อต่างจากค่าที่อนุมัติแล้ว (รอส่ง) · null = ตรงกัน/ไม่ทราบ
+  /// ค่าในกล่องตอนนี้ เมื่อต่างจากค่าในช่อง (รอส่ง หรือกล่องใช้ค่าอื่นอยู่) ·
+  /// null = ตรงกัน/ไม่ทราบ
   final _InBoxValue? inBox;
 
   /// ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config นี้ — แก้ไม่ได้เสมอ
@@ -623,7 +650,8 @@ class _FieldRowState extends State<_FieldRow> {
         : Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              'ในกล่องตอนนี้ ${_inBoxLabel(inBox.value)} · รอส่งเข้ากล่อง',
+              'ในกล่องตอนนี้ ${_inBoxLabel(inBox.value)} · '
+              '${inBox.pending ? 'รอส่งเข้ากล่อง' : 'ส่ง Config เข้ากล่องแล้วจะกลับเป็นค่าในช่อง'}',
               key: Key('config_override_in_box_${widget.fieldKey}'),
               style: const TextStyle(
                 fontSize: AppTypography.xs,

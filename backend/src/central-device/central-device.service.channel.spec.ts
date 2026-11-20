@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
@@ -202,6 +203,36 @@ describe('CentralDeviceService: เลือกทางส่งตามรุ
     expect((await service.findDevice(ESP)).device?.hardwareModel).toBe(
       'ESP32-DEVKIT-V1',
     );
+  });
+
+  it('อ่านรุ่นจากฐานไม่ได้ -> ถอยไป Server กลาง และ log เตือนพร้อม deviceId + สาเหตุ (review #491 ข้อ 1)', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const central = fakeClient('ESP32-DEVKIT-V1', TA, [
+        'gps.send_interval_sec',
+      ]);
+      const hub = fakeClient('TA255L', TA, ['meitrack.track_interval_sec']);
+      const prisma = {
+        device: {
+          findUnique: jest
+            .fn()
+            .mockRejectedValue(new Error('connection terminated')),
+        },
+      } as unknown as PrismaService;
+      const service = new CentralDeviceService(central, config, hub, prisma);
+
+      await service.pushConfig(TA, { 'gps.send_interval_sec': 10 });
+
+      expect(central.putDeviceConfig).toHaveBeenCalled();
+      expect(hub.putDeviceConfig).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(new RegExp(`${TA}.*connection terminated`)),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('สร้างแบบเดิม (ไม่มี prisma / hub) -> ทุกเครื่องไป Server กลาง', async () => {

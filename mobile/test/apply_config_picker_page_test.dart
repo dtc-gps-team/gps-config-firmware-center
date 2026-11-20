@@ -1108,6 +1108,120 @@ void main() {
       },
     );
 
+    // docs/33 §11.6 ข้อ 1 — กล่องยังใช้ค่าจาก Override ครั้งก่อน · ส่ง Config ตรงๆ
+    // (ไม่แก้ค่า) คือวิธีคืนค่า ช่างต้องเห็นก่อนกดว่าค่าไหนในกล่องจะเปลี่ยน
+    group('ค่าในกล่องจริงต่างจาก Config (boxFields)', () {
+      setUp(() {
+        applyRepo.options = fakeApplyOptions(
+          configs: const [
+            ApplyOptionConfig(
+              id: 'cfg-1',
+              name: 'BOX ส่งพิกัดทุก 10 วินาที',
+              latestVersion: 1,
+              suggested: true,
+              fields: {'gps.send_interval_sec': 10, 'led.enabled': true},
+            ),
+          ],
+        );
+      });
+
+      Future<void> pumpWithBox(
+        WidgetTester tester,
+        Map<String, dynamic>? box,
+      ) async {
+        overrides.currentConfig = DeviceConfigDraft(
+          id: 'cfg-1',
+          boxFields: box == null
+              ? null
+              : BoxFields(fields: box, reportedAt: null),
+        );
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets(
+        'ใต้ช่องบอกค่าในกล่อง + สรุปเหนือปุ่มว่าส่งแล้วค่าไหนจะเปลี่ยน',
+        (tester) async {
+          await pumpWithBox(tester, const {
+            'gps.send_interval_sec': 30,
+            'led.enabled': false,
+          });
+
+          final interval = find.byKey(
+            const Key('apply_param_row_gps.send_interval_sec'),
+          );
+          expect(
+            find.descendant(
+              of: interval,
+              matching: find.text('ในกล่องตอนนี้ 30'),
+            ),
+            findsOneWidget,
+          );
+          final led = find.byKey(const Key('apply_param_row_led.enabled'));
+          expect(
+            find.descendant(of: led, matching: find.text('ในกล่องตอนนี้ ปิด')),
+            findsOneWidget,
+          );
+
+          final summary = find.byKey(const Key('apply_box_will_change'));
+          expect(summary, findsOneWidget);
+          expect(
+            find.descendant(
+              of: summary,
+              matching: find.textContaining('รอบส่ง GPS (วินาที) 30 → 10'),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: summary,
+              matching: find.textContaining('เปิดไฟ LED ปิด → เปิด'),
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
+        },
+      );
+
+      testWidgets('แก้ค่าแล้ว (ต้องขออนุมัติ) -> ไม่แสดงสรุปการคืนค่า', (
+        tester,
+      ) async {
+        await pumpWithBox(tester, const {
+          'gps.send_interval_sec': 30,
+          'led.enabled': true,
+        });
+        await tester.enterText(
+          find.byKey(const Key('apply_param_gps.send_interval_sec')),
+          '20',
+        );
+        await tester.pump();
+
+        expect(find.byKey(const Key('apply_box_will_change')), findsNothing);
+      });
+
+      testWidgets('ค่าในกล่องตรงกับ Config -> ไม่มีบรรทัดค่าในกล่องและสรุป', (
+        tester,
+      ) async {
+        await pumpWithBox(tester, const {
+          'gps.send_interval_sec': 10,
+          'led.enabled': true,
+        });
+
+        expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+        expect(find.byKey(const Key('apply_box_will_change')), findsNothing);
+      });
+
+      testWidgets('ไม่รู้ค่าในกล่อง -> แสดงแบบเดิม', (tester) async {
+        await pumpWithBox(tester, null);
+
+        expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+        expect(find.byKey(const Key('apply_box_will_change')), findsNothing);
+      });
+    });
+
     testWidgets(
       'Operation เปิดหน้าเลือก -> บอกว่าไม่มีสิทธิ์ ไม่โหลดตัวเลือก',
       (tester) async {
