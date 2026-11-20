@@ -77,7 +77,7 @@ docker exec -i gps-postgres pg_restore -U gps_user -d <ฐานเปล่า>
 | `npm run seed:demo` | อุปกรณ์/Config/Campaign/Audit ตัวอย่าง | ❌ เดโมเท่านั้น |
 | `npm run clear:sample-data` | ล้างข้อมูลตัวอย่าง — ทำงานเฉพาะฐานชื่อลงท้าย `_demo` | ❌ |
 | `npm run test-users:set-password` | ตั้งรหัสบัญชี `*.test` เป็น `TEST_USERS_PASSWORD` | ✅ |
-| `npm run import:central-schema` | นำเข้า Parameter Schema จาก Server กลาง (`--as <ชื่อรุ่น>`, รัน `--dry-run` ก่อน) | ✅ ระวัง |
+| `npm run import:central-schema` | นำเข้า Parameter Schema จาก Server กลาง (`--as <ชื่อรุ่น>`, **รัน `--dry-run` ก่อนเสมอ** — พิมพ์ `--as` ผิดจะสร้างรุ่นใหม่) | ✅ ระวัง |
 | `backend/test/load/*.sql` | สร้างกล่องจำลอง 6,000 ตัว / telemetry เก่า | ❌ **ห้ามเด็ดขาด** — key เดาได้ |
 
 ## 4. ให้มือถือในวง LAN ใช้ backend เครื่องนี้
