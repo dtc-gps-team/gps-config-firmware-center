@@ -520,7 +520,7 @@ void main() {
       final fake = await pumpTyped(tester, type: 'boolean', current: 'false');
       await tester.tap(find.byKey(const Key('config_override_input_F')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('true').last);
+      await tester.tap(find.text('เปิด').last);
       await tester.pumpAndSettle();
       await submitWithReason(tester);
 
@@ -1108,7 +1108,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(of: led, matching: find.text('true')),
+        find.descendant(of: led, matching: find.text('เปิด')),
         findsOneWidget,
       );
       expect(
@@ -1340,7 +1340,7 @@ void main() {
         );
         expect(
           find.text(
-            'ในกล่องตอนนี้ true · ส่ง Config เข้ากล่องแล้วจะกลับเป็นค่าในช่อง',
+            'ในกล่องตอนนี้ เปิด · ส่ง Config เข้ากล่องแล้วจะกลับเป็นค่าในช่อง',
           ),
           findsOneWidget,
         );
