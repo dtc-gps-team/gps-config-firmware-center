@@ -57,8 +57,30 @@ function lastCommand(job) {
   };
 }
 
-function createHttpApi({ config, devices, tcp, queue, fieldsByModel }) {
-  const tokens = new Set();
+function createHttpApi({
+  config, devices, tcp, queue, fieldsByModel,
+  // token มีอายุและจำกัดจำนวน (ข้อสังเกตข้อ 2 ของ A ใน #491) · backend login ใหม่เองเมื่อเจอ 401
+  now = Date.now, tokenTtlMs = 24 * 3600 * 1000, maxTokens = 100,
+}) {
+  const tokens = new Map(); // token -> หมดอายุเมื่อ (ms) · Map เรียงตามลำดับที่ใส่ ตัวแรก = เก่าสุด
+
+  function issueToken() {
+    for (const [t, expiresAt] of tokens) if (expiresAt <= now()) tokens.delete(t);
+    while (tokens.size >= maxTokens) tokens.delete(tokens.keys().next().value);
+    const token = crypto.randomBytes(32).toString('hex');
+    tokens.set(token, now() + tokenTtlMs);
+    return token;
+  }
+
+  function validToken(token) {
+    const expiresAt = tokens.get(token);
+    if (expiresAt === undefined) return false;
+    if (expiresAt <= now()) {
+      tokens.delete(token);
+      return false;
+    }
+    return true;
+  }
 
   function device(id) {
     const d = devices.get(id);
@@ -130,12 +152,10 @@ function createHttpApi({ config, devices, tcp, queue, fieldsByModel }) {
       if (!safeEqual(body.username, config.adminUsername) || !safeEqual(body.password, config.adminPassword)) {
         throw new HttpError(401, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
       }
-      const token = crypto.randomBytes(32).toString('hex');
-      tokens.add(token);
-      return { token };
+      return { token: issueToken() };
     }
     const auth = req.headers.authorization ?? '';
-    if (!auth.startsWith('Bearer ') || !tokens.has(auth.slice(7))) throw new HttpError(401, 'ต้องเข้าสู่ระบบก่อน');
+    if (!auth.startsWith('Bearer ') || !validToken(auth.slice(7))) throw new HttpError(401, 'ต้องเข้าสู่ระบบก่อน');
     for (const [method, re, fn] of routes) {
       const m = re.exec(url.pathname);
       if (m && req.method === method) return fn(req, m.slice(1).map(decodeURIComponent));

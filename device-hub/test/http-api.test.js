@@ -12,7 +12,7 @@ const fields = require('../src/protocols/meitrack/fields');
 const DEV = '353358017784062';
 const devices = new Map([[DEV, { model: 'TA255L', telemetryKey: 'k' }], ['353358017784063', { model: 'TA255L', telemetryKey: 'k2' }]]);
 
-async function setup(t) {
+async function setup(t, apiOpts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'device-hub-http-'));
   const queue = createCommandQueue({ file: path.join(dir, 'q.json'), ttlHours: 24 });
   const tcp = {
@@ -21,14 +21,45 @@ async function setup(t) {
     firmwareVersion: (imei) => (imei === DEV ? 'V028' : null),
   };
   const config = { ...loadConfig({ DEVICE_HUB_ADMIN_USERNAME: 'hub', DEVICE_HUB_ADMIN_PASSWORD: 'pw' }), httpPort: 0 };
-  const { server, port } = await startHttpApi({ config, devices, tcp, queue, fieldsByModel: new Map([['TA255L', fields]]) });
+  const { server, port } = await startHttpApi({ config, devices, tcp, queue, fieldsByModel: new Map([['TA255L', fields]]), ...apiOpts });
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   const login = async () => (await (await fetch(`${base}/api/login`, { method: 'POST', body: JSON.stringify({ username: 'hub', password: 'pw' }) })).json()).token;
   const token = await login();
   const call = (p, init = {}) => fetch(`${base}${p}`, { ...init, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } });
-  return { server, base, call, queue };
+  const callWith = (tok, p) => fetch(`${base}${p}`, { headers: { Authorization: `Bearer ${tok}` } });
+  return { server, base, call, callWith, login, token, queue };
 }
+
+// ข้อสังเกตข้อ 2 ของ A ใน review #491 — token เดิมเก็บใน Set ไม่หมดอายุ · backend login ใหม่เองเมื่อเจอ 401
+test('token หมดอายุตาม tokenTtlMs → 401 แล้ว login ใหม่ได้ token ที่ใช้ได้', async (t) => {
+  let clock = 1_000_000;
+  const { call, callWith, login } = await setup(t, { now: () => clock, tokenTtlMs: 60_000 });
+  assert.strictEqual((await call('/api/gw/devices')).status, 200);
+  clock += 59_000;
+  assert.strictEqual((await call('/api/gw/devices')).status, 200);
+  clock += 2_000;
+  assert.strictEqual((await call('/api/gw/devices')).status, 401);
+  assert.strictEqual((await callWith(await login(), '/api/gw/devices')).status, 200);
+});
+
+test('token ค่าเริ่มต้นอายุ 24 ชม.', async (t) => {
+  let clock = 0;
+  const { call } = await setup(t, { now: () => clock });
+  clock = 24 * 3600_000 - 1;
+  assert.strictEqual((await call('/api/gw/devices')).status, 200);
+  clock = 24 * 3600_000 + 1;
+  assert.strictEqual((await call('/api/gw/devices')).status, 401);
+});
+
+test('login เกิน maxTokens → token เก่าสุดใช้ไม่ได้ ตัวใหม่ยังใช้ได้', async (t) => {
+  const { token, callWith, login } = await setup(t, { maxTokens: 2 });
+  const second = await login();
+  const third = await login();
+  assert.strictEqual((await callWith(token, '/api/gw/devices')).status, 401);
+  assert.strictEqual((await callWith(second, '/api/gw/devices')).status, 200);
+  assert.strictEqual((await callWith(third, '/api/gw/devices')).status, 200);
+});
 
 const putConfig = (call, id, settings) => call(`/api/admin/devices/${id}/config`, { method: 'PUT', body: JSON.stringify({ settings }) });
 
