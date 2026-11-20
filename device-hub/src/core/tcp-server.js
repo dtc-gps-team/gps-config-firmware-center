@@ -98,7 +98,18 @@ function createTcpServer({
       }
       lastDataAtByImei.set(conn.imei, at);
     }
-    conn.socket.setTimeout(idleLimitMs(conn.imei));
+    armIdleTimer(conn);
+  }
+
+  // timer ของเราเอง ไม่ใช้ socket.setTimeout: ของ Node นับขาออกด้วย ทุกครั้งที่ hub ส่งคำสั่งเข้าสายที่ตาย
+  // เวลาจะเริ่มนับใหม่ สายจึงไม่ถูกตัดจนกว่า executor จะลองครบ (review #495) — ที่นี่นับเฉพาะข้อมูลจากกล่อง
+  function armIdleTimer(conn) {
+    clearTimeout(conn.idleTimer);
+    const limit = idleLimitMs(conn.imei);
+    conn.idleTimer = setTimeout(() => {
+      log(`ตัดการเชื่อมต่อ ${conn.imei ?? conn.remote}: ไม่มีข้อมูลจากกล่องเกิน ${Math.round(limit / 1000)} วินาที (สายอาจตายแบบเงียบ)`);
+      conn.socket.destroy();
+    }, limit);
   }
 
   function release(conn) {
@@ -167,8 +178,9 @@ function createTcpServer({
     const ip = socket.remoteAddress;
     const count = (perIp.get(ip) ?? 0) + 1;
     perIp.set(ip, count);
-    const conn = { socket, ip, counted: true, imei: null, buf: Buffer.alloc(0), junk: 0, remote: `${ip}:${socket.remotePort}` };
+    const conn = { socket, ip, counted: true, imei: null, idleTimer: null, buf: Buffer.alloc(0), junk: 0, remote: `${ip}:${socket.remotePort}` };
     socket.on('close', () => {
+      clearTimeout(conn.idleTimer);
       sockets.delete(socket);
       release(conn);
       // คำสั่งที่รอคำตอบไม่ตัดทิ้งตรงนี้ — รอจนครบ commandTimeoutMs เผื่อกล่องต่อสายใหม่แล้วตอบ
@@ -185,11 +197,7 @@ function createTcpServer({
       return;
     }
     socket.setKeepAlive(true, 60000);
-    socket.setTimeout(idleLimitMs(null));
-    socket.on('timeout', () => {
-      log(`ตัดการเชื่อมต่อ ${conn.imei ?? conn.remote}: ไม่มีข้อมูลจากกล่องเกิน ${Math.round(idleLimitMs(conn.imei) / 1000)} วินาที (สายอาจตายแบบเงียบ)`);
-      socket.destroy();
-    });
+    armIdleTimer(conn);
     socket.on('data', (chunk) => {
       conn.buf = Buffer.concat([conn.buf, chunk]);
       const { frames, junk, rest } = extractFrames(conn.buf);

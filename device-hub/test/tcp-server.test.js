@@ -168,6 +168,26 @@ test('สายหลุดระหว่างรอคำตอบ แล้�
   assert.deepStrictEqual(await reply, { type: 'A12', body: 'OK' });
 });
 
+// review #495 (A): socket.setTimeout ของ Node นับขาออกด้วย — hub ส่งคำสั่งเข้าสายที่ตายเรื่อยๆ ต้องยังถูกตัด
+test('กล่องเงียบ แต่ hub ส่งคำสั่งเข้าไปเรื่อยๆ → สายยังถูกตัดตามเกณฑ์', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 300, commandTimeoutMs: 50 });
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: (code) => (code === 'E91' ? e91(code) : null) }); // ไม่ตอบคำสั่งอื่น
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  const startedAt = Date.now();
+  let sent = 0;
+  while (server.isOnline(SAMPLE_IMEI) && Date.now() - startedAt < 1500) {
+    server.sendCommand(SAMPLE_IMEI, 'A12,6').catch(() => {});
+    sent++;
+    await wait(50);
+  }
+  assert.ok(sent > 3, `ส่งคำสั่งไป ${sent} ครั้ง`);
+  assert.deepStrictEqual(events.offline, [SAMPLE_IMEI]);
+  assert.ok(Date.now() - startedAt < 1000, `ถูกตัดช้าเกินไป ${Date.now() - startedAt} ms (เวลาเริ่มนับใหม่ทุกครั้งที่ hub เขียน?)`);
+});
+
 test('กล่องเงียบเกินเกณฑ์ (ยังไม่รู้รอบส่ง = ใช้ค่าต่ำสุด) → ตัดสาย onOffline (docs/33 §11.6 ข้อ 4)', async (t) => {
   const { server, port, events } = await startServer({ idleMinMs: 300 });
   t.after(() => server.close());
