@@ -126,15 +126,124 @@ test('กล่องไม่ตอบใน commandTimeoutMs → DEVICE_NO_REP
   await assert.rejects(server.sendCommand(SAMPLE_IMEI, 'A12,6'), { code: 'DEVICE_NO_REPLY' });
 });
 
-test('สายหลุดระหว่างรอคำตอบ → DEVICE_NO_REPLY และ onOffline', async (t) => {
-  const { server, port, events } = await startServer({ commandTimeoutMs: 5000 });
+test('สายหลุดระหว่างรอคำตอบ แล้วกล่องไม่กลับมา → onOffline ทันที และ DEVICE_NO_REPLY เมื่อครบเวลารอ', async (t) => {
+  const { server, port, events } = await startServer({ commandTimeoutMs: 500 });
   t.after(() => server.close());
   const box = fakeBox(port, { answer: (code) => { if (code === 'A12') box.sock.destroy(); return e91(code); } });
   box.sock.write(cceFrame());
   await until(() => server.isOnline(SAMPLE_IMEI));
-  await assert.rejects(server.sendCommand(SAMPLE_IMEI, 'A12,6'), { code: 'DEVICE_NO_REPLY' });
+  const startedAt = Date.now();
+  const reply = server.sendCommand(SAMPLE_IMEI, 'A12,6');
   await until(() => events.offline.length === 1);
   assert.strictEqual(server.isOnline(SAMPLE_IMEI), false);
+  await assert.rejects(reply, { code: 'DEVICE_NO_REPLY' });
+  // ไม่ตัดทิ้งตอนสายปิด: รอให้กล่องมีโอกาสตอบทางสายใหม่จนครบ commandTimeoutMs (docs/33 §11.6 ข้อ 3)
+  assert.ok(Date.now() - startedAt >= 450, `ตัดทิ้งเร็วเกินไป ${Date.now() - startedAt} ms`);
+});
+
+test('สายหลุดระหว่างรอคำตอบ แล้วกล่องตอบทางสายใหม่ → ได้คำตอบ (docs/33 §11.6 ข้อ 3)', async (t) => {
+  const { server, port } = await startServer({ commandTimeoutMs: 2000 });
+  t.after(() => server.close());
+  let askedId = null;
+  const first = fakeBox(port, {
+    answer: (code, args, id) => {
+      if (code === 'A12') {
+        askedId = id;
+        first.sock.destroy(); // สายเก่าหลุดก่อนตอบ
+        return null;
+      }
+      return e91(code);
+    },
+  });
+  first.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  const reply = server.sendCommand(SAMPLE_IMEI, 'A12,6');
+  await first.closed;
+  // กล่องต่อสายใหม่ แล้วตอบคำสั่งเดิมด้วย identifier เดิม
+  const second = fakeBox(port, { answer: e91 });
+  t.after(() => second.sock.destroy());
+  second.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  second.sock.write(replyFrame(askedId, 'A12', 'OK', SAMPLE_IMEI));
+  assert.deepStrictEqual(await reply, { type: 'A12', body: 'OK' });
+});
+
+test('กล่องเงียบเกินเกณฑ์ (ยังไม่รู้รอบส่ง = ใช้ค่าต่ำสุด) → ตัดสาย onOffline (docs/33 §11.6 ข้อ 4)', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 300 });
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: e91 });
+  t.after(() => box.sock.destroy());
+  box.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  await box.closed;
+  await until(() => events.offline.length === 1);
+  assert.deepStrictEqual(events.offline, [SAMPLE_IMEI]);
+  assert.strictEqual(server.isOnline(SAMPLE_IMEI), false);
+});
+
+test('ส่งข้อมูลถี่กว่าเกณฑ์ต่ำสุด → ไม่ถูกตัดสาย', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 300 });
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: e91 });
+  t.after(() => box.sock.destroy());
+  for (let i = 0; i < 6; i++) {
+    box.sock.write(cceFrame());
+    await wait(150);
+  }
+  assert.strictEqual(server.isOnline(SAMPLE_IMEI), true);
+  assert.deepStrictEqual(events.offline, []);
+});
+
+test('เกณฑ์ปรับตามรอบส่งจริงของกล่อง (3 เท่าของช่วงห่างที่เห็น) แม้รอบส่งนานกว่าค่าต่ำสุด', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 150 });
+  t.after(() => server.close());
+  const box = fakeBox(port, { answer: e91 });
+  t.after(() => box.sock.destroy());
+  // รอบส่งจริง ~120 ms ต่ำกว่าค่าต่ำสุดยังไม่เป็นไร แล้วหยุดไป 250 ms (นานกว่าค่าต่ำสุด แต่ไม่ถึง 3 เท่าของรอบ 120)
+  for (let i = 0; i < 4; i++) {
+    box.sock.write(cceFrame());
+    await wait(120);
+  }
+  await wait(130);
+  box.sock.write(cceFrame());
+  await wait(50);
+  assert.strictEqual(server.isOnline(SAMPLE_IMEI), true);
+  assert.deepStrictEqual(events.offline, []);
+});
+
+test('ช่วงห่างที่เรียนรู้ติดไปกับกล่อง ต่อสายใหม่ไม่เริ่มนับจากค่าต่ำสุด', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 150 });
+  t.after(() => server.close());
+  const first = fakeBox(port, { answer: e91 });
+  for (let i = 0; i < 3; i++) {
+    first.sock.write(cceFrame());
+    await wait(120);
+  }
+  first.sock.destroy();
+  await until(() => events.offline.length === 1);
+  const second = fakeBox(port, { answer: e91 });
+  t.after(() => second.sock.destroy());
+  second.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  await wait(250); // นานกว่าค่าต่ำสุด 150 แต่ไม่ถึง 3 × 120
+  assert.strictEqual(server.isOnline(SAMPLE_IMEI), true);
+});
+
+test('กล่องรอบส่งนานกว่าค่าต่ำสุด ถูกตัดผิดได้ครั้งเดียว ต่อกลับแล้วเกณฑ์ปรับตามช่วงห่างจริง', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 100 });
+  t.after(() => server.close());
+  const first = fakeBox(port, { answer: e91 });
+  first.sock.write(cceFrame());
+  await first.closed; // ยังไม่รู้รอบส่ง ถูกตัดที่ค่าต่ำสุด
+  await until(() => events.offline.length === 1);
+  await wait(150); // กล่องต่อกลับตามรอบส่งของมัน (~250 ms หลังข้อมูลครั้งก่อน)
+  const second = fakeBox(port, { answer: e91 });
+  t.after(() => second.sock.destroy());
+  second.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  await wait(300); // นานกว่าค่าต่ำสุดมาก แต่ไม่ถึง 3 × ~250
+  assert.strictEqual(server.isOnline(SAMPLE_IMEI), true);
+  assert.strictEqual(events.offline.length, 1);
 });
 
 test('ต่อแล้วส่ง E91 เองและเก็บเวอร์ชัน firmware', async (t) => {
