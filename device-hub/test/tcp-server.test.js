@@ -266,6 +266,25 @@ test('กล่องรอบส่งนานกว่าค่าต่ำ�
   assert.strictEqual(events.offline.length, 1);
 });
 
+// review #495 (A) ข้อสังเกตเล็ก — กล่องดับทั้งคืนแล้วกลับมา ช่วงห่างข้ามสาย 8 ชม. ทำให้เกณฑ์กลายเป็น 24 ชม.
+test('กล่องหายไปนานมาก (ช่วงห่างข้ามสายเกิน 10 เท่าของเกณฑ์) → ไม่นับ เกณฑ์ไม่ยืด', async (t) => {
+  const { server, port, events } = await startServer({ idleMinMs: 100 });
+  t.after(() => server.close());
+  const first = fakeBox(port, { answer: e91 });
+  first.sock.write(cceFrame());
+  await until(() => server.isOnline(SAMPLE_IMEI));
+  first.sock.destroy();
+  await until(() => events.offline.length === 1);
+  await wait(1500); // หายไปนานกว่า 10 × เกณฑ์ (100 ms)
+  const second = fakeBox(port, { answer: e91 });
+  t.after(() => second.sock.destroy());
+  const reconnectedAt = Date.now();
+  second.sock.write(cceFrame());
+  await second.closed; // แล้วเงียบ: ต้องถูกตัดตามเกณฑ์เดิม ไม่ใช่ 3 × 1.5 วิ
+  await until(() => events.offline.length === 2);
+  assert.ok(Date.now() - reconnectedAt < 1000, `ถูกตัดช้าเกินไป ${Date.now() - reconnectedAt} ms (นับช่วงที่กล่องหายไปเป็นรอบส่ง?)`);
+});
+
 test('ต่อแล้วส่ง E91 เองและเก็บเวอร์ชัน firmware', async (t) => {
   const { server, port } = await startServer();
   t.after(() => server.close());

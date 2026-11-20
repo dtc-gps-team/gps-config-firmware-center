@@ -40,6 +40,10 @@ function createTcpServer({
   const GAP_WINDOW = 10;
   // ช่วงห่างสั้นมาก (ข้อมูลค้างที่กล่องส่งรวดหลังต่อสาย) ไม่บอกรอบส่ง ไม่เก็บ ไม่งั้นจะไล่ช่วงห่างจริงออกจากหน้าต่าง
   const minCountedGapMs = idleMinMs / 100;
+  // ช่วงห่างข้ามสายที่ยาวเกิน 10 เท่าของเกณฑ์ตอนนั้น = กล่องหายไป (ดับ / ไม่มีสัญญาณ) ไม่ใช่รอบส่ง → ไม่นับ
+  // ไม่งั้นกล่องดับทั้งคืน 8 ชม. แล้วกลับมา เกณฑ์ตัดสายจะกลายเป็น 24 ชม. (review #495) · ข้อจำกัด: กล่องที่ตั้ง
+  // รอบส่งนานกว่า 10 × DEVICE_HUB_IDLE_MIN_SEC (ค่าเริ่มต้น 20 นาที) จะถูกตัดสายทุกรอบ ต้องตั้งค่าต่ำสุดให้สูงขึ้น
+  const CROSS_GAP_FACTOR = 10;
   // ip -> จำนวนสายที่ยังไม่ระบุตัว · สายที่ระบุตัวเป็นกล่องในทะเบียนแล้วไม่นับ (ซิมหลายเครื่องอาจออก IP เดียวกันหลัง CGNAT)
   const perIp = new Map();
   const sockets = new Set(); // ทุกสายที่เปิดอยู่ (รวมสายที่ยังไม่ระบุตัว) — ปิดให้หมดตอน close()
@@ -90,13 +94,16 @@ function createTcpServer({
     if (conn.imei) {
       const last = lastDataAtByImei.get(conn.imei);
       const gap = last === undefined ? 0 : at - last;
-      if (gap >= minCountedGapMs) {
+      const crossSocket = !conn.hadData; // ข้อมูลแรกของสายนี้ = ช่วงห่างนับจากสายก่อน
+      const absent = crossSocket && gap > CROSS_GAP_FACTOR * idleLimitMs(conn.imei);
+      if (gap >= minCountedGapMs && !absent) {
         const gaps = gapsByImei.get(conn.imei) ?? [];
         gaps.push(gap);
         if (gaps.length > GAP_WINDOW) gaps.shift();
         gapsByImei.set(conn.imei, gaps);
       }
       lastDataAtByImei.set(conn.imei, at);
+      conn.hadData = true;
     }
     armIdleTimer(conn);
   }
@@ -178,7 +185,7 @@ function createTcpServer({
     const ip = socket.remoteAddress;
     const count = (perIp.get(ip) ?? 0) + 1;
     perIp.set(ip, count);
-    const conn = { socket, ip, counted: true, imei: null, idleTimer: null, buf: Buffer.alloc(0), junk: 0, remote: `${ip}:${socket.remotePort}` };
+    const conn = { socket, ip, counted: true, imei: null, hadData: false, idleTimer: null, buf: Buffer.alloc(0), junk: 0, remote: `${ip}:${socket.remotePort}` };
     socket.on('close', () => {
       clearTimeout(conn.idleTimer);
       sockets.delete(socket);
