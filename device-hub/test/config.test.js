@@ -25,6 +25,12 @@ test('ค่าเริ่มต้น', () => {
   assert.strictEqual(c.devicesFile, 'devices.json');
   assert.strictEqual(c.dataDir, 'data');
   assert.strictEqual(c.logDir, 'logs');
+  assert.strictEqual(c.idleMinSec, 120);
+});
+
+test('DEVICE_HUB_IDLE_MIN_SEC ตั้งเกณฑ์ต่ำสุดของการตัดสายที่เงียบ', () => {
+  assert.strictEqual(loadConfig({ DEVICE_HUB_IDLE_MIN_SEC: '300' }).idleMinSec, 300);
+  assert.throws(() => loadConfig({ DEVICE_HUB_IDLE_MIN_SEC: '0' }), /DEVICE_HUB_IDLE_MIN_SEC/);
 });
 
 test('อ่านค่าจาก env', () => {
