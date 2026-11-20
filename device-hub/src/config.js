@@ -28,6 +28,8 @@ function loadConfig(env = process.env) {
     dataDir: text(env, 'DEVICE_HUB_DATA_DIR', 'data'),
     queueTtlHours: positiveInt(env, 'DEVICE_HUB_QUEUE_TTL_HOURS', 24),
     logDir: text(env, 'DEVICE_HUB_LOG_DIR', 'logs'),
+    // สายเงียบนานเกิน max(ค่านี้, 3 × ช่วงห่างที่ยาวที่สุดของข้อมูลจากกล่อง) = ตัดสาย (docs/33 §11.6 ข้อ 4)
+    idleMinSec: positiveInt(env, 'DEVICE_HUB_IDLE_MIN_SEC', 120),
   };
 }
 
